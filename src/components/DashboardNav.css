@@ -1,0 +1,231 @@
+.dashboard-nav {
+  display: none; /* Old nav */
+}
+
+/* --- New Custom Dashboard Nav Styles --- */
+
+.dashboard-nav-custom {
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  width: 250px;
+  height: 100%;
+  border-right: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 30px 15px;
+}
+
+.nav-left-custom {
+  width: 100%;
+}
+
+.nav-links-custom {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nav-links-custom li {
+  width: 100%;
+}
+
+.custom-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+  padding: 12px 20px;
+  text-decoration: none;
+  color: #64748b;
+  font-weight: 500;
+  font-size: 0.95rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.custom-nav-link svg {
+  color: #94a3b8;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+/* Desktop: show full label, hide short label */
+.nav-label {
+  display: none;
+}
+.nav-label-desktop {
+  display: inline;
+}
+
+.custom-nav-link:hover {
+  background-color: #f8fafc;
+  color: #334155;
+}
+
+.custom-nav-link:hover svg {
+  color: #64748b;
+}
+
+.custom-nav-link.active {
+  background-color: #b6d4fe;
+  color: #0b4bcc;
+  font-weight: 600;
+}
+
+.custom-nav-link.active svg {
+  color: #0b4bcc;
+}
+
+.btn-logout-custom {
+  margin-top: 20px;
+}
+
+.btn-logout-custom:hover {
+  background-color: #fee2e2;
+  color: #ef4444;
+}
+
+.btn-logout-custom:hover svg {
+  color: #ef4444;
+}
+
+/* --- Mobile Bottom Navigation Bar --- */
+@media (max-width: 768px) {
+  .dashboard-nav-custom {
+    /* Convert to a fixed bottom navigation bar */
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-top: 1px solid #e8edf5;
+    padding: 0;
+    flex-direction: row;
+    background: rgba(255, 255, 255, 0.97);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+    z-index: 100;
+    border-radius: 0;
+  }
+
+  .nav-left-custom {
+    width: 100%;
+  }
+
+  .nav-links-custom {
+    flex-direction: row;
+    gap: 0;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .nav-links-custom li {
+    flex: 1;
+    width: auto;
+  }
+
+  /* Mobile: show short label, hide full label */
+  .nav-label {
+    display: inline;
+  }
+  .nav-label-desktop {
+    display: none;
+  }
+
+  .custom-nav-link {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 10px 4px 12px;
+    font-size: 0.63rem;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    border-radius: 0;
+    color: #94a3b8;
+    white-space: nowrap;
+    text-align: center;
+    width: 100%;
+    line-height: 1.2;
+  }
+
+  .custom-nav-link svg {
+    color: #94a3b8;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+  }
+
+  .custom-nav-link:hover {
+    background-color: transparent;
+    color: #4a7ade;
+  }
+
+  .custom-nav-link:hover svg {
+    color: #4a7ade;
+    transform: translateY(-2px);
+  }
+
+  .custom-nav-link.active {
+    background-color: transparent;
+    color: #0b4bcc;
+    font-weight: 700;
+  }
+
+  .custom-nav-link.active svg {
+    color: #0b4bcc;
+    transform: translateY(-2px);
+  }
+
+  /* Active indicator pill above the icon */
+  .custom-nav-link.active::before {
+    content: '';
+    display: block;
+    width: 28px;
+    height: 3px;
+    background-color: #0b4bcc;
+    border-radius: 0 0 3px 3px;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .nav-links-custom li {
+    position: relative;
+  }
+
+  .btn-logout-custom {
+    margin-top: 0;
+    color: #ef4444;
+  }
+
+  .btn-logout-custom svg {
+    color: #ef4444;
+  }
+
+  .btn-logout-custom:hover {
+    background-color: transparent;
+    color: #dc2626;
+  }
+
+  .btn-logout-custom:hover svg {
+    color: #dc2626;
+  }
+}

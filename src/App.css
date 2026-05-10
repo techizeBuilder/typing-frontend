@@ -1,0 +1,48 @@
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.landing-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 1400px !important;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px 40px 40px;
+}
+
+.cards-wrapper {
+  display: flex;
+  justify-content: space-between;
+  gap: 25px;
+  margin-bottom: 30px;
+}
+
+/* Ensure responsiveness for smaller desktop windows */
+@media (max-width: 1024px) {
+  .app-container {
+    height: auto;
+    overflow: auto;
+  }
+  .cards-wrapper {
+    flex-wrap: wrap;
+  }
+  .about-section {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 768px) {
+  .landing-container {
+    padding: 10px 15px 30px;
+  }
+  .cards-wrapper {
+    flex-direction: column;
+    gap: 15px;
+  }
+}

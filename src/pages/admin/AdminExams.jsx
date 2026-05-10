@@ -1,0 +1,615 @@
+import { useState, useEffect } from 'react';
+import { examService, resultPatternService } from '../../services/api';
+import './Admin.css';
+
+const AdminExams = () => {
+  const [activeTab, setActiveTab] = useState('exams'); // 'patterns' or 'exams'
+  
+  const [patterns, setPatterns] = useState([]);
+  const [currentPattern, setCurrentPattern] = useState(null);
+  const [showPatternForm, setShowPatternForm] = useState(false);
+  const [patternSearch, setPatternSearch] = useState('');
+  const [patternData, setPatternData] = useState({
+    name: '',
+    speed_count: 'Words',
+    half_mistake_enabled: false,
+    penalty_type: 'Word',
+    penalty_value: 1,
+    count_right_words_only: false,
+    qualify_on: 'NWPM',
+    required_speed: 35,
+    required_accuracy: 95,
+    show_half_mistakes: true,
+    show_full_mistakes: true,
+    show_total_strokes: true,
+    show_total_words: true,
+    show_total_errors: true,
+    show_correct_words: true,
+    show_gross_speed: true,
+    show_net_speed: true,
+    show_accuracy: true,
+    show_penalty_words: true,
+    show_ignorable_mistakes: true,
+  });
+
+  // Exam States
+  const [exams, setExams] = useState([]);
+  const [currentExam, setCurrentExam] = useState(null);
+  const [showExamForm, setShowExamForm] = useState(false);
+  const [examSearch, setExamSearch] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [examData, setExamData] = useState({
+    name: '',
+    test_time_minutes: 10,
+    screen_type: 'Screen 1',
+    result_pattern_id: '',
+    backspace_control: 'Full Backspace',
+    highlight_word: true,
+    highlight_color: 'yellow',
+    auto_scroll: true,
+    highlight_error: true,
+    font_size_user_screen: 20,
+    font_size_test_screen: 20,
+    font_group: 'English Typing',
+    test_paper_screen: 'Screen',
+    auto_submit: false,
+    test_re_type: false,
+    max_words_strokes: 0,
+    no_of_words_strokes: 0
+  });
+
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [fetchedPatterns, fetchedExams] = await Promise.all([
+        resultPatternService.getPatterns(),
+        examService.getExams()
+      ]);
+      setPatterns(fetchedPatterns);
+      setExams(fetchedExams);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ----- PATTERN LOGIC ----- */
+  const handlePatternSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (currentPattern) {
+        await resultPatternService.updatePattern(currentPattern.id, patternData);
+      } else {
+        await resultPatternService.createPattern(patternData);
+      }
+      setShowPatternForm(false);
+      setCurrentPattern(null);
+      fetchData();
+    } catch (error) {
+      alert('Error saving pattern!');
+    }
+  };
+
+  const handlePatternDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this result pattern? Exams using it might break.')) {
+      try {
+        await resultPatternService.deletePattern(id);
+        fetchData();
+      } catch (error) {
+        alert('Error deleting pattern!');
+      }
+    }
+  };
+
+  /* ----- EXAM LOGIC ----- */
+  const defaultExamData = {
+    name: '',
+    test_time_minutes: 10,
+    screen_type: 'Screen 1',
+    result_pattern_id: '',
+    backspace_control: 'Full Backspace',
+    highlight_word: true,
+    highlight_color: 'yellow',
+    auto_scroll: true,
+    highlight_error: true,
+    font_size_user_screen: 20,
+    font_size_test_screen: 20,
+    font_group: 'English Typing',
+    test_paper_screen: 'Screen',
+    auto_submit: false,
+    test_re_type: false,
+    max_words_strokes: 0,
+    no_of_words_strokes: 0
+  };
+
+  const handleExamSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const data = new FormData();
+      Object.keys(examData).forEach(key => {
+        // Skip internal, relational, and null/undefined values
+        // 'result_pattern' = nested object from DB, 'result_pattern_id' = form-only field appended below
+        if (
+          key === 'id' || key === 'created_at' || key === 'updated_at' ||
+          key === 'result_pattern' || key === 'result_pattern_id' ||
+          examData[key] === null || examData[key] === undefined
+        ) return;
+        data.append(key, examData[key]);
+      });
+      // Attach pattern ID explicitly under the field name the backend expects
+      if (examData.result_pattern_id) {
+          data.append('result_pattern', examData.result_pattern_id);
+      }
+      if (selectedFile) {
+        data.append('image', selectedFile);
+      }
+
+      if (currentExam) {
+        await examService.updateExam(currentExam.id, data);
+      } else {
+        await examService.createExam(data);
+      }
+      
+      setShowExamForm(false);
+      setCurrentExam(null);
+      setSelectedFile(null);
+      setExamData(defaultExamData);
+      fetchData();
+    } catch (error) {
+      const msg = error?.response?.data?.message || error?.message || 'Unknown error';
+      alert(`Error saving exam: ${Array.isArray(msg) ? msg.join(', ') : msg}`);
+      console.error('Exam save error:', error?.response?.data || error);
+    }
+  };
+
+  const handleExamDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this exam?')) {
+      try {
+        await examService.deleteExam(id);
+        fetchData();
+      } catch (error) {
+        alert('Error deleting exam!');
+      }
+    }
+  };
+
+  return (
+    <div className="admin-card">
+      <header className="admin-header">
+        <h2>Manage Exams & Patterns</h2>
+        <div className="admin-tabs">
+           <button className={`tab-btn ${activeTab === 'exams' ? 'active' : ''}`} onClick={() => setActiveTab('exams')}>Exams Setup</button>
+           <button className={`tab-btn ${activeTab === 'patterns' ? 'active' : ''}`} onClick={() => setActiveTab('patterns')}>Result Patterns</button>
+        </div>
+      </header>
+
+      {/* ===================== RESULT PATTERNS TAB ===================== */}
+      {activeTab === 'patterns' && (
+        <div className="tab-content">
+           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+              <input 
+                type="text" 
+                placeholder="Search Pattern Name..." 
+                value={patternSearch} 
+                onChange={(e) => setPatternSearch(e.target.value)} 
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '250px' }}
+              />
+              <button className="btn-primary" onClick={() => { setShowPatternForm(!showPatternForm); setCurrentPattern(null); }}>
+                {showPatternForm ? 'Cancel' : '+ Add New Pattern'}
+              </button>
+           </div>
+           
+           {showPatternForm && (
+             <div className="admin-form-container pattern-setup">
+                <h3>{currentPattern ? 'Edit Result Pattern' : 'New Result Pattern'}</h3>
+                <form onSubmit={handlePatternSubmit} className="admin-grid-form">
+                    <div className="input-group">
+                        <label>Result Name</label>
+                        <input type="text" value={patternData.name} onChange={(e) => setPatternData({...patternData, name: e.target.value})} required placeholder="e.g. SSC Standard" />
+                    </div>
+                    <div className="input-group">
+                        <label>Speed Count (Words/Strokes)</label>
+                        <select value={patternData.speed_count} onChange={(e) => setPatternData({...patternData, speed_count: e.target.value})}>
+                            <option value="Words">Words</option>
+                            <option value="Strokes">Strokes</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>Half Mistake (Count or Not)</label>
+                        <select value={patternData.half_mistake_enabled ? "Yes" : "No"} onChange={(e) => setPatternData({...patternData, half_mistake_enabled: e.target.value === "Yes"})}>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    
+                    <div className="input-group">
+                        <label>Penalty (Word/Strokes)</label>
+                        <select value={patternData.penalty_type} onChange={(e) => setPatternData({...patternData, penalty_type: e.target.value})}>
+                            <option value="Word">Word</option>
+                            <option value="Stroke">Stroke</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>How Much Penalty</label>
+                        <input type="number" step="0.5" value={patternData.penalty_value} onChange={(e) => setPatternData({...patternData, penalty_value: parseFloat(e.target.value)})} required />
+                    </div>
+                    <div className="input-group">
+                        <label>Count only Right Words (Y/N)</label>
+                        <select value={patternData.count_right_words_only ? "Yes" : "No"} onChange={(e) => setPatternData({...patternData, count_right_words_only: e.target.value === "Yes"})}>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+
+                    <div className="input-group">
+                        <label>Qualify show on (NWPM/GWPM)</label>
+                        <select value={patternData.qualify_on} onChange={(e) => setPatternData({...patternData, qualify_on: e.target.value})}>
+                            <option value="NWPM">NWPM</option>
+                            <option value="GWPM">GWPM</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>Qualifying Speed*</label>
+                        <input type="number" value={patternData.required_speed} onChange={(e) => setPatternData({...patternData, required_speed: parseInt(e.target.value)})} required />
+                    </div>
+                    <div className="input-group">
+                        <label>Qualifying ACCURACY (%)*</label>
+                        <input type="number" value={patternData.required_accuracy} onChange={(e) => setPatternData({...patternData, required_accuracy: parseInt(e.target.value)})} required />
+                    </div>
+
+                    {/* Visibility Section */}
+                    <div className="form-actions-full" style={{ gridColumn: '1 / -1', marginTop: '15px' }}>
+                        <h4 style={{ borderBottom: '1px solid #ccc', paddingBottom: '5px', marginBottom: '15px', color: '#444' }}>Result Component Visibility (Show/Hide in Result Screen)</h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px' }}>
+                            {[
+                                { key: 'show_full_mistakes', label: 'Full Mistakes' },
+                                { key: 'show_half_mistakes', label: 'Half Mistakes' },
+                                { key: 'show_total_errors', label: 'Total Errors' },
+                                { key: 'show_total_strokes', label: 'Total Strokes' },
+                                { key: 'show_total_words', label: 'Total Words' },
+                                { key: 'show_correct_words', label: 'Right/Correct Words' },
+                                { key: 'show_gross_speed', label: 'Gross Speed (GWPM)' },
+                                { key: 'show_net_speed', label: 'Net Speed (NWPM)' },
+                                { key: 'show_accuracy', label: 'Accuracy' },
+                                { key: 'show_penalty_words', label: 'Penalty Words' },
+                                { key: 'show_ignorable_mistakes', label: 'Ignorable Mistakes' },
+                            ].map(comp => (
+                                <label key={comp.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', color: '#555' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={patternData[comp.key] !== false} 
+                                        onChange={(e) => setPatternData({...patternData, [comp.key]: e.target.checked})} 
+                                        style={{ width: '16px', height: '16px' }}
+                                    />
+                                    {comp.label}
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="form-actions-full" style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
+                        <button type="submit" className="btn-primary" style={{backgroundColor: '#800080'}}>SUBMIT</button> {/* Matching screenshot purple */}
+                    </div>
+                </form>
+             </div>
+           )}
+
+           <table className="admin-table">
+               <thead>
+                   <tr>
+                       <th>Pattern Name</th>
+                       <th>Speed Count</th>
+                       <th>Penalty Factor</th>
+                       <th>Qualifying</th>
+                       <th>Actions</th>
+                   </tr>
+               </thead>
+               <tbody>
+                   {loading ? <tr><td colSpan="5">Loading...</td></tr> : patterns.filter(p => p.name?.toLowerCase().includes(patternSearch.toLowerCase())).map(p => (
+                       <tr key={p.id}>
+                           <td><strong>{p.name}</strong></td>
+                           <td>{p.speed_count}</td>
+                           <td>{p.penalty_value} {p.penalty_type}s</td>
+                           <td>{p.required_speed} {p.qualify_on} / {p.required_accuracy}%</td>
+                           <td>
+                               <button className="btn-action btn-edit" onClick={() => { setCurrentPattern(p); setPatternData({...p}); setShowPatternForm(true); }}>Edit</button>
+                               <button className="btn-action btn-delete" onClick={() => handlePatternDelete(p.id)} style={{ marginLeft: '10px' }}>Delete</button>
+                           </td>
+                       </tr>
+                   ))}
+               </tbody>
+           </table>
+        </div>
+      )}
+
+      {/* ===================== EXAMS TAB ===================== */}
+      {activeTab === 'exams' && (
+        <div className="tab-content">
+           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+              <input 
+                type="text" 
+                placeholder="Search Exam Name..." 
+                value={examSearch} 
+                onChange={(e) => setExamSearch(e.target.value)} 
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '250px' }}
+              />
+              <button className="btn-primary" onClick={() => { 
+                if (showExamForm) {
+                  // Cancel
+                  setShowExamForm(false);
+                  setCurrentExam(null);
+                  setSelectedFile(null);
+                  setExamData(defaultExamData);
+                } else {
+                  // New form
+                  setExamData(defaultExamData);
+                  setCurrentExam(null);
+                  setSelectedFile(null);
+                  setShowExamForm(true);
+                }
+              }}>
+                {showExamForm ? 'Cancel' : '+ Add New Exam'}
+              </button>
+           </div>
+           
+           {showExamForm && (
+             <div className="admin-form-container pattern-setup">
+                <h3>{currentExam ? 'Edit Exam Setup' : 'New Exam Setup'}</h3>
+                <form onSubmit={handleExamSubmit} className="admin-grid-form" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                    
+                    <div className="input-group">
+                        <label style={{color: '#8b8b00', fontWeight: 'bold'}}>EXAM NAME</label>
+                        <input type="text" value={examData.name} onChange={(e) => setExamData({...examData, name: e.target.value})} required placeholder="Enter Name" />
+                    </div>
+                    <div className="input-group">
+                        <label>TEST TIME</label>
+                        <select value={examData.test_time_minutes} onChange={(e) => setExamData({...examData, test_time_minutes: parseInt(e.target.value)})}>
+                            <option value={5}>5 mins</option>
+                            <option value={10}>10 mins</option>
+                            <option value={15}>15 mins</option>
+                            <option value={20}>20 mins</option>
+                            <option value={25}>25 mins</option>
+                            <option value={30}>30 mins</option>
+                            <option value={35}>35 mins</option>
+                            <option value={40}>40 mins</option>
+                            <option value={45}>45 mins</option>
+                            <option value={50}>50 mins</option>
+                            <option value={55}>55 mins</option>
+                            <option value={60}>60 mins</option>
+                            <option value={65}>65 mins</option>
+                            <option value={70}>70 mins</option>
+                            <option value={75}>75 mins</option>
+                            <option value={80}>80 mins</option>
+                            <option value={85}>85 mins</option>
+                            <option value={90}>90 mins</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>TEST SCREEN</label>
+                        <select value={examData.screen_type} onChange={(e) => setExamData({...examData, screen_type: e.target.value})}>
+                            <option value="Screen 1">Screen 1 (CRPF)</option>
+                            <option value="Screen 2">Screen 2 (Green)</option>
+                            <option value="Screen 3">Screen 3 (SSC - No Sidebar)</option>
+                            <option value="Screen 4">Screen 4 (Line-by-Line)</option>
+                            <option value="Screen 5">Screen 5 (TCS)</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label style={{color: '#8b8b00', fontWeight: 'bold'}}>RESULT PATTERN</label>
+                        <select value={examData.result_pattern_id} onChange={(e) => setExamData({...examData, result_pattern_id: e.target.value})} required>
+                            <option value="">--Select--</option>
+                            {patterns.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                    </div>
+
+                    <div className="input-group">
+                        <label>BACKSPACE</label>
+                        <select value={examData.backspace_control} onChange={(e) => setExamData({...examData, backspace_control: e.target.value})}>
+                            <option value="Full Backspace">Full</option>
+                            <option value="Current Word Backspace">Current Word</option>
+                            <option value="Two Words Backspace">Two Words</option>
+                            <option value="No Backspace">Disabled</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>HIGHLIGHT Word (Y/N)</label>
+                        <select value={examData.highlight_word ? "Yes" : "No"} onChange={(e) => setExamData({...examData, highlight_word: e.target.value === "Yes"})}>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>HIGHLIGHTING color</label>
+                        <select value={examData.highlight_color} onChange={(e) => setExamData({...examData, highlight_color: e.target.value})}>
+                            <option value="yellow">Yellow</option>
+                            <option value="blue">Blue</option>
+                            <option value="black">Black</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>AUTO SCROLL (Y/N)</label>
+                        <select value={examData.auto_scroll ? "Yes" : "No"} onChange={(e) => setExamData({...examData, auto_scroll: e.target.value === "Yes"})}>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    
+                    <div className="input-group">
+                        <label>HIGHLIGHT Error (Y/N)</label>
+                        <select value={examData.highlight_error ? "Yes" : "No"} onChange={(e) => setExamData({...examData, highlight_error: e.target.value === "Yes"})}>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>FONT SIZE User SCREEN</label>
+                        <select value={examData.font_size_user_screen} onChange={(e) => setExamData({...examData, font_size_user_screen: parseInt(e.target.value)})}>
+                            <option value="10">10px</option>
+                            <option value="11">11px</option>
+                            <option value="12">12px</option>
+                            <option value="13">13px</option>
+                            <option value="14">14px</option>
+                            <option value="15">15px</option>
+                            <option value="16">16px</option>
+                            <option value="17">17px</option>
+                            <option value="18">18px</option>
+                            <option value="19">19px</option>
+                            <option value="20">20px</option>
+                            <option value="21">21px</option>
+                            <option value="22">22px</option>
+                            <option value="23">23px</option>
+                            <option value="24">24px</option>
+                            <option value="25">25px</option>
+                            <option value="26">26px</option>
+                            <option value="27">27px</option>
+                            <option value="28">28px</option>
+                            <option value="29">29px</option>
+                            <option value="30">30px</option>
+                            <option value="31">31px</option>
+                            <option value="32">32px</option>
+                            <option value="33">33px</option>
+                            <option value="34">34px</option>
+                            <option value="35">35px</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>FONT SIZE TEST SCREEN</label>
+                        <select value={examData.font_size_test_screen} onChange={(e) => setExamData({...examData, font_size_test_screen: parseInt(e.target.value)})}>
+                            <option value="10">10px</option>
+                            <option value="11">11px</option>
+                            <option value="12">12px</option>
+                            <option value="13">13px</option>
+                            <option value="14">14px</option>
+                            <option value="15">15px</option>
+                            <option value="16">16px</option>
+                            <option value="17">17px</option>
+                            <option value="18">18px</option>
+                            <option value="19">19px</option>
+                            <option value="20">20px</option>
+                            <option value="21">21px</option>
+                            <option value="22">22px</option>
+                            <option value="23">23px</option>
+                            <option value="24">24px</option>
+                            <option value="25">25px</option>
+                            <option value="26">26px</option>
+                            <option value="27">27px</option>
+                            <option value="28">28px</option>
+                            <option value="29">29px</option>
+                            <option value="30">30px</option>
+                            <option value="31">31px</option>
+                            <option value="32">32px</option>
+                            <option value="33">33px</option>
+                            <option value="34">34px</option>
+                            <option value="35">35px</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>FONT GROUP</label>
+                        <select value={examData.font_group} onChange={(e) => setExamData({...examData, font_group: e.target.value})}>
+                            <option value="English Typing">English Typing</option>
+                            <option value="Hindi Mangal">Hindi Mangal</option>
+                            <option value="Hindi Kruti Dev">Hindi Kruti Dev</option>
+                            <option value="Hindi Remington (GAIL)">Hindi Remington (GAIL)</option>
+                            <option value="Steno English">Steno English</option>
+                            <option value="Steno Hindi">Steno Hindi</option>
+                        </select>
+                    </div>
+
+                    <div className="input-group">
+                        <label>TEST (PAPER/SCREEN)</label>
+                        <select value={examData.test_paper_screen} onChange={(e) => setExamData({...examData, test_paper_screen: e.target.value})}>
+                            <option value="Screen">Screen</option>
+                            <option value="Paper">Paper</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>EXAM LOGO</label>
+                        {currentExam?.image_url && !selectedFile && (
+                          <img src={currentExam.image_url} alt="Current logo" style={{width: '40px', height: '40px', objectFit: 'contain', display: 'block', marginBottom: '4px', border: '1px solid #ddd', borderRadius: '4px'}} />
+                        )}
+                        {selectedFile && (
+                          <img src={URL.createObjectURL(selectedFile)} alt="New logo" style={{width: '40px', height: '40px', objectFit: 'contain', display: 'block', marginBottom: '4px', border: '1px solid #ddd', borderRadius: '4px'}} />
+                        )}
+                        <input type="file" accept="image/*" onChange={(e) => setSelectedFile(e.target.files[0])} />
+                    </div>
+                    <div className="input-group">
+                        <label>Auto Submit (Y/N)</label>
+                        <select value={examData.auto_submit ? "Yes" : "No"} onChange={(e) => setExamData({...examData, auto_submit: e.target.value === "Yes"})}>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>TEST RE-TYPE (Y/N)</label>
+                        <select value={examData.test_re_type ? "Yes" : "No"} onChange={(e) => setExamData({...examData, test_re_type: e.target.value === "Yes"})}>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+
+                    <div className="input-group">
+                        <label>MAXIMUM WORD/ STORKS</label>
+                        <input type="number" value={examData.max_words_strokes || ''} onChange={(e) => setExamData({...examData, max_words_strokes: parseInt(e.target.value)})} />
+                    </div>
+                    <div className="input-group">
+                        <label>NO. OF WORD/STROKS</label>
+                        <input type="number" value={examData.no_of_words_strokes || ''} onChange={(e) => setExamData({...examData, no_of_words_strokes: parseInt(e.target.value)})} />
+                    </div>
+
+                    <div className="form-actions-full" style={{ gridColumn: '1 / -1' }}>
+                        <button type="submit" className="btn-primary" style={{backgroundColor: '#800080'}}>SUBMIT</button>
+                    </div>
+                </form>
+             </div>
+           )}
+
+           <table className="admin-table">
+               <thead>
+                   <tr>
+                       <th>Logo</th>
+                       <th>Exam Name</th>
+                       <th>Screen</th>
+                       <th>Pattern</th>
+                       <th>Actions</th>
+                   </tr>
+               </thead>
+               <tbody>
+                   {loading ? <tr><td colSpan="5">Loading...</td></tr> : exams.filter(e => e.name?.toLowerCase().includes(examSearch.toLowerCase())).map(e => (
+                       <tr key={e.id}>
+                           <td>
+                               {e.image_url ? <img src={e.image_url} alt="" style={{width: '30px', height: '30px', objectFit: 'contain'}} /> : '-'}
+                           </td>
+                           <td><strong>{e.name}</strong></td>
+                           <td>{e.screen_type}</td>
+                           <td>{e.result_pattern?.name || 'Missing'}</td>
+                           <td>
+                               <button className="btn-action btn-edit" onClick={() => { 
+                                   setCurrentExam(e); 
+                                   setExamData({
+                                       ...e, 
+                                       result_pattern_id: e.result_pattern?.id || ''
+                                   }); 
+                                   setSelectedFile(null);
+                                   setShowExamForm(true); 
+                               }}>Edit</button>
+                               <button className="btn-action btn-delete" onClick={() => handleExamDelete(e.id)} style={{ marginLeft: '10px' }}>Delete</button>
+                           </td>
+                       </tr>
+                   ))}
+               </tbody>
+           </table>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+export default AdminExams;

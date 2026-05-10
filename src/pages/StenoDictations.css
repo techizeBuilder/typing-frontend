@@ -1,0 +1,291 @@
+/* ============================================================
+   StenoDictations.css  —  Dictation card page for steno module
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ── Page shell ─────────────────────────────────────────────── */
+.sd-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f8fafc;
+  font-family: 'Inter', -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+/* ── Hero / welcome bar ─────────────────────────────────────── */
+.sd-hero {
+  background: #0b4bcc;
+  padding: 15px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: white;
+  flex-shrink: 0;
+}
+.sd-hero-text h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 3px;
+}
+.sd-hero-text p {
+  font-size: 0.9rem;
+  margin: 0;
+  color: #c7d2fe;
+}
+
+/* ── Two-column layout ──────────────────────────────────────── */
+.sd-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+.sd-content {
+  flex: 1;
+  padding: 28px 40px;
+  overflow-y: auto;
+  border-left: 1px solid #e2e8f0;
+}
+
+/* ── Back button ────────────────────────────────────────────── */
+.sd-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 18px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  margin-bottom: 22px;
+  transition: background 0.18s;
+}
+.sd-back-btn:hover { background: #e2e8f0; }
+
+/* ── Section heading ────────────────────────────────────────── */
+.sd-section-header { margin-bottom: 24px; }
+.sd-section-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px;
+}
+.sd-section-sub {
+  font-size: 0.88rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* ── Loading ────────────────────────────────────────────────── */
+.sd-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 60px 0;
+  color: #64748b;
+}
+.sd-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #0b4bcc;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Empty state ────────────────────────────────────────────── */
+.sd-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 60px 0;
+  color: #94a3b8;
+  font-size: 0.95rem;
+}
+
+/* ── Cards grid ─────────────────────────────────────────────── */
+.sd-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+}
+
+/* ── Individual card ────────────────────────────────────────── */
+.sd-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 22px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.sd-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(11, 75, 204, 0.10);
+  border-color: #c7d2fe;
+}
+
+/* Card header row */
+.sd-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+.sd-card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+.sd-heart-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  transition: transform 0.15s;
+}
+.sd-heart-btn:hover { transform: scale(1.2); }
+.sd-heart-btn:hover svg { stroke: #ef4444; }
+
+/* Difficulty label */
+.sd-difficulty {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.73rem;
+  color: #64748b;
+  margin-bottom: 12px;
+}
+.sd-info-icon {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid #94a3b8;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  font-style: italic;
+  font-family: Georgia, serif;
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+/* Date badge */
+.sd-date-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff7ed;
+  color: #ea580c;
+  border: 1px solid #fed7aa;
+  border-radius: 30px;
+  padding: 5px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  width: fit-content;
+  margin-bottom: 16px;
+}
+
+/* Divider */
+.sd-divider {
+  border: none;
+  border-top: 1px solid #f1f5f9;
+  margin: 0 0 14px;
+}
+
+/* Feature checklist */
+.sd-features {
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+.sd-features li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 0.85rem;
+  color: #334155;
+}
+.sd-check {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 18px;
+  height: 18px;
+  background: #f0fdf4;
+  color: #16a34a;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* CTA button */
+.sd-take-btn {
+  background: #1a3fdb;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: background 0.2s, transform 0.15s;
+  width: 100%;
+  margin-top: auto;
+}
+.sd-take-btn:hover {
+  background: #0b4bcc;
+  transform: translateY(-1px);
+}
+.sd-take-btn:active { transform: translateY(0); }
+
+/* ── Mobile ─────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sd-page {
+    background: #0b4bcc;
+    padding-bottom: 70px;
+  }
+  .sd-hero {
+    background: transparent;
+    padding: 14px 20px 50px;
+  }
+  .sd-hero-text h2 { font-size: 1.2rem; }
+  .sd-layout {
+    flex-direction: column;
+    border-radius: 24px 24px 0 0;
+    background: #f8fafc;
+    margin-top: -24px;
+    z-index: 10;
+    position: relative;
+    overflow: visible;
+    min-height: calc(100vh - 180px);
+    box-shadow: 0 -6px 24px rgba(0,0,0,0.12);
+  }
+  .sd-content {
+    padding: 18px 16px;
+    border-left: none;
+  }
+  .sd-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}

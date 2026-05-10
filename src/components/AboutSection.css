@@ -1,0 +1,126 @@
+.about-section {
+  background-color: #f8fafc;
+  border: 2px solid #3b82f6;
+  border-radius: 12px;
+  padding: 25px 30px;
+  display: flex;
+  gap: 30px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.about-left {
+  display: flex;
+  gap: 20px;
+  flex: 1.2;
+  align-items: center;
+}
+
+.about-icon-container {
+  min-width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #e0f2fe;
+  border: 2px solid #0284c7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0369a1;
+}
+
+.about-text h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+  color: #0f172a;
+}
+
+.about-text p {
+  font-size: 0.85rem;
+  color: #334155;
+  line-height: 1.6;
+  font-weight: 500;
+}
+
+.about-divider {
+  width: 2px;
+  height: 80px;
+  background-color: #cbd5e1;
+}
+
+.about-right {
+  flex: 1.5;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 15px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.feature-icon {
+  min-width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background-color: #e0f2fe;
+  border: 2px solid #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+}
+
+.feature-item h4 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.feature-item p {
+  font-size: 0.8rem;
+  color: #475569;
+  font-weight: 500;
+}
+
+/* --- Mobile Responsiveness --- */
+@media (max-width: 768px) {
+  .about-section {
+    flex-direction: column;
+    border: none;
+    background: transparent;
+    padding: 10px 0;
+    gap: 20px;
+  }
+  .about-left {
+    flex-direction: column;
+    text-align: center;
+    gap: 10px;
+  }
+  .about-icon-container {
+    margin: 0 auto;
+  }
+  .about-divider {
+    display: none;
+  }
+  .about-right {
+    width: 100%;
+  }
+  .feature-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .feature-item {
+    align-items: flex-start;
+  }
+  .feature-item h4 {
+    margin-top: 0;
+  }
+}

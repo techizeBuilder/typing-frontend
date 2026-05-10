@@ -1,0 +1,128 @@
+.main-header {
+  background-color: white;
+  padding: 10px 30px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  margin-bottom: 20px;
+  position: relative;
+  border-bottom: 4px solid #e2e8f0;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1400px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 2;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.logo-image {
+  height: 80px;
+  object-fit: contain;
+}
+
+.title-container {
+  text-align: center;
+  flex: 2;
+}
+
+.title-container h1 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  color: #1e293b;
+}
+
+.title-container h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.title-divider {
+  height: 2px;
+  background-color: #cbd5e1;
+  width: 70%;
+  margin: 0 auto 10px;
+}
+
+.title-container p {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.right-graphics {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  position: relative;
+}
+
+.parliament-svg {
+  width: 150px;
+  height: 100px;
+  opacity: 0.8;
+  position: absolute;
+  right: -20px;
+  top: -10px;
+  z-index: 1;
+}
+
+/* --- Mobile Responsiveness --- */
+@media (max-width: 768px) {
+  .main-header {
+    padding: 10px;
+  }
+  .header-content {
+    flex-direction: column;
+  }
+  .title-container {
+    order: -1;
+    margin-bottom: 15px;
+    width: 100%;
+  }
+  .title-container h1 {
+    font-size: 1.2rem;
+  }
+  .title-container h2 {
+    font-size: 0.8rem;
+  }
+  .title-container p {
+    font-size: 0.8rem;
+  }
+  .title-divider {
+    width: 90%;
+  }
+  .logo-container {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .logo-image {
+    height: 60px;
+    margin-left: 10px;
+  }
+  .right-graphics {
+    position: absolute;
+    bottom: -10px;
+    right: 0;
+    width: auto;
+  }
+  .parliament-svg {
+    position: relative;
+    right: 0;
+    top: 0;
+    height: 60px;
+    width: auto;
+    opacity: 0.3;
+  }
+}

@@ -1,0 +1,365 @@
+.saas-profile-container {
+  padding: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: 'Inter', sans-serif;
+  color: #334155;
+}
+
+/* --- SaaS Layout Grid --- */
+
+.saas-grid-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.saas-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
+}
+
+.saas-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.saas-card-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+/* Buttons */
+.btn-saas-outline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  color: #0b4bcc;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-saas-outline:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.btn-saas-light {
+  background: #eff6ff;
+  color: #0b4bcc;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-saas-light:hover {
+  background: #dbeafe;
+}
+
+/* Student Profile Info */
+.saas-profile-info {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.saas-avatar-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.saas-avatar-large img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.saas-profile-details h4 {
+  margin: 0 0 6px 0;
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+
+.saas-text-muted {
+  margin: 0 0 4px 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+/* Subscription Grid */
+.saas-subscription-grid {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.subs-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subs-label {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.subs-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.text-primary {
+  color: #0b4bcc;
+}
+
+.badge-active {
+  background: #dcfce7;
+  color: #166534;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  display: inline-block;
+  text-align: center;
+}
+.badge-inactive {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  display: inline-block;
+  text-align: center;
+}
+
+/* Stats Row */
+.saas-stats-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.saas-stat-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
+}
+
+.stat-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bg-green-light { background: #dcfce7; }
+.text-green { color: #16a34a; }
+
+.bg-blue-light { background: #dbeafe; }
+.text-blue { color: #2563eb; }
+
+.bg-emerald-light { background: #d1fae5; }
+.text-emerald { color: #059669; }
+
+.bg-purple-light { background: #f3e8ff; }
+.text-purple { color: #9333ea; }
+
+.bg-orange-light { background: #ffedd5; }
+.text-orange { color: #ea580c; }
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.stat-sub {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* Forms */
+.saas-form label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.saas-form input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+  background-color: #f8fafc;
+}
+
+.saas-form input:focus {
+  outline: none;
+  border-color: #0b4bcc;
+  box-shadow: 0 0 0 3px rgba(11, 75, 204, 0.1);
+  background-color: white;
+}
+
+.form-row {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+.form-group.half {
+  flex: 1;
+}
+
+.btn-save {
+  background: #0b4bcc;
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-save:hover {
+  background: #1d4ed8;
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 1200px) {
+  .saas-stats-row {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 992px) {
+  .saas-grid-row-2 {
+    grid-template-columns: 1fr;
+  }
+  .saas-subscription-grid {
+    flex-wrap: wrap;
+    gap: 15px;
+  }
+  .saas-stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .saas-stats-row {
+    grid-template-columns: 1fr;
+  }
+  .form-row {
+    flex-direction: column;
+    gap: 15px;
+  }
+  .form-group {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Profile info: stack avatar + details */
+  .saas-profile-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  /* Stats: 2 per row on phone */
+  .saas-stats-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .saas-stat-card {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .stat-value {
+    font-size: 1.1rem;
+  }
+
+  /* Subscription grid: wrap on mobile */
+  .saas-subscription-grid {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .saas-card {
+    padding: 16px;
+  }
+}
