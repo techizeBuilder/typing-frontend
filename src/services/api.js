@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3012/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -68,16 +68,34 @@ api.interceptors.response.use(
 export const authService = {
   login: async (username, password) => {
     try {
-      const response = await api.post('/auth/login', { username, password });
-      if (response.data.access_token) {
+      // Support both phone and username login
+      const loginPayload = {
+        password: password
+      };
+      
+      // If username looks like a phone number (digits only), send as phone
+      if (/^\d+$/.test(username)) {
+        loginPayload.phone = username;
+      } else {
+        loginPayload.username = username;
+      }
+      
+      const response = await api.post('/auth/login', loginPayload);
+      if (response.data.success && response.data.access_token) {
         localStorage.setItem('token', response.data.access_token);
         localStorage.setItem('username', username);
         
-        // Decode JWT to get role (simple base64 decode for the payload)
+        // Store user info from response
+        if (response.data.user) {
+          localStorage.setItem('role', response.data.user.role);
+          localStorage.setItem('userId', response.data.user.id);
+        }
+        
+        // Also decode JWT to get additional info (backup)
         try {
           const payload = JSON.parse(atob(response.data.access_token.split('.')[1]));
-          localStorage.setItem('role', payload.role);
-          localStorage.setItem('userId', payload.sub); // Assuming payload.sub is the DB UUID
+          if (!localStorage.getItem('role')) localStorage.setItem('role', payload.role);
+          if (!localStorage.getItem('userId')) localStorage.setItem('userId', payload.sub);
           if(payload.validity_end) localStorage.setItem('validity_end', payload.validity_end);
           if(payload.permissions) localStorage.setItem('permissions', JSON.stringify(payload.permissions));
         } catch (e) {

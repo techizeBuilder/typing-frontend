@@ -14,28 +14,46 @@ const Login = () => {
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener('resize', handleResize);
+    
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    // Preserve the module type the student selected on the landing page
-    const savedModuleType = localStorage.getItem('moduleType');
-    localStorage.clear();
-    if (savedModuleType) localStorage.setItem('moduleType', savedModuleType);
+    setError(''); // Clear previous errors
+    
     try {
-      await authService.login(username, password);
+      console.log('Starting login process...');
+      const response = await authService.login(username, password);
+      console.log('Login API response:', response);
       
-      // Get role from localStorage (we set this in api.js)
-      const role = localStorage.getItem('role');
-      
-      if (role === 'Admin' || role === 'SuperAdmin' || role === 'Sub-Admin') {
-        navigate('/admin');
+      // Check if login was successful
+      if (response.success) {
+        // Get role from response or localStorage
+        const role = response.user?.role || localStorage.getItem('role');
+        const token = localStorage.getItem('token');
+        
+        console.log('Login successful - Role:', role, 'Token exists:', !!token);
+        
+        if (!token) {
+          throw new Error('Token not saved properly');
+        }
+        
+        // Use React Router navigate (no page refresh)
+        if (role === 'Admin' || role === 'SuperAdmin' || role === 'Sub-Admin') {
+          console.log('Navigating to admin dashboard...');
+          navigate('/admin', { replace: true });
+        } else {
+          console.log('Navigating to student dashboard...');
+          navigate('/dashboard', { replace: true });
+        }
       } else {
-        navigate('/dashboard');
+        throw new Error(response.message || 'Login failed');
       }
+        
     } catch (err) {
-      const msg = err.response?.data?.message || 'Login failed. Please check your credentials.';
+      console.error('Login error:', err);
+      const msg = err.response?.data?.message || err.message || 'Login failed. Please check your credentials.';
       setError(msg);
       if (err.response?.status === 401 && msg.toLowerCase().includes('inactive')) {
         window.alert('Login Blocked: ' + msg);

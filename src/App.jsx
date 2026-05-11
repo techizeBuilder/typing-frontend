@@ -26,39 +26,39 @@ import AdminProtectedRoute from './components/AdminProtectedRoute';
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
 
-        {/* Protected Student Routes */}
-        <Route element={<ProtectedRoute />}>
-          <Route path="/dashboard" element={<StudentDashboard />} />
-          <Route path="/profile" element={<StudentProfile />} />
-          <Route path="/test" element={<TestEngine />} />
-          <Route path="/steno-test" element={<StenoTestEngine />} />
-          <Route path="/available-tests" element={<AvailableTests />} />
-          <Route path="/steno-dictations" element={<StenoDictations />} />
-          <Route path="/result" element={<ResultScreen />} />
-          <Route path="/my-tests" element={<MyResults />} />
-          <Route path="/results" element={<MyResults />} />
-          <Route path="/leaderboard" element={<Leaderboard />} />
-        </Route>
-
-        {/* Admin Routes */}
-        <Route element={<AdminProtectedRoute />}>
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<AdminDashboard />} />
-            <Route path="exams" element={<AdminExams />} />
-            <Route path="content" element={<AdminChapters />} />
-            <Route path="students" element={<AdminStudents />} />
-            <Route path="messages" element={<AdminMessages />} />
-            <Route path="flash-banner" element={<AdminFlashBanner />} />
-            <Route path="staff" element={<AdminStaff />} />
+          {/* Protected Student Routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/dashboard" element={<StudentDashboard />} />
+            <Route path="/profile" element={<StudentProfile />} />
+            <Route path="/test" element={<TestEngine />} />
+            <Route path="/steno-test" element={<StenoTestEngine />} />
+            <Route path="/available-tests" element={<AvailableTests />} />
+            <Route path="/steno-dictations" element={<StenoDictations />} />
+            <Route path="/result" element={<ResultScreen />} />
+            <Route path="/my-tests" element={<MyResults />} />
+            <Route path="/results" element={<MyResults />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
           </Route>
-        </Route>
-      </Routes>
-    </BrowserRouter>
+
+          {/* Admin Routes */}
+          <Route element={<AdminProtectedRoute />}>
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="exams" element={<AdminExams />} />
+              <Route path="content" element={<AdminChapters />} />
+              <Route path="students" element={<AdminStudents />} />
+              <Route path="messages" element={<AdminMessages />} />
+              <Route path="flash-banner" element={<AdminFlashBanner />} />
+              <Route path="staff" element={<AdminStaff />} />
+            </Route>
+          </Route>
+        </Routes>
+      </BrowserRouter>
   );
 }
 
