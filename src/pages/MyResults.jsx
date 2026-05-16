@@ -2,29 +2,43 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardNav from '../components/DashboardNav';
 import Header from '../components/Header';
-import { resultService } from '../services/api';
+import { resultService, getCurrentUserUuid } from '../services/api';
 import './StudentDashboard.css';
 
 const MyResults = () => {
   const navigate = useNavigate();
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('typing'); // 'typing' or 'steno'
+  const [activeTab, setActiveTab] = useState('typing'); // 'typing', 'steno', or 'live'
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [fetchError, setFetchError] = useState('');
+  const [saveErrorBanner, setSaveErrorBanner] = useState('');
 
   useEffect(() => {
+    // Surface the most recent save error from TestEngine, if any.
+    const lastErr = sessionStorage.getItem('lastSaveError');
+    if (lastErr) {
+      setSaveErrorBanner(lastErr);
+      sessionStorage.removeItem('lastSaveError');
+    }
+
     const fetchResults = async () => {
       try {
-        const userId = localStorage.getItem('userId');
+        const userId = getCurrentUserUuid();
         if (!userId) {
-          console.warn('No user ID found, redirecting to login');
+          setFetchError('Your session is missing a valid user ID. Please log out and log in again to see your past results.');
+          setLoading(false);
           return;
         }
+        console.log('[MyResults] Fetching results for userId:', userId);
         const data = await resultService.getUserResults(userId);
-        setResults(data);
+        console.log('[MyResults] Got', data?.length ?? 0, 'results');
+        setResults(data || []);
       } catch (error) {
         console.error('Error fetching results:', error);
+        const msg = error?.response?.data?.message || error?.message || 'Could not load results.';
+        setFetchError(Array.isArray(msg) ? msg.join(', ') : msg);
       } finally {
         setLoading(false);
       }
@@ -56,8 +70,17 @@ const MyResults = () => {
   };
 
   const filteredResults = results.filter(r => {
-    const isModeMatch = activeTab === 'steno' ? r.mode?.toLowerCase().includes('steno') : !r.mode?.toLowerCase().includes('steno');
-    if (!isModeMatch) return false;
+    const isLive = r.test_type === 'Live Test';
+    const isSteno = r.mode?.toLowerCase().includes('steno');
+    let isTabMatch = false;
+    if (activeTab === 'live') {
+      isTabMatch = isLive;
+    } else if (activeTab === 'steno') {
+      isTabMatch = isSteno && !isLive;
+    } else {
+      isTabMatch = !isSteno && !isLive;
+    }
+    if (!isTabMatch) return false;
 
     if (startDate) {
       const resultDate = new Date(r.date_taken);
@@ -101,17 +124,23 @@ const MyResults = () => {
             
             <div className="reports-filters" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px' }}>
               <div className="reports-tabs" style={{ display: 'flex', gap: '10px' }}>
-                <button 
+                <button
                   style={{ padding: '8px 16px', background: activeTab === 'typing' ? '#0b4bcc' : '#f1f5f9', color: activeTab === 'typing' ? 'white' : '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: activeTab === 'typing' ? 'bold' : 'normal', fontSize: '0.9rem' }}
                   onClick={() => setActiveTab('typing')}
                 >
                   ⌨ Typing Reports
                 </button>
-                <button 
+                <button
                   style={{ padding: '8px 16px', background: activeTab === 'steno' ? '#0b4bcc' : '#f1f5f9', color: activeTab === 'steno' ? 'white' : '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: activeTab === 'steno' ? 'bold' : 'normal', fontSize: '0.9rem' }}
                   onClick={() => setActiveTab('steno')}
                 >
                   🎙 Steno Reports
+                </button>
+                <button
+                  style={{ padding: '8px 16px', background: activeTab === 'live' ? '#0b4bcc' : '#f1f5f9', color: activeTab === 'live' ? 'white' : '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: activeTab === 'live' ? 'bold' : 'normal', fontSize: '0.9rem' }}
+                  onClick={() => setActiveTab('live')}
+                >
+                  🏆 Live Reports
                 </button>
               </div>
 
@@ -145,11 +174,21 @@ const MyResults = () => {
               </div>
             </div>
             
+            {saveErrorBanner && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '10px 14px', borderRadius: '6px', marginBottom: '15px', fontSize: '0.88rem' }}>
+                <strong>⚠ Save warning:</strong> {saveErrorBanner}
+              </div>
+            )}
+            {fetchError && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '10px 14px', borderRadius: '6px', marginBottom: '15px', fontSize: '0.88rem' }}>
+                <strong>⚠ Could not load results:</strong> {fetchError}
+              </div>
+            )}
             <div className="test-list custom-result-list">
               {loading ? (
                 <p>Loading your results...</p>
               ) : filteredResults.length === 0 ? (
-                <p>No tests found matching the selected criteria.</p>
+                <p>No tests found matching the selected criteria. {results.length > 0 && '(Try switching the Typing/Steno tab or clearing the date range.)'}</p>
               ) : (
                 filteredResults.map((result) => {
                   const dateObj = new Date(result.date_taken);

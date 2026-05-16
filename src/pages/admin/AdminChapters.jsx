@@ -10,6 +10,8 @@ const AdminChapters = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [testTypeFilter, setTestTypeFilter] = useState('All');
+  const [filterDate, setFilterDate] = useState('');
   const [currentChapter, setCurrentChapter] = useState(null);
   const [audioFile, setAudioFile] = useState(null);   // raw File object for steno
   const [uploading, setUploading] = useState(false);
@@ -19,9 +21,10 @@ const AdminChapters = () => {
     test_date: new Date().toISOString().split('T')[0],
     font_group: 'English Typing',
     test_type: 'Pre-load Test',
-    exam_id: '',
+    exam_ids: [],
     content_text: '',
   });
+  const [examDropdownOpen, setExamDropdownOpen] = useState(false);
 
   useEffect(() => {
     fetchChapters();
@@ -29,16 +32,18 @@ const AdminChapters = () => {
 
   const fetchChapters = async () => {
     try {
-      const [data, examData] = await Promise.all([
-        chapterService.getChapters(),
-        examService.getExams()
-      ]);
+      const data = await chapterService.getChapters();
       setChapters(data);
-      setExams(examData);
     } catch (error) {
       console.error('Error fetching chapters:', error);
     } finally {
       setLoading(false);
+    }
+    try {
+      const examData = await examService.getExams();
+      setExams(Array.isArray(examData) ? examData : []);
+    } catch (error) {
+      console.error('Error fetching exams:', error);
     }
   };
 
@@ -72,21 +77,42 @@ const AdminChapters = () => {
   const handleEdit = (chapter) => {
     setCurrentChapter(chapter);
     setAudioFile(null);
+    const existingIds = Array.isArray(chapter.exam_ids) && chapter.exam_ids.length > 0
+      ? chapter.exam_ids
+      : (chapter.exam?.id || chapter.exam_id ? [chapter.exam?.id || chapter.exam_id] : []);
     setFormData({
       ...chapter,
-      exam_id: chapter.exam?.id || chapter.exam_id || '',
+      exam_ids: existingIds,
       test_date: new Date(chapter.test_date).toISOString().split('T')[0]
     });
     setShowForm(true);
+  };
+
+  const toggleExamId = (id) => {
+    setFormData(prev => {
+      const set = new Set(prev.exam_ids || []);
+      if (set.has(id)) set.delete(id); else set.add(id);
+      return { ...prev, exam_ids: Array.from(set) };
+    });
+  };
+
+  const toggleSelectAllExams = () => {
+    setFormData(prev => {
+      const allIds = exams.map(e => e.id);
+      const allSelected = allIds.length > 0 && allIds.every(id => (prev.exam_ids || []).includes(id));
+      return { ...prev, exam_ids: allSelected ? [] : allIds };
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setUploading(true);
     try {
-      const { id, created_at, updated_at, audio_url, exam, ...cleanData } = formData;
-      if (!cleanData.exam_id) cleanData.exam_id = null; // Handle empty selection
-      
+      const { id, created_at, updated_at, audio_url, exam, exams: _exams, ...cleanData } = formData;
+      const ids = Array.isArray(cleanData.exam_ids) ? cleanData.exam_ids.filter(Boolean) : [];
+      cleanData.exam_ids = ids;
+      cleanData.exam_id = ids.length > 0 ? ids[0] : null;
+
       let savedId = currentChapter?.id;
 
       if (currentChapter) {
@@ -107,7 +133,7 @@ const AdminChapters = () => {
       setFormData({
         chapter_no: '', name: '',
         test_date: new Date().toISOString().split('T')[0],
-        font_group: 'English Typing', test_type: 'Pre-load Test', exam_id: '', content_text: '',
+        font_group: 'English Typing', test_type: 'Pre-load Test', exam_ids: [], content_text: '',
       });
       fetchChapters();
     } catch (error) {
@@ -130,7 +156,28 @@ const AdminChapters = () => {
     <div className="admin-card">
       <header className="admin-header">
         <h2>{currentChapter ? 'Edit Chapter' : 'Add Chapter (Typing/Steno)'}</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <select
+            value={testTypeFilter}
+            onChange={(e) => setTestTypeFilter(e.target.value)}
+            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            <option value="All">All Tests</option>
+            <option value="Pre-load Test">Pre-load Test</option>
+            <option value="Live Test">Live Test</option>
+          </select>
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            title="Filter by Test Date (Live Test date wise)"
+            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+          />
+          {filterDate && (
+            <button type="button" onClick={() => setFilterDate('')} style={{ fontSize: '0.75rem', padding: '4px 8px' }}>
+              Clear Date
+            </button>
+          )}
           <input
             type="text"
             placeholder="Search matching NO or keyword..."
@@ -158,12 +205,94 @@ const AdminChapters = () => {
               </div>
               <div className="input-group">
                 <label>Assign to Exam</label>
-                <select value={formData.exam_id} onChange={(e) => setFormData({...formData, exam_id: e.target.value})}>
-                  <option value="">-- No Exam (Independent) --</option>
-                  {exams.map(exam => (
-                    <option key={exam.id} value={exam.id}>{exam.name}</option>
-                  ))}
-                </select>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setExamDropdownOpen(o => !o)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      color: '#0f172a',
+                    }}
+                  >
+                    {(() => {
+                      const selected = formData.exam_ids || [];
+                      if (selected.length === 0) return '-- No Exam (Independent) --';
+                      if (selected.length === exams.length && exams.length > 0) return 'All Exams Selected';
+                      const names = exams.filter(e => selected.includes(e.id)).map(e => e.name);
+                      if (names.length <= 2) return names.join(', ');
+                      return `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+                    })()}
+                    <span style={{ float: 'right', color: '#64748b' }}>▾</span>
+                  </button>
+                  {examDropdownOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        background: '#fff',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '4px',
+                        marginTop: '2px',
+                        maxHeight: '220px',
+                        overflowY: 'auto',
+                        zIndex: 10,
+                        boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 10px',
+                          borderBottom: '1px solid #e2e8f0',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          background: '#f8fafc',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={exams.length > 0 && exams.every(e => (formData.exam_ids || []).includes(e.id))}
+                          onChange={toggleSelectAllExams}
+                        />
+                        Select All
+                      </label>
+                      {exams.map(exam => (
+                        <label
+                          key={exam.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 10px',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={(formData.exam_ids || []).includes(exam.id)}
+                            onChange={() => toggleExamId(exam.id)}
+                          />
+                          {exam.name}
+                        </label>
+                      ))}
+                      {exams.length === 0 && (
+                        <div style={{ padding: '10px', color: '#94a3b8', fontSize: '0.85rem' }}>No exams available</div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="input-group">
                 <label>Font Group</label>
@@ -272,14 +401,48 @@ const AdminChapters = () => {
         <tbody>
           {loading ? (
             <tr><td colSpan="7">Loading...</td></tr>
-          ) : chapters.filter(c =>
-            c.font_group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(c.chapter_no).includes(searchTerm)
-          ).map((c) => (
+          ) : chapters
+            .filter(c => testTypeFilter === 'All' || c.test_type === testTypeFilter)
+            .filter(c => {
+              if (!filterDate) return true;
+              const chapDate = new Date(c.test_date).toISOString().split('T')[0];
+              return chapDate === filterDate;
+            })
+            .filter(c =>
+              !searchTerm ||
+              c.font_group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              String(c.chapter_no).includes(searchTerm)
+            ).map((c) => (
             <tr key={c.id}>
               <td>{c.id.substring(0, 8)}</td>
               <td>{c.chapter_no}</td>
-              <td>{c.exam?.name || <span style={{color: '#94a3b8'}}>None</span>}</td>
+              <td>
+                {(() => {
+                  const names = Array.isArray(c.exams) && c.exams.length > 0
+                    ? c.exams.map(e => e?.name).filter(Boolean)
+                    : (c.exam?.name ? [c.exam.name] : []);
+                  if (names.length === 0) return <span style={{color: '#94a3b8'}}>None</span>;
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {names.map((n, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            background: '#eff6ff',
+                            color: '#1e3a8a',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            border: '1px solid #bfdbfe',
+                          }}
+                        >
+                          {n}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </td>
               <td><span className={`status-badge ${c.test_type === 'Live Test' ? 'active' : 'pending'}`}>{c.test_type}</span></td>
               <td><span className="badge-control">{c.font_group}</span></td>
               <td>

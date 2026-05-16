@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { chapterService, resultService } from '../services/api';
+import { chapterService, resultService, getCurrentUserUuid } from '../services/api';
 import './TestEngine.css';
 
 
@@ -8,7 +8,7 @@ import './TestEngine.css';
 const TestEngine = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { exam, chapter: passedChapter, mode, isSelfAssessment } = location.state || {};
+  const { exam, chapter: passedChapter, mode, testType, isSelfAssessment } = location.state || {};
 
   const isStrictMode = !!exam;
   const pattern = exam?.result_pattern || null;
@@ -64,6 +64,7 @@ const TestEngine = () => {
   const MAX_PAUSES = 3;
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   // Mangal IME: track composition state to avoid double-firing on IME confirm
   const isComposingRef = useRef(false);
@@ -209,79 +210,156 @@ const TestEngine = () => {
     return 'error';
   }, [isHindiMode, pattern]);
 
-  // ─── Line/paragraph change detection + re-alignment ─────────────────────────
-  // Walks typed words against reference words.  When the current typed word is
-  // an error but the next 3-4 typed words align well to a later reference
-  // position (≥5 words ahead), a line-change is declared.  The skipped ref
-  // words are left as 'pending' (omission); typed words are re-compared from
-  // the new reference position so they show correct/half-error/error properly.
+  // ─── Word-level edit-distance alignment ─────────────────────────────────────
+  // Uses Needleman-Wunsch / Levenshtein on words to find the optimal alignment
+  // between typed and reference word sequences. Single-word insertions,
+  // deletions, and substitutions stay LOCAL — they don't cascade and turn the
+  // rest of the passage into mismatches.
   //
-  // Returns:
-  //   statuses      – re-aligned status per reference word
-  //   typedAtRef    – the typed word that was compared against refWords[i]
-  //   lineChangeCount
-  //   fullErrors / halfErrors  – re-counted from the re-aligned statuses
+  // Op costs:
+  //   match (typed == ref)            = 0
+  //   half-error (case / punctuation) = 1
+  //   substitution (different word)   = 2
+  //   insertion (extra typed word)    = 2
+  //   deletion (omitted ref word)     = 2
+  //
+  // Returns the same shape as the previous detector for drop-in compatibility:
+  //   statuses        – status for each REF word (correct | half-error | error | pending)
+  //   typedAtRef      – typed word that aligns to ref[i] (or '' if omitted)
+  //   extraTypedWords – typed words inserted between ref positions
+  //   lineChangeCount – count of "jumps" (3+ consecutive omissions in a row)
+  //   fullErrors / halfErrors – counts from the aligned statuses
   const detectLineChanges = useCallback((typedWords, refWords) => {
-    const statuses   = new Array(refWords.length).fill('pending');
-    const typedAtRef = new Array(refWords.length).fill('');
-    let lineChangeCount = 0;
-    let tIdx = 0;
-    let rIdx = 0;
-    const minSkip  = 5;
-    const checkLen = 4;
-    const minMatch = 3;
+    const T = typedWords.length;
+    const R = refWords.length;
 
-    while (tIdx < typedWords.length && rIdx < refWords.length) {
-      const s = compareWords(typedWords[tIdx], refWords[rIdx]);
-      if (s !== 'error') {
-        statuses[rIdx]   = s;
-        typedAtRef[rIdx] = typedWords[tIdx];
-        tIdx++;
-        rIdx++;
-        continue;
-      }
-
-      // Current word is an error – check for a forward line/paragraph jump
-      let jumped = false;
-      for (let lb = rIdx + minSkip; lb + checkLen <= refWords.length; lb++) {
-        if (compareWords(typedWords[tIdx], refWords[lb]) === 'error') continue;
-        let matchCount = 1;
-        for (let k = 1; k < checkLen && tIdx + k < typedWords.length; k++) {
-          if (compareWords(typedWords[tIdx + k], refWords[lb + k]) !== 'error') matchCount++;
-        }
-        if (matchCount >= minMatch) {
-          lineChangeCount++;
-          rIdx = lb;   // jump; skipped ref words stay 'pending'
-          jumped = true;
-          break;
-        }
-      }
-      if (!jumped) {
-        statuses[rIdx]   = 'error';
-        typedAtRef[rIdx] = typedWords[tIdx];
-        tIdx++;
-        rIdx++;
-      }
-      // If jumped: same tIdx re-processed against new rIdx on next iteration
+    if (R === 0) {
+      return {
+        statuses: [], typedAtRef: [], extraTypedWords: typedWords.slice(),
+        lineChangeCount: 0, fullErrors: 0, halfErrors: 0,
+      };
     }
 
-    // Remaining aligned words after last jump
-    while (tIdx < typedWords.length && rIdx < refWords.length) {
-      const s = compareWords(typedWords[tIdx], refWords[rIdx]);
-      statuses[rIdx]   = s;
-      typedAtRef[rIdx] = typedWords[tIdx];
-      tIdx++;
-      rIdx++;
+    // Cost helper
+    const wordOpCost = (typed, ref) => {
+      const cmp = compareWords(typed, ref);
+      if (cmp === 'correct')    return { cost: 0, status: 'correct' };
+      if (cmp === 'half-error') return { cost: 1, status: 'half-error' };
+      return { cost: 2, status: 'error' };
+    };
+    const INDEL_COST = 2; // insertion or deletion
+
+    // dp[i][j] = min cost to align refWords[0..i-1] with typedWords[0..j-1]
+    const dp = Array.from({ length: R + 1 }, () => new Array(T + 1).fill(0));
+    for (let i = 0; i <= R; i++) dp[i][0] = i * INDEL_COST;
+    for (let j = 0; j <= T; j++) dp[0][j] = j * INDEL_COST;
+
+    for (let i = 1; i <= R; i++) {
+      for (let j = 1; j <= T; j++) {
+        const { cost } = wordOpCost(typedWords[j - 1], refWords[i - 1]);
+        dp[i][j] = Math.min(
+          dp[i - 1][j - 1] + cost,    // match / substitution
+          dp[i - 1][j] + INDEL_COST,  // deletion (omitted ref word)
+          dp[i][j - 1] + INDEL_COST,  // insertion (extra typed word)
+        );
+      }
+    }
+
+    // Traceback to derive the alignment
+    const statuses   = new Array(R).fill('pending');
+    const typedAtRef = new Array(R).fill('');
+    const extraTypedWords = [];
+    let omissionRunLen = 0;
+    let lineChangeCount = 0;
+
+    let i = R, j = T;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0) {
+        const { cost, status } = wordOpCost(typedWords[j - 1], refWords[i - 1]);
+        if (dp[i][j] === dp[i - 1][j - 1] + cost) {
+          statuses[i - 1] = status;
+          typedAtRef[i - 1] = typedWords[j - 1];
+          omissionRunLen = 0;
+          i--; j--;
+          continue;
+        }
+      }
+      if (i > 0 && (j === 0 || dp[i][j] === dp[i - 1][j] + INDEL_COST)) {
+        // Reference word i-1 was omitted
+        statuses[i - 1] = 'pending';
+        typedAtRef[i - 1] = '';
+        omissionRunLen++;
+        if (omissionRunLen === 3) lineChangeCount++; // bigger jump
+        i--;
+        continue;
+      }
+      // Insertion: typed word j-1 has no ref counterpart
+      extraTypedWords.unshift(typedWords[j - 1]);
+      omissionRunLen = 0;
+      j--;
     }
 
     let full = 0, half = 0;
     for (const s of statuses) {
       if (s === 'error')      full++;
-      if (s === 'half-error') half++;
+      else if (s === 'half-error') half++;
+      else if (s === 'pending') full++; // omission = full mistake (Rule A.i)
     }
 
-    return { statuses, typedAtRef, lineChangeCount, fullErrors: full, halfErrors: half };
+    return {
+      statuses, typedAtRef, extraTypedWords,
+      lineChangeCount,
+      fullErrors: full, halfErrors: half,
+    };
   }, [compareWords]);
+
+  // ─── Repeated-sequence detector ─────────────────────────────────────────────
+  // Finds runs of >= MIN_REPEAT_LEN consecutive words in `typedWords` that exactly
+  // duplicate an earlier (non-overlapping) run. Returns an array of ranges:
+  //   { start, end, sourceStart, sourceEnd, text }
+  // where indices are 0-based positions inside `typedWords`. Each word inside a
+  // detected range counts as a separate full error per the user's rule
+  // ("repeated word will be counted by each word as full error").
+  const detectRepeatedSequences = useCallback((typedWords, minLen = 4) => {
+    const N = typedWords.length;
+    if (N < minLen * 2) return [];
+    const norm = typedWords.map(w => (w || '').toLowerCase());
+    const covered = new Array(N).fill(false);
+    const ranges = [];
+
+    for (let i = 0; i < N; i++) {
+      if (covered[i]) continue;
+      let bestLen = 0;
+      let bestSrcStart = -1;
+      for (let j = 0; j < i; j++) {
+        let len = 0;
+        while (
+          j + len < i &&
+          i + len < N &&
+          norm[j + len] === norm[i + len]
+        ) {
+          len++;
+        }
+        if (len > bestLen) {
+          bestLen = len;
+          bestSrcStart = j;
+        }
+      }
+      if (bestLen >= minLen) {
+        const end = i + bestLen - 1;
+        ranges.push({
+          start: i,
+          end,
+          sourceStart: bestSrcStart,
+          sourceEnd: bestSrcStart + bestLen - 1,
+          text: typedWords.slice(i, end + 1).join(' '),
+        });
+        for (let k = i; k <= end; k++) covered[k] = true;
+        i = end; // advance past the run
+      }
+    }
+    return ranges;
+  }, []);
 
   // ─── Word commit logic (shared by all modes) ────────────────────────────────
   const commitWord = useCallback((fullValue) => {
@@ -410,7 +488,23 @@ const TestEngine = () => {
     if (isPaused) { e.preventDefault(); return; } // block all input while paused
     if (!isStarted && e.key !== 'Escape') setIsStarted(true);
     const rule = settings.backspaceControl;
-    
+
+    // TAB key: prevent default focus-jump out of the textarea so typing continues.
+    // Insert a tab character at the cursor position so users can match indented passages.
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.target;
+      const start = target.selectionStart ?? target.value.length;
+      const end = target.selectionEnd ?? start;
+      const newValue = target.value.substring(0, start) + '\t' + target.value.substring(end);
+      setUserInput(newValue);
+      commitWord(newValue);
+      requestAnimationFrame(() => {
+        try { target.setSelectionRange(start + 1, start + 1); } catch (_) {}
+      });
+      return;
+    }
+
     if (e.key === 'Backspace' || e.key === 'Delete') {
       if (rule === 'No Backspace') {
         e.preventDefault();
@@ -498,24 +592,34 @@ const TestEngine = () => {
       }
     }
 
-    // Detect line/paragraph changes; re-align statuses and error counts when found
-    const lineDetect = detectLineChanges(
-      finalInput.trim().split(/\s+/).filter(Boolean),
-      words
-    );
-    const lineChangeCount      = lineDetect.lineChangeCount;
-    let   alignedTypedWords    = null;
-    if (lineChangeCount > 0) {
-      finalStatuses = lineDetect.statuses;
-      finalFull     = lineDetect.fullErrors;
-      finalHalf     = lineDetect.halfErrors;
-      alignedTypedWords = lineDetect.typedAtRef;
-    }
+    // Run word-level edit-distance alignment so single-word
+    // insertions/deletions/substitutions stay LOCAL and don't cascade into
+    // every following word being marked wrong.
+    const typedFinalWords = finalInput.trim().split(/\s+/).filter(Boolean);
+    const lineDetect = detectLineChanges(typedFinalWords, words);
+    const lineChangeCount   = lineDetect.lineChangeCount;
+    const extraTypedWords   = lineDetect.extraTypedWords || [];
+    let   alignedTypedWords = lineDetect.typedAtRef;
+
+    finalStatuses = lineDetect.statuses;
+    finalFull     = lineDetect.fullErrors + extraTypedWords.length; // A.iii addition = full mistake
+    finalHalf     = lineDetect.halfErrors;
+
+    // Detect repeated word sequences (user typed the same line twice).
+    // Each word inside a repeat counts as a full error.
+    const repeatedRanges = detectRepeatedSequences(typedFinalWords);
+    const repeatedWordCount = repeatedRanges.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
+    finalFull += repeatedWordCount;
 
     // Re-derive stats from final values so GWPM/NWPM are accurate
     const elapsed     = timeElapsed > 0 ? timeElapsed : 1;
     const minutes     = elapsed / 60;
-    const totalWords  = finalStrokes / 5;
+    // Pattern controls whether speed is counted in Words (actual word count) or Strokes (keystrokes/5).
+    // 'Words' = count actual space-delimited words typed. 'Strokes' (default) = keystrokes/5.
+    const speedCount  = pattern?.speed_count ?? 'Strokes';
+    const totalWords  = speedCount === 'Words'
+      ? typedFinalWords.length
+      : finalStrokes / 5;
     const halfEnabled = pattern?.half_mistake_enabled ?? true;
     const totalMist   = finalFull + (halfEnabled ? finalHalf * 0.5 : finalHalf);
     const pfactor     = pattern?.penalty_value ?? 1;
@@ -526,16 +630,18 @@ const TestEngine = () => {
     const finalGwpm = Math.round(totalWords / minutes);
     const finalNwpm = Math.max(0, Math.round((totalWords - penaltyWds) / minutes));
     const finalAcc  = totalWords > 0
-      ? Math.min(100, Math.round(((totalWords - totalMist) / totalWords) * 100))
+      ? Math.max(0, Math.min(100, Math.round(((totalWords - totalMist) / totalWords) * 100)))
       : 100;
 
-    const userId = localStorage.getItem('userId');
+    const userId = getCurrentUserUuid();
     const finalData = {
       gwpm: finalGwpm, nwpm: finalNwpm, accuracy: finalAcc,
       fullErrors: finalFull, halfErrors: finalHalf,
       totalStrokes: finalStrokes, timeElapsed,
       lineChangeCount,
       alignedTypedWords,
+      extraTypedWords,
+      repeatedRanges,
       testDurationMinutes: exam?.test_time_minutes || (chapter?.time_minutes) || Math.floor(timeElapsed / 60) || 10,
       exam_name: exam?.name || 'Self Practice',
       date_taken: new Date().toISOString(),
@@ -547,6 +653,7 @@ const TestEngine = () => {
         half_mistake_enabled: pattern.half_mistake_enabled,
         penalty_type: pattern.penalty_type,
         penalty_value: pattern.penalty_value,
+        speed_count: pattern.speed_count,
         qualify_on: pattern.qualify_on,
         required_speed: pattern.required_speed,
         required_accuracy: pattern.required_accuracy,
@@ -567,10 +674,16 @@ const TestEngine = () => {
     // Navigate immediately — don't block on DB save
     navigate('/result', { state: finalData });
 
-    // Save in background (non-blocking)
-    if (userId) {
-      resultService.saveResult({
-        student_id: userId, chapter_id: chapter?.id, exam_id: exam?.id,
+    // Save in background. We surface errors via console + a sessionStorage flag
+    // so the next page load can warn the student that their result wasn't stored.
+    if (!userId) {
+      console.error('[Result Save] No UUID found in JWT/localStorage — please log out and log in again.');
+      sessionStorage.setItem('lastSaveError', 'You appear to be signed in with an outdated session. Please log out and log in again so your test results can be recorded.');
+    } else {
+      const payload = {
+        student_id: userId,
+        chapter_id: chapter?.id || null,
+        exam_id: exam?.id || null,
         gwpm: finalGwpm, nwpm: finalNwpm, accuracy: finalAcc,
         total_errors: Math.round(finalFull + finalHalf * 0.5),
         full_errors: finalFull, half_errors: finalHalf,
@@ -582,6 +695,7 @@ const TestEngine = () => {
           half_mistake_enabled: pattern.half_mistake_enabled,
           penalty_type: pattern.penalty_type,
           penalty_value: pattern.penalty_value,
+          speed_count: pattern.speed_count,
           qualify_on: pattern.qualify_on,
           required_speed: pattern.required_speed,
           required_accuracy: pattern.required_accuracy,
@@ -596,9 +710,19 @@ const TestEngine = () => {
           show_accuracy: pattern.show_accuracy,
           show_penalty_words: pattern.show_penalty_words,
           show_ignorable_mistakes: pattern.show_ignorable_mistakes,
-        } : null,
-        mode: mode
-      }).catch(e => console.error('Result save error (non-fatal):', e));
+          repeated_ranges: repeatedRanges,
+        } : { repeated_ranges: repeatedRanges },
+        mode: mode || null,
+        test_type: testType || chapter?.test_type || null,
+      };
+      console.log('[Result Save] Sending payload:', { student_id: userId, chapter_id: payload.chapter_id, exam_id: payload.exam_id, gwpm: payload.gwpm, nwpm: payload.nwpm, test_type: payload.test_type });
+      resultService.saveResult(payload)
+        .then(res => { console.log('[Result Save] Saved successfully:', res?.id || res); })
+        .catch(e => {
+          const msg = e?.response?.data?.message || e?.message || 'Unknown error';
+          console.error('[Result Save] FAILED:', msg, e?.response?.data);
+          sessionStorage.setItem('lastSaveError', `Your test result could not be saved: ${Array.isArray(msg) ? msg.join(', ') : msg}`);
+        });
     }
   };
 
@@ -898,58 +1022,82 @@ const TestEngine = () => {
       />
     );
 
-    return (
-      <div className="s2-layout">
-        {/* Mobile Settings Toggle */}
-        <button className="mobile-settings-fab" onClick={() => setMobileSettingsOpen(true)}>⚙️</button>
-        {mobileSettingsOpen && <div className="mobile-settings-overlay" onClick={() => setMobileSettingsOpen(false)}></div>}
+    const userName = localStorage.getItem('username') || localStorage.getItem('userName') || 'DUMMY_1000003166';
+    const rollNumber = localStorage.getItem('userId') || localStorage.getItem('user_id') || userName;
 
-        <div className="s2-left-col">
-          <div className="s2-left-topbar">
-            <button className="s2-btn-grey" onClick={() => handleFinish()}>Submit</button>
-            <div className="s2-top-right-btns">
+    return (
+      <div className="s2-layout s2-new">
+        {/* ── Top Blue Bar ──────────────────────────────────────────── */}
+        <div className="s2new-topbar">
+          <div className="s2new-topbar-left">
+            <div className="s2new-title">{exam?.name || mode || 'English Typing'}</div>
+            <div className="s2new-font-controls" style={settingsLockStyle}>
               <button
-                className="s2-btn-grey"
-                onClick={handlePause}
-                disabled={!isPaused && pauseCount >= MAX_PAUSES}
-              >
-                {isPaused ? '▶ Resume' : `Pause(${pauseCount}/${MAX_PAUSES})`}
-              </button>
-              <button className="s2-btn-grey" onClick={toggleFullScreen}>Full Screen(esc)</button>
+                className="s2new-font-btn"
+                onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 2), testFontSize: s.sameSize ? Math.max(10, s.fontSize - 2) : s.testFontSize }))}
+              >A-</button>
+              <button className="s2new-font-btn">A</button>
+              <button
+                className="s2new-font-btn"
+                onClick={() => setSettings(s => ({ ...s, fontSize: s.fontSize + 2, testFontSize: s.sameSize ? s.fontSize + 2 : s.testFontSize }))}
+              >A+</button>
             </div>
           </div>
-          <div className="s2-box s2-passage-box" style={{ position: 'relative' }}>
+
+          <div className="s2new-topbar-center">
+            <div className="s2new-avatar"></div>
+            <div className="s2new-user-info">
+              <div><strong>NAME:</strong> {userName}</div>
+              <div><strong>ROLL NUMBER:</strong> {rollNumber}</div>
+            </div>
+          </div>
+
+          <div className="s2new-topbar-right">
+            <div className="s2new-time">{formatTime(timeLeft)} Time Left</div>
+            <div className="s2new-top-actions">
+              <button
+                className="s2new-action-btn"
+                onClick={handlePause}
+                disabled={!isPaused && pauseCount >= MAX_PAUSES}
+                title="Pause / Resume"
+              >
+                {isPaused ? '▶' : '⏸'}
+              </button>
+              <button className="s2new-action-btn" onClick={toggleFullScreen} title="Fullscreen">⛶</button>
+              <button className="s2new-action-btn" onClick={() => setMobileSettingsOpen(true)} title="Settings">⚙</button>
+              <button className="s2new-submit-btn" onClick={() => handleFinish()}>Submit</button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Passage + Typing Areas ────────────────────────────────── */}
+        <div className="s2new-body">
+          <div className="s2new-passage" style={{ position: 'relative' }}>
             {s2Passage}
             {isPaused && (
-              <div style={{
-                position: 'absolute', inset: 0,
-                background: 'rgba(15,23,42,0.7)',
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                borderRadius: '6px', gap: '10px', zIndex: 10
-              }}>
+              <div className="s2new-pause-overlay">
                 <div style={{ fontSize: '2rem' }}>⏸</div>
                 <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
-                <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Click Resume to continue</div>
+                <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Click Resume to continue</div>
               </div>
             )}
           </div>
-          <div className="s2-box s2-input-box">
+          <div className="s2new-input-area">
             {s2Textarea}
           </div>
-          <button className="s2-btn-submit-main mobile-only mobile-submit-test" onClick={() => handleFinish()}>Submit Test</button>
         </div>
 
-        <div className={`s2-right-col ${mobileSettingsOpen ? 'open' : ''}`} style={isFullscreen ? { display: 'none' } : {}}>
-          <button className="s2-btn-submit-main desktop-only" onClick={() => handleFinish()}>Submit Test</button>
-          <div className="s2-timer-box">
-            {formatTime(timeLeft)} Time Left
+        {/* ── Settings Drawer (hidden by default) ───────────────────── */}
+        {mobileSettingsOpen && <div className="mobile-settings-overlay" onClick={() => setMobileSettingsOpen(false)}></div>}
+        <div className={`s2new-drawer ${mobileSettingsOpen ? 'open' : ''}`}>
+          <div className="s2new-drawer-head">
+            <span>Settings</span>
+            <button className="s2new-drawer-close" onClick={() => setMobileSettingsOpen(false)}>✕</button>
           </div>
-
           <SettingsLockBanner />
           <div className="s2-card" style={settingsLockStyle}>
             <div className="s2-card-title">
-              <span className="s2-gear">⚙</span> Settings( Only For Practice )
+              <span className="s2-gear">⚙</span> Settings (Only For Practice)
             </div>
             <div className="s2-card-content">
               <label className="s2-checkbox-label">
@@ -990,8 +1138,292 @@ const TestEngine = () => {
               <div className="s2-red-note">Only For Practice</div>
             </div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Screen 1 (CRPF Two-Column) Render ─────────────────────────────────────
+  if (screenType === 'Screen-1') {
+    const s1Passage = settings.paperMode ? (
+      <div style={{ textAlign: 'center', marginTop: '40px' }}>
+        <h3 style={{ color: '#64748b' }}>📄 PAPER MODE ACTIVE</h3>
+        <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Please read the text from your physical printed paper.</p>
+      </div>
+    ) : (
+      <div className="s1new-passage-text" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
+        <div className="text-display">{renderWords()}</div>
+      </div>
+    );
+
+    const s1Textarea = (
+      <textarea
+        className="s1new-typing-input"
+        style={{ fontFamily: hindiFontFamily, fontSize: `${settings.fontSize}px` }}
+        autoFocus
+        value={userInput}
+        onKeyDown={handleEnglishKeyDown}
+        onChange={isPaused ? undefined : (isMangal ? handleMangalChange : handleEnglishChange)}
+        onCompositionStart={() => { isComposingRef.current = true; }}
+        onCompositionEnd={isMangal ? handleCompositionEnd : undefined}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
+        lang={isMangal ? 'hi' : 'en'}
+        disabled={timeLeft === 0}
+        readOnly={isPaused}
+        placeholder="Start Typing Here.."
+        rows={5}
+      />
+    );
+
+    return (
+      <div className="s1new-layout">
+        {/* Mobile Settings Toggle */}
+        <button className="mobile-settings-fab" onClick={() => setMobileSettingsOpen(true)}>⚙️</button>
+        {mobileSettingsOpen && <div className="mobile-settings-overlay" onClick={() => setMobileSettingsOpen(false)}></div>}
+
+        {/* ── Left main card ────────────────────────────────────── */}
+        <div className="s1new-main">
+          <div className="s1new-toolbar">
+            <button className="s1new-blue-btn s1new-btn-submit" onClick={() => handleFinish()}>Submit</button>
+            <div className="s1new-toolbar-right">
+              <button
+                className="s1new-blue-btn"
+                onClick={handlePause}
+                disabled={!isPaused && pauseCount >= MAX_PAUSES}
+              >
+                {isPaused ? '▶ Resume' : `Pause(${pauseCount}/${MAX_PAUSES})`}
+              </button>
+              <button className="s1new-blue-btn" onClick={toggleFullScreen}>
+                {isFullscreen ? 'Normal Screen(esc)' : 'Full Screen(esc)'}
+              </button>
+            </div>
+          </div>
+
+          <div className="s1new-passage-box" style={{ position: 'relative' }}>
+            {s1Passage}
+            {isPaused && (
+              <div className="s1new-pause-overlay">
+                <div style={{ fontSize: '2rem' }}>⏸</div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
+                <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Click Resume to continue</div>
+              </div>
+            )}
+          </div>
+
+          <div className="s1new-input-box">
+            {s1Textarea}
+          </div>
+        </div>
+
+        {/* ── Right sidebar ─────────────────────────────────────── */}
+        <div className={`s1new-sidebar ${mobileSettingsOpen ? 'open' : ''}`} style={isFullscreen ? { display: 'none' } : {}}>
+          <button className="s1new-blue-btn s1new-side-submit" onClick={() => handleFinish()}>Submit</button>
+
+          <div className="s1new-time-card">
+            {formatTime(timeLeft)} Time Left
+          </div>
+
+          <SettingsLockBanner />
+
+          <div className="s1new-card" style={settingsLockStyle}>
+            <div className="s1new-card-title">
+              <span className="s1new-gear">⚙</span> Settings( Only For Practice )
+            </div>
+            <label className="s1new-checkbox-label">
+              <input
+                type="checkbox"
+                checked={settings.sameSize}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setSettings(s => ({ ...s, sameSize: checked, ...(checked ? { testFontSize: s.fontSize } : {}) }));
+                }}
+              />
+              Same Size In Both Boxes
+            </label>
+            <div className="s1new-font-row">
+              <button
+                className="s1new-font-btn minus"
+                onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 2), testFontSize: s.sameSize ? Math.max(10, s.fontSize - 2) : s.testFontSize }))}
+              >A-</button>
+              <span className="s1new-font-value">{settings.fontSize}</span>
+              <button
+                className="s1new-font-btn plus"
+                onClick={() => setSettings(s => ({ ...s, fontSize: s.fontSize + 2, testFontSize: s.sameSize ? s.fontSize + 2 : s.testFontSize }))}
+              >A+</button>
+            </div>
+            <label className="s1new-checkbox-label">
+              <input type="checkbox" checked={settings.autoScroll} onChange={(e) => setSettings({ ...settings, autoScroll: e.target.checked })} />
+              Auto Scroll
+            </label>
+            <label className="s1new-checkbox-label">
+              <input type="checkbox" checked={settings.highlightWord} onChange={(e) => setSettings({ ...settings, highlightWord: e.target.checked })} />
+              Highlight Word
+            </label>
+            <label className="s1new-checkbox-label">
+              <input type="checkbox" checked={settings.highlightError} onChange={(e) => setSettings({ ...settings, highlightError: e.target.checked })} />
+              Highlight Error
+            </label>
+          </div>
+
+          <div className="s1new-card" style={settingsLockStyle}>
+            <div className="s1new-card-title">
+              <span className="s1new-gear">⚙</span> Backspace Settings
+            </div>
+            <label className="s1new-radio-label">
+              <input type="checkbox" checked={settings.backspaceControl === 'No Backspace'} onChange={() => setSettings({ ...settings, backspaceControl: 'No Backspace' })} />
+              No Backspace
+            </label>
+            <label className="s1new-radio-label">
+              <input type="checkbox" checked={settings.backspaceControl === 'Current Word Backspace'} onChange={() => setSettings({ ...settings, backspaceControl: 'Current Word Backspace' })} />
+              Current Word Backspace
+            </label>
+            <label className="s1new-radio-label">
+              <input type="checkbox" checked={settings.backspaceControl === 'Two Word Backspace' || settings.backspaceControl === 'Two Words Backspace'} onChange={() => setSettings({ ...settings, backspaceControl: 'Two Word Backspace' })} />
+              Two Word Backspace
+            </label>
+            <label className="s1new-radio-label">
+              <input type="checkbox" checked={settings.backspaceControl === 'Full Backspace'} onChange={() => setSettings({ ...settings, backspaceControl: 'Full Backspace' })} />
+              Full Backspace
+            </label>
+            <div className="s1new-practice-note">Only For Practice</div>
+          </div>
+
           <button className="btn-close-settings-mobile mobile-only" onClick={() => setMobileSettingsOpen(false)}>Save Settings</button>
         </div>
+      </div>
+    );
+  }
+
+  // ─── Screen 3 (SSC-style Full Width) Render ────────────────────────────────
+  if (screenType === 'Screen-3') {
+    const s3FontFamily = (isKrutiDev || isMangal || isRemington)
+      ? hindiFontFamily
+      : (settings.s3Font === 'Courier New' ? "'Courier New', monospace" : "'Calibri', 'Segoe UI', sans-serif");
+
+    const s3Passage = settings.paperMode ? (
+      <div style={{ textAlign: 'center', marginTop: '40px' }}>
+        <h3 style={{ color: '#64748b' }}>📄 PAPER MODE ACTIVE</h3>
+        <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Please read the text from your physical printed paper.</p>
+      </div>
+    ) : (
+      <div className="s3new-text" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: s3FontFamily }}>
+        <div className="text-display">{renderWords()}</div>
+      </div>
+    );
+
+    const s3Textarea = (
+      <textarea
+        className="s3new-typing-input"
+        style={{ fontFamily: s3FontFamily, fontSize: `${settings.fontSize}px` }}
+        autoFocus
+        value={userInput}
+        onKeyDown={handleEnglishKeyDown}
+        onChange={isPaused ? undefined : (isMangal ? handleMangalChange : handleEnglishChange)}
+        onCompositionStart={() => { isComposingRef.current = true; }}
+        onCompositionEnd={isMangal ? handleCompositionEnd : undefined}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
+        lang={isMangal ? 'hi' : 'en'}
+        disabled={timeLeft === 0}
+        readOnly={isPaused}
+        placeholder="Start Typing Here.."
+        rows={5}
+      />
+    );
+
+    return (
+      <div className="s3new-layout">
+        <div className="s3new-frame">
+          {/* Top bar */}
+          <div className="s3new-topbar">
+            <div className="s3new-topbar-left">
+              <button
+                className="s3new-blue-btn"
+                onClick={() => setShowInstructions(s => !s)}
+              >
+                How To Type This
+              </button>
+              <label className="s3new-radio">
+                <input
+                  type="radio"
+                  name="s3-font"
+                  checked={(settings.s3Font || 'Calibri') === 'Calibri'}
+                  onChange={() => setSettings(s => ({ ...s, s3Font: 'Calibri' }))}
+                />
+                <span>Calibri</span>
+              </label>
+              <label className="s3new-radio">
+                <input
+                  type="radio"
+                  name="s3-font"
+                  checked={settings.s3Font === 'Courier New'}
+                  onChange={() => setSettings(s => ({ ...s, s3Font: 'Courier New' }))}
+                />
+                <span>Courier New</span>
+              </label>
+            </div>
+
+            <div className="s3new-topbar-center">
+              <span className="s3new-time-label">Remaining Time:</span>
+              <span className="s3new-time-value">{formatTime(timeLeft)}</span>
+            </div>
+
+            <div className="s3new-topbar-right">
+              <button
+                className="s3new-blue-btn"
+                onClick={() => { if (!isStarted) setIsStarted(true); }}
+                disabled={isStarted}
+              >
+                {isStarted ? 'Started' : 'Start'}
+              </button>
+              <button className="s3new-blue-btn" onClick={toggleFullScreen}>
+                {isFullscreen ? 'Normal Screen(esc)' : 'Full Screen(esc)'}
+              </button>
+            </div>
+          </div>
+
+          {/* Passage card */}
+          <div className="s3new-card s3new-passage-card" style={{ position: 'relative' }}>
+            {s3Passage}
+            {isPaused && (
+              <div className="s3new-pause-overlay">
+                <div style={{ fontSize: '2rem' }}>⏸</div>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
+              </div>
+            )}
+          </div>
+
+          {/* Input card */}
+          <div className="s3new-card s3new-input-card">
+            {s3Textarea}
+          </div>
+
+          {/* Submit at bottom */}
+          <div className="s3new-submit-row">
+            <button className="s3new-submit-btn" onClick={() => handleFinish()}>Submit Test</button>
+          </div>
+        </div>
+
+        {showInstructions && (
+          <div className="s3new-modal-overlay" onClick={() => setShowInstructions(false)}>
+            <div className="s3new-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="s3new-modal-head">
+                <span>How To Type This</span>
+                <button className="s3new-modal-close" onClick={() => setShowInstructions(false)}>✕</button>
+              </div>
+              <ul className="s3new-modal-list">
+                <li>Read the passage shown in the upper box.</li>
+                <li>Click <strong>Start</strong> to begin the timer, then type the passage in the lower box.</li>
+                <li>Use the radio buttons to switch between <em>Calibri</em> and <em>Courier New</em>.</li>
+                <li>Press <strong>esc</strong> or click <em>Normal Screen</em> to exit full screen.</li>
+                <li>Click <strong>Submit Test</strong> when you're done — the result will be saved automatically.</li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

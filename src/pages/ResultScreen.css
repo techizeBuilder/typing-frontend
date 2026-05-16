@@ -758,3 +758,60 @@
   .passage-buttons { flex-wrap: wrap; }
 }
 
+/* ── Repeated Lines Section ─────────────────────────────── */
+.repeated-lines-section {
+  margin: 18px 0;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 8px;
+  padding: 14px 18px;
+}
+
+.repeated-lines-title {
+  color: #b45309;
+  font-size: 1rem;
+  margin: 0 0 6px 0;
+  font-weight: 700;
+}
+
+.repeated-lines-note {
+  color: #78350f;
+  font-size: 0.85rem;
+  margin: 0 0 12px 0;
+}
+
+.repeated-lines-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  background: #ffffff;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.repeated-lines-table th,
+.repeated-lines-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #fed7aa;
+  text-align: left;
+  vertical-align: top;
+}
+
+.repeated-lines-table th {
+  background: #fed7aa;
+  color: #7c2d12;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.repeated-lines-table tr:last-child td {
+  border-bottom: none;
+}
+
+.repeated-lines-text {
+  max-width: 420px;
+  word-break: break-word;
+  font-style: italic;
+  color: #1f2937;
+}
+

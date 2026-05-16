@@ -65,6 +65,24 @@ api.interceptors.response.use(
   }
 );
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const getCurrentUserUuid = () => {
+  // Prefer the JWT 'sub' claim because it's guaranteed to be the database UUID
+  // regardless of what shape the backend returns in the login response body.
+  const token = localStorage.getItem('token');
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload?.sub && UUID_REGEX.test(payload.sub)) {
+        return payload.sub;
+      }
+    } catch (_) { /* fall through */ }
+  }
+  const stored = localStorage.getItem('userId');
+  return UUID_REGEX.test(stored || '') ? stored : null;
+};
+
 export const authService = {
   login: async (username, password) => {
     try {
@@ -72,34 +90,37 @@ export const authService = {
       const loginPayload = {
         password: password
       };
-      
+
       // If username looks like a phone number (digits only), send as phone
       if (/^\d+$/.test(username)) {
         loginPayload.phone = username;
       } else {
         loginPayload.username = username;
       }
-      
+
       const response = await api.post('/auth/login', loginPayload);
       if (response.data.success && response.data.access_token) {
         localStorage.setItem('token', response.data.access_token);
         localStorage.setItem('username', username);
-        
-        // Store user info from response
+
         if (response.data.user) {
           localStorage.setItem('role', response.data.user.role);
-          localStorage.setItem('userId', response.data.user.id);
         }
-        
-        // Also decode JWT to get additional info (backup)
+
+        // Decode JWT to extract the DB UUID (payload.sub). This is the source of
+        // truth — the response body's user.id may be the login-id depending on
+        // backend version. Always overwrite userId so stale (pre-fix) localStorage
+        // values get cleaned up on the next login.
         try {
           const payload = JSON.parse(atob(response.data.access_token.split('.')[1]));
-          if (!localStorage.getItem('role')) localStorage.setItem('role', payload.role);
-          if (!localStorage.getItem('userId')) localStorage.setItem('userId', payload.sub);
-          if(payload.validity_end) localStorage.setItem('validity_end', payload.validity_end);
-          if(payload.permissions) localStorage.setItem('permissions', JSON.stringify(payload.permissions));
+          if (payload.sub) localStorage.setItem('userId', payload.sub);
+          if (!localStorage.getItem('role') && payload.role) localStorage.setItem('role', payload.role);
+          if (payload.validity_end) localStorage.setItem('validity_end', payload.validity_end);
+          if (payload.permissions) localStorage.setItem('permissions', JSON.stringify(payload.permissions));
         } catch (e) {
           console.error('Error decoding token:', e);
+          // Fall back to the response body if the JWT decode failed
+          if (response.data.user?.id) localStorage.setItem('userId', response.data.user.id);
         }
       }
       return response.data;
@@ -253,6 +274,10 @@ export const resultService = {
   },
   getLeaderboard: async () => {
     const response = await api.get('/results/leaderboard');
+    return response.data;
+  },
+  getChapterRank: async (chapterId, studentId) => {
+    const response = await api.get('/results/rank', { params: { chapterId, studentId } });
     return response.data;
   }
 };

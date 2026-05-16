@@ -2,19 +2,24 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DashboardNav from '../components/DashboardNav';
 import Header from '../components/Header';
-import { chapterService, userService } from '../services/api';
+import { chapterService, userService, resultService, getCurrentUserUuid } from '../services/api';
 import './StudentDashboard.css';
 import './AvailableTests.css';
+
+const MAX_REATTEMPTS = 3;
 
 const AvailableTests = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  
+
   const { selectedMode, testType, selectedExam } = location.state || {};
   const [chapters, setChapters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [userProfile, setUserProfile] = useState(null);
+  const [attemptsByChapter, setAttemptsByChapter] = useState({});
+  const [resultsByChapter, setResultsByChapter] = useState({});
+  const [rankByChapter, setRankByChapter] = useState({});
 
   const moduleType = localStorage.getItem('moduleType') || 'typing';
 
@@ -30,16 +35,97 @@ const AvailableTests = () => {
   const fetchChapters = async () => {
     try {
       setLoading(true);
-      const [data, profileData] = await Promise.all([
+      const userId = getCurrentUserUuid() || localStorage.getItem('userId');
+      const [data, profileData, userResults] = await Promise.all([
         chapterService.getChapters(selectedMode, testType, selectedExam.id),
-        userService.getProfile().catch(() => null)
+        userService.getProfile().catch(() => null),
+        userId ? resultService.getUserResults(userId).catch(() => []) : Promise.resolve([])
       ]);
       setChapters(data);
       if (profileData) setUserProfile(profileData);
+
+      // Track attempts + best result per chapter for the current user
+      const counts = {};
+      const bestByChapter = {};
+      (userResults || []).forEach(r => {
+        if (!r.chapter_id) return;
+        counts[r.chapter_id] = (counts[r.chapter_id] || 0) + 1;
+        const prev = bestByChapter[r.chapter_id];
+        if (!prev || Number(r.nwpm) > Number(prev.nwpm)) {
+          bestByChapter[r.chapter_id] = r;
+        }
+      });
+      setAttemptsByChapter(counts);
+      setResultsByChapter(bestByChapter);
+
+      // Fetch rank for each chapter the user has attempted
+      if (userId) {
+        const rankEntries = await Promise.all(
+          Object.keys(bestByChapter).map(async (chapterId) => {
+            try {
+              const info = await resultService.getChapterRank(chapterId, userId);
+              return [chapterId, info];
+            } catch {
+              return [chapterId, null];
+            }
+          })
+        );
+        const ranks = {};
+        rankEntries.forEach(([id, info]) => { if (info) ranks[id] = info; });
+        setRankByChapter(ranks);
+      }
     } catch (error) {
       console.error('Error fetching chapters:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleViewResult = (chapter) => {
+    const r = resultsByChapter[chapter.id];
+    if (!r) return;
+    navigate('/result', {
+      state: {
+        gwpm: r.gwpm,
+        nwpm: r.nwpm,
+        accuracy: r.accuracy,
+        fullErrors: r.full_errors,
+        halfErrors: r.half_errors,
+        totalStrokes: r.total_strokes,
+        timeElapsed: r.time_elapsed,
+        exam_name: r.exam?.name || selectedExam?.name || 'Live Test',
+        date_taken: r.date_taken,
+        mode: r.mode,
+        userInput: r.user_input,
+        typedText: r.user_input,
+        referenceWords: r.reference_words || [],
+        referenceText: r.reference_words ? r.reference_words.join(' ') : '',
+        wordStatuses: r.word_statuses || [],
+        pattern: r.pattern_data,
+      },
+    });
+  };
+
+  const handleReAttempt = () => {
+    if (filteredChapters.length === 0) {
+      alert('No tests available to re-attempt.');
+      return;
+    }
+    // Find a chapter the user has already attempted but hasn't hit the limit on
+    const eligible = filteredChapters.find(c => {
+      const used = attemptsByChapter[c.id] || 0;
+      return used > 0 && used < MAX_REATTEMPTS;
+    });
+    if (eligible) {
+      handleStartTest(eligible);
+      return;
+    }
+    // Otherwise just (re)start the first available
+    const firstUnlocked = filteredChapters.find((_, idx) => idx < unlockedCount);
+    if (firstUnlocked) {
+      handleStartTest(firstUnlocked);
+    } else {
+      alert('You have used all your re-attempts. Please contact your administrator.');
     }
   };
 
@@ -138,22 +224,25 @@ const AvailableTests = () => {
                     <th>Exam end</th>
                     <th>Language</th>
                     <th>Duration</th>
-                    <th>Rank</th>
-                    <th>Result</th>
+                    {isLiveTest && <th>Rank</th>}
+                    {isLiveTest && <th>Result</th>}
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredChapters.length === 0 ? (
                     <tr>
-                      <td colSpan="10">
+                      <td colSpan={isLiveTest ? 10 : 8}>
                         {isLiveTest
                           ? `No live chapters found for ${selectedMode} on this date.`
                           : `No exercises found for ${selectedMode}.`}
                       </td>
                     </tr>
                   ) : (
-                    filteredChapters.map((chapter, index) => (
+                    filteredChapters.map((chapter, index) => {
+                      const userResult = resultsByChapter[chapter.id];
+                      const rankInfo = rankByChapter[chapter.id];
+                      return (
                       <tr key={chapter.id}>
                         <td>{String(index + 1).padStart(2, '0')}</td>
                         <td>{selectedExam?.id?.substring(0, 5) || '76299'}</td>
@@ -162,14 +251,31 @@ const AvailableTests = () => {
                         <td>11:59 PM</td>
                         <td>{selectedMode.includes('Hindi') ? 'Hindi' : 'English'}</td>
                         <td>{selectedExam?.test_time_minutes} Min</td>
-                        <td>-</td>
-                        <td>-</td>
+                        {isLiveTest && (
+                          <td>
+                            {rankInfo && rankInfo.rank
+                              ? <span style={{ fontWeight: 600, color: '#0b4bcc' }}>{rankInfo.rank}{rankInfo.total ? ` / ${rankInfo.total}` : ''}</span>
+                              : '-'}
+                          </td>
+                        )}
+                        {isLiveTest && (
+                          <td>
+                            {userResult ? (
+                              <button
+                                onClick={() => handleViewResult(chapter)}
+                                style={{ background: '#0b4bcc', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                              >
+                                View
+                              </button>
+                            ) : '-'}
+                          </td>
+                        )}
                         <td>
                           {index < unlockedCount ? (
                             <button className="btn-start-table" onClick={() => handleStartTest(chapter)}>Start</button>
                           ) : (
                             <button className="btn-locked-table">
-                              Locked 
+                              Locked
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
@@ -178,7 +284,8 @@ const AvailableTests = () => {
                           )}
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -220,24 +327,41 @@ const AvailableTests = () => {
             </div>
           </div>
 
-          <div className="reattempt-banner">
-            <div className="reattempt-left">
-              <div className="reattempt-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                  <path d="M3 3v5h5"></path>
-                </svg>
+          {isLiveTest && (() => {
+            // Compute attempts used across visible chapters
+            const visibleIds = filteredChapters.map(c => c.id);
+            const attemptsUsed = visibleIds.reduce((sum, id) => sum + (attemptsByChapter[id] || 0), 0);
+            const maxAttemptsTotal = Math.max(1, filteredChapters.length) * MAX_REATTEMPTS;
+            const remaining = Math.max(0, maxAttemptsTotal - attemptsUsed);
+            const canReattempt = remaining > 0 && filteredChapters.length > 0;
+            return (
+              <div className="reattempt-banner">
+                <div className="reattempt-left">
+                  <div className="reattempt-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                      <path d="M3 3v5h5"></path>
+                    </svg>
+                  </div>
+                  <div className="reattempt-text">
+                    <h3>Re-attempt Option</h3>
+                    <p>You Can Re-Attempt A Test Upto {MAX_REATTEMPTS} Times</p>
+                  </div>
+                </div>
+                <div className="reattempt-right">
+                  <div className="attempts-left">Attempts Left: {remaining}/{maxAttemptsTotal}</div>
+                  <button
+                    className="btn-reattempt"
+                    onClick={handleReAttempt}
+                    disabled={!canReattempt}
+                    style={!canReattempt ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                  >
+                    Re-Attempt
+                  </button>
+                </div>
               </div>
-              <div className="reattempt-text">
-                <h3>Re-attempt Option</h3>
-                <p>You Can Re-Attempt A Test Upto 3 Times</p>
-              </div>
-            </div>
-            <div className="reattempt-right">
-              <div className="attempts-left">Attempts Left: 2/3</div>
-              <button className="btn-reattempt">Re-Attempt</button>
-            </div>
-          </div>
+            );
+          })()}
 
         </div>
       </div>
