@@ -18,7 +18,7 @@ const PrintSheet = ({
   showTotalErrors, showCorrectWords, showGrossSpeed, showNetSpeed,
   showAccuracy, showPenaltyWords, showIgnorableMistakes,
   userInput, referenceWords, wordStatuses, typedText, referenceText, isStenoResult,
-  lineChangeCount = 0, alignedTypedWords = null,
+  lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
 }) => {
   const typedWordsPrt = userInput ? userInput.trim().split(/\s+/).filter(Boolean) : [];
   const totalTypedWords = typedWordsPrt.length;
@@ -40,7 +40,9 @@ const PrintSheet = ({
     });
   };
 
-  const extraWords = typedWordsPrt.slice(referenceWords ? referenceWords.length : 0);
+  const extraWords = extraTypedWords && extraTypedWords.length > 0
+    ? extraTypedWords.slice()
+    : typedWordsPrt.slice(referenceWords ? referenceWords.length : 0);
 
   const totalMistakesFormula = halfMistakeEnabled
     ? `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`
@@ -304,7 +306,7 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   fullErrors = 0, halfErrors = 0, totalStrokes = 0, timeElapsed = 600,
   testDurationMinutes = 10,
   netSpeedCalculated = 0, grossSpeedCalculated = 0, accuracy = 0,
-  lineChangeCount = 0, alignedTypedWords = null,
+  lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
 }) => {
   const [view, setView] = React.useState(null);
   const [showCat, setShowCat] = React.useState(null);
@@ -313,7 +315,13 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   // When a line change was detected, use re-aligned word-at-position instead of raw index
   const wordAt = (i) => alignedTypedWords ? (alignedTypedWords[i] || '') : (typedWords[i] || '');
 
-  const spellingWords = [], omissionWords = [], additionWords = typedWords.slice(referenceWords.length), capWords = [], punctWords = [];
+  // Addition errors: prefer alignment-derived extras (insertions anywhere in the typed stream),
+  // fall back to the simple "extra at end" heuristic.
+  const additionWords = extraTypedWords && extraTypedWords.length > 0
+    ? extraTypedWords.slice()
+    : typedWords.slice(referenceWords.length);
+
+  const spellingWords = [], omissionWords = [], capWords = [], punctWords = [];
   referenceWords.forEach((refWord, i) => {
     const status = wordStatuses[i] || 'pending';
     const typed = wordAt(i);
@@ -434,12 +442,12 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
         <div className="pa-stat-card">
           <div className="pa-card-title">TYPING BREAKDOWN</div>
           {[
-            {label:'Total Keystrokes',    val:totalStrokes,                       color:''},
+            {label:'Typed Keystrokes',    val:totalStrokes,                       color:''},
             {label:'Correct Keystrokes',  val:correctStrokes,                     color:'#16a34a'},
             {label:'Wrong Keystrokes',    val:totalStrokes-correctStrokes,        color:'#ea580c'},
             {label:'Errors per Minute',   val:(totalErrors/timeMin).toFixed(1),   color:''},
-            {label:'Avg Keys per Word',   val:'5.00',                             color:''},
-            {label:'Spacebar Pressed',    val:Math.round(totalStrokes/5),         color:''},
+            {label:'Avg Keys per Word',   val:typedWords.length > 0 ? (totalStrokes / typedWords.length).toFixed(2) : '5.00', color:''},
+            {label:'Spacebar Pressed',    val:Math.max(0, typedWords.length - 1), color:''},
           ].map(({label,val,color})=>(
             <div className="pa-bd-row" key={label}>
               <span>{label}</span>
@@ -562,7 +570,16 @@ const ResultScreen = () => {
     pattern,
     userInput = '', referenceWords = [], wordStatuses = [],
     lineChangeCount = 0, alignedTypedWords = null,
+    extraTypedWords = null,
+    repeatedRanges: stateRepeatedRanges = null,
   } = location.state || {};
+
+  // Repeated word ranges may arrive directly (fresh test) or live inside
+  // pattern_data when viewing a past result loaded from the DB.
+  const repeatedRanges = Array.isArray(stateRepeatedRanges) && stateRepeatedRanges.length > 0
+    ? stateRepeatedRanges
+    : (Array.isArray(location.state?.pattern?.repeated_ranges) ? location.state.pattern.repeated_ranges : []);
+  const repeatedWordCount = repeatedRanges.reduce((sum, r) => sum + ((r.end ?? 0) - (r.start ?? 0) + 1), 0);
 
   const isStenoResult = !!(typedText && referenceText);
 
@@ -596,14 +613,18 @@ const ResultScreen = () => {
   const timeTakenStr = formatTime(timeElapsed);
   const timeMinutes = timeElapsed > 0 ? timeElapsed / 60 : 1;
 
-  // ─── Pattern-driven Calculations ─────────────────────────────────────────────
-  // Stroke-based word count — used for GWPM/NWPM speed formulas (industry standard)
-  const totalWords           = parseFloat((totalStrokes / 5).toFixed(2));
-  const grossSpeedCalculated = parseFloat((totalWords / timeMinutes).toFixed(2));
-
   // Actual space-delimited word counts — shown in the display cards
   const actualTypedWordCount   = userInput.trim().split(/\s+/).filter(Boolean).length;
   const actualCorrectWordCount = wordStatuses.filter(s => s === 'correct').length;
+
+  // ─── Pattern-driven Calculations ─────────────────────────────────────────────
+  // Pattern controls whether speed counts in Words or Strokes.
+  // 'Words' = actual typed word count. 'Strokes' = totalStrokes/5 (industry standard).
+  const speedCount = pattern?.speed_count ?? 'Strokes';
+  const totalWords = speedCount === 'Words'
+    ? actualTypedWordCount
+    : parseFloat((totalStrokes / 5).toFixed(2));
+  const grossSpeedCalculated = parseFloat((totalWords / timeMinutes).toFixed(2));
 
   const halfMistakeEnabled = pattern?.half_mistake_enabled ?? true;
   
@@ -754,6 +775,7 @@ const ResultScreen = () => {
           isStenoResult={isStenoResult}
           lineChangeCount={lineChangeCount}
           alignedTypedWords={alignedTypedWords}
+          extraTypedWords={extraTypedWords}
         />
       </div>
 
@@ -935,7 +957,11 @@ const ResultScreen = () => {
               <div className="stat-line">
                 <span className="stat-label">Total Words Typed =</span>
                 <span className="stat-val">{totalWords}</span>
-                <span className="stat-formula">[{totalStrokes} Keystrokes / 5]</span>
+                <span className="stat-formula">
+                  {speedCount === 'Words'
+                    ? `[${actualTypedWordCount} actual words typed]`
+                    : `[${totalStrokes} Keystrokes / 5]`}
+                </span>
               </div>
             )}
             {showGrossSpeed && (
@@ -981,6 +1007,43 @@ const ResultScreen = () => {
           <p>* Punctuation and Capital/Small letter mistakes count as Half Mistakes; spelling mistakes count as Full Mistakes.</p>
         </div>
 
+        {/* ── Repeated Lines Section ───────────────────── */}
+        {repeatedRanges.length > 0 && (
+          <div className="repeated-lines-section">
+            <h3 className="repeated-lines-title">
+              ⚠ Repeated Lines Detected ({repeatedWordCount} word{repeatedWordCount !== 1 ? 's' : ''} counted as full errors)
+            </h3>
+            <p className="repeated-lines-note">
+              The following typed segments duplicate an earlier portion of your typing. Each repeated word is counted as one full error.
+            </p>
+            <table className="repeated-lines-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Repeated Range</th>
+                  <th>Original Range</th>
+                  <th>Words</th>
+                  <th>Repeated Text</th>
+                </tr>
+              </thead>
+              <tbody>
+                {repeatedRanges.map((r, idx) => {
+                  const len = (r.end - r.start + 1);
+                  return (
+                    <tr key={idx}>
+                      <td>{idx + 1}</td>
+                      <td>Words {r.start + 1}–{r.end + 1}</td>
+                      <td>Words {r.sourceStart + 1}–{r.sourceEnd + 1}</td>
+                      <td>{len}</td>
+                      <td className="repeated-lines-text">{r.text}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* ── Passage Review Section ─────────────────────── */}
         <div className="passage-review-section" id="passage-review-section">
 
@@ -1017,6 +1080,7 @@ const ResultScreen = () => {
               accuracy={accuracy}
               lineChangeCount={lineChangeCount}
               alignedTypedWords={alignedTypedWords}
+              extraTypedWords={extraTypedWords}
             />
           )}
         </div>

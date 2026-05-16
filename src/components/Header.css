@@ -5,6 +5,7 @@
   margin-bottom: 20px;
   position: relative;
   border-bottom: 4px solid #e2e8f0;
+  overflow: hidden;
 }
 
 .header-content {
@@ -69,12 +70,15 @@
 }
 
 .parliament-svg {
-  width: 150px;
-  height: 100px;
-  opacity: 0.8;
+  max-width: 130px;
+  max-height: 100px;
+  width: auto;
+  height: auto;
+  opacity: 1;
   position: absolute;
-  right: -20px;
-  top: -10px;
+  right: 10px;
+  top: -25px;
+  object-fit: contain;
   z-index: 1;
 }
 

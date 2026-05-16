@@ -244,7 +244,7 @@ const StenoTestEngine = () => {
     const totalMistakes= full + half * 0.5;
     const nwpm         = Math.max(0, Math.round((totalWords - totalMistakes) / minutes));
     const accuracy     = finalStrokes > 0
-      ? Math.round(((totalWords - totalMistakes) / totalWords) * 100)
+      ? Math.max(0, Math.min(100, Math.round(((totalWords - totalMistakes) / totalWords) * 100)))
       : 100;
 
     const userId = localStorage.getItem('userId');
@@ -276,7 +276,8 @@ const StenoTestEngine = () => {
           time_elapsed: timeElapsed,
           user_input: typedText,
           reference_words: referenceText ? referenceText.split(/\s+/) : [],
-          mode: mode
+          mode: mode,
+          test_type: testType || chapter?.test_type || null,
         });
       }
     } catch (err) { console.error('Save Error:', err); }

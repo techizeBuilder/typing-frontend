@@ -2,6 +2,17 @@ import { useState, useEffect } from 'react';
 import { examService, resultPatternService } from '../../services/api';
 import './Admin.css';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3012/api';
+// Strip trailing /api so we can prepend host to /uploads/...
+const ASSETS_BASE = API_BASE_URL.replace(/\/api\/?$/, '');
+
+const resolveAssetUrl = (url) => {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return `${ASSETS_BASE}${url}`;
+  return url;
+};
+
 const AdminExams = () => {
   const [activeTab, setActiveTab] = useState('exams'); // 'patterns' or 'exams'
   
@@ -532,7 +543,7 @@ const AdminExams = () => {
                     <div className="input-group">
                         <label>EXAM LOGO</label>
                         {currentExam?.image_url && !selectedFile && (
-                          <img src={currentExam.image_url} alt="Current logo" style={{width: '40px', height: '40px', objectFit: 'contain', display: 'block', marginBottom: '4px', border: '1px solid #ddd', borderRadius: '4px'}} />
+                          <img src={resolveAssetUrl(currentExam.image_url)} alt="Current logo" style={{width: '40px', height: '40px', objectFit: 'contain', display: 'block', marginBottom: '4px', border: '1px solid #ddd', borderRadius: '4px'}} />
                         )}
                         {selectedFile && (
                           <img src={URL.createObjectURL(selectedFile)} alt="New logo" style={{width: '40px', height: '40px', objectFit: 'contain', display: 'block', marginBottom: '4px', border: '1px solid #ddd', borderRadius: '4px'}} />
@@ -584,7 +595,7 @@ const AdminExams = () => {
                    {loading ? <tr><td colSpan="5">Loading...</td></tr> : exams.filter(e => e.name?.toLowerCase().includes(examSearch.toLowerCase())).map(e => (
                        <tr key={e.id}>
                            <td>
-                               {e.image_url ? <img src={e.image_url} alt="" style={{width: '30px', height: '30px', objectFit: 'contain'}} /> : '-'}
+                               {e.image_url ? <img src={resolveAssetUrl(e.image_url)} alt="" style={{width: '30px', height: '30px', objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: '4px', background: '#fff'}} onError={(ev) => { ev.target.style.display = 'none'; ev.target.parentNode.appendChild(document.createTextNode('-')); }} /> : '-'}
                            </td>
                            <td><strong>{e.name}</strong></td>
                            <td>{e.screen_type}</td>

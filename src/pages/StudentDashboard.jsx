@@ -5,6 +5,15 @@ import Header from '../components/Header';
 import api, { examService, flashBannerService, resultService } from '../services/api';
 import './StudentDashboard.css';
 
+// Strip trailing /api so we can prepend host to /uploads/...
+const ASSETS_BASE = (api.defaults.baseURL || '').replace(/\/api\/?$/, '');
+const resolveAssetUrl = (url) => {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return `${ASSETS_BASE}${url}`;
+  return `${ASSETS_BASE}/${url}`;
+};
+
 // ─── Mode lists per module ────────────────────────────────────────────────────
 const TYPING_MODES  = ['English Typing', 'Hindi Mangal', 'Hindi Kruti Dev', 'Hindi Remington (GAIL)', 'Self Assessment'];
 const STENO_MODES   = ['English Steno', 'Hindi Steno', 'Spreadsheet'];
@@ -234,10 +243,10 @@ const StudentDashboard = () => {
                       >
                         <span className="exam-doc-icon">
                           {exam.image_url ? (
-                            <img 
-                              src={exam.image_url.startsWith('http') ? exam.image_url : `${api.defaults.baseURL}${exam.image_url.startsWith('/') ? '' : '/'}${exam.image_url}`} 
-                              alt={`${exam.name} logo`} 
-                              style={{ width: '20px', height: '20px', objectFit: 'contain' }} 
+                            <img
+                              src={resolveAssetUrl(exam.image_url)}
+                              alt={`${exam.name} logo`}
+                              style={{ width: '20px', height: '20px', objectFit: 'contain' }}
                             />
                           ) : (
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

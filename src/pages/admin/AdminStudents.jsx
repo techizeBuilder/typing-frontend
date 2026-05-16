@@ -29,7 +29,24 @@ const AdminStudents = () => {
     last_fees_submitted_date: '',
     fees_amount: '',
     roll_no: '',
-    live_tests_limit: ''
+    live_tests_limit: '',
+    category: ''
+  });
+
+  // Add Student Modal State
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [addFormData, setAddFormData] = useState({
+    name: '',
+    fathers_name: '',
+    phone: '',
+    user_id: '',
+    password_hash: '',
+    category: 'Typing English',
+    status: 'Active',
+    roll_no: '',
+    fees_amount: '',
+    validity_end: ''
   });
 
   useEffect(() => {
@@ -72,9 +89,29 @@ const AdminStudents = () => {
       last_fees_submitted_date: student.last_fees_submitted_date ? new Date(student.last_fees_submitted_date).toISOString().split('T')[0] : '',
       fees_amount: student.fees_amount || '',
       roll_no: student.roll_no || '',
-      live_tests_limit: student.live_tests_limit !== null && student.live_tests_limit !== undefined ? student.live_tests_limit : ''
+      live_tests_limit: student.live_tests_limit !== null && student.live_tests_limit !== undefined ? student.live_tests_limit : '',
+      category: student.category || ''
     });
     setShowEditModal(true);
+  };
+
+  const handleAddStudent = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = { ...addFormData, role: 'Student' };
+      if (!payload.validity_end) delete payload.validity_end;
+      if (payload.fees_amount === '') delete payload.fees_amount;
+      if (!payload.user_id) payload.user_id = payload.phone;
+      await userService.createUser(payload);
+      setShowAddModal(false);
+      setAddFormData({
+        name: '', fathers_name: '', phone: '', user_id: '', password_hash: '',
+        category: 'Typing English', status: 'Active', roll_no: '', fees_amount: '', validity_end: ''
+      });
+      fetchStudents();
+    } catch (error) {
+      alert('Error creating student: ' + (error.response?.data?.message || error.message));
+    }
   };
 
   const generatePassword = () => {
@@ -101,6 +138,7 @@ const AdminStudents = () => {
       if (!payload.password_hash || payload.password_hash.trim() === '') {
         delete payload.password_hash;
       }
+      if (!payload.category) payload.category = null;
 
       await userService.updateUser(currentStudent.id, payload);
       setShowEditModal(false);
@@ -153,16 +191,33 @@ const AdminStudents = () => {
     <div className="admin-card">
       <header className="admin-header">
         <h2>Student Management</h2>
-        <div className="admin-stats-bar" style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+        <div className="admin-stats-bar" style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
           <div>Total Found: <strong>{students.length}</strong></div>
-          <input 
-            type="text" 
-            placeholder="Search matching name or phone..." 
-            value={searchTerm} 
-            onChange={(e) => setSearchTerm(e.target.value)} 
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            <option value="All">All Categories</option>
+            <option value="Typing English">Typing English</option>
+            <option value="Typing Hindi">Typing Hindi</option>
+            <option value="Steno English">Steno English</option>
+            <option value="Steno Hindi">Steno Hindi</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Search matching name or phone..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
           />
           <button onClick={fetchStudents} style={{ fontSize: '0.7rem' }}>🔄 Refresh</button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            style={{ fontSize: '0.85rem', background: '#16a34a', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            + Add Student
+          </button>
         </div>
       </header>
       
@@ -172,12 +227,108 @@ const AdminStudents = () => {
         </div>
       )}
 
+      {showAddModal && (
+        <div className="admin-form-container pattern-setup" style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Add New Student</h3>
+            <button className="btn-secondary" onClick={() => setShowAddModal(false)}>Close X</button>
+          </div>
+          <form onSubmit={handleAddStudent} className="admin-grid-form" style={{ marginTop: '15px' }}>
+            <div className="form-section">
+              <h4>Personal Details</h4>
+              <div className="admin-inline-group">
+                <div className="input-group">
+                  <label>Student Name *</label>
+                  <input type="text" required value={addFormData.name} onChange={(e) => setAddFormData({...addFormData, name: e.target.value})} />
+                </div>
+                <div className="input-group">
+                  <label>Father's Name</label>
+                  <input type="text" value={addFormData.fathers_name} onChange={(e) => setAddFormData({...addFormData, fathers_name: e.target.value})} />
+                </div>
+              </div>
+              <div className="admin-inline-group">
+                <div className="input-group">
+                  <label>Phone *</label>
+                  <input type="text" required value={addFormData.phone} onChange={(e) => setAddFormData({...addFormData, phone: e.target.value})} />
+                </div>
+                <div className="input-group">
+                  <label>User ID / Login ID</label>
+                  <input type="text" placeholder="Defaults to phone" value={addFormData.user_id} onChange={(e) => setAddFormData({...addFormData, user_id: e.target.value})} />
+                </div>
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h4>Course & Academic</h4>
+              <div className="admin-inline-group">
+                <div className="input-group">
+                  <label>Category (Course) *</label>
+                  <select required value={addFormData.category} onChange={(e) => setAddFormData({...addFormData, category: e.target.value})}>
+                    <option value="Typing English">Typing English</option>
+                    <option value="Typing Hindi">Typing Hindi</option>
+                    <option value="Steno English">Steno English</option>
+                    <option value="Steno Hindi">Steno Hindi</option>
+                  </select>
+                </div>
+                <div className="input-group">
+                  <label>Roll No</label>
+                  <input type="text" value={addFormData.roll_no} onChange={(e) => setAddFormData({...addFormData, roll_no: e.target.value})} />
+                </div>
+              </div>
+              <div className="admin-inline-group">
+                <div className="input-group">
+                  <label>Charge / Fees Amount</label>
+                  <input type="number" step="0.01" value={addFormData.fees_amount} onChange={(e) => setAddFormData({...addFormData, fees_amount: e.target.value})} />
+                </div>
+                <div className="input-group">
+                  <label>Validity End Date</label>
+                  <input type="date" value={addFormData.validity_end} onChange={(e) => setAddFormData({...addFormData, validity_end: e.target.value})} />
+                </div>
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h4>Login & Status</h4>
+              <div className="admin-inline-group">
+                <div className="input-group">
+                  <label>Password *</label>
+                  <input type="text" required value={addFormData.password_hash} onChange={(e) => setAddFormData({...addFormData, password_hash: e.target.value})} />
+                </div>
+                <div className="input-group">
+                  <label>Status</label>
+                  <select value={addFormData.status} onChange={(e) => setAddFormData({...addFormData, status: e.target.value})}>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Pending">Pending</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="form-actions-full" style={{ gap: '10px' }}>
+              <button type="submit" className="btn-primary">Create Student</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {showEditModal && (
         <div className="admin-form-container pattern-setup" style={{ marginBottom: '20px' }}>
           <h3>Edit Student Details: {currentStudent.name}</h3>
           <form onSubmit={handleEditSubmit} className="admin-grid-form">
              <div className="form-section">
                 <h4>Status & Validity</h4>
+                <div className="input-group">
+                  <label>Category (Course)</label>
+                  <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
+                    <option value="">-- Select Course --</option>
+                    <option value="Typing English">Typing English</option>
+                    <option value="Typing Hindi">Typing Hindi</option>
+                    <option value="Steno English">Steno English</option>
+                    <option value="Steno Hindi">Steno Hindi</option>
+                  </select>
+                </div>
                 <div className="input-group">
                   <label>Status</label>
                   <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})}>
@@ -314,6 +465,7 @@ const AdminStudents = () => {
         <thead>
           <tr>
             <th>Name</th>
+            <th>Category</th>
             <th>Role</th>
             <th>Phone</th>
             <th>Status</th>
@@ -324,12 +476,24 @@ const AdminStudents = () => {
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan="7">Loading...</td></tr>
+            <tr><td colSpan="8">Loading...</td></tr>
           ) : students.length === 0 ? (
-            <tr><td colSpan="7">No Users found in database.</td></tr>
-          ) : students.filter(s => (s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.phone?.includes(searchTerm))).map((s) => (
+            <tr><td colSpan="8">No Users found in database.</td></tr>
+          ) : students
+              .filter(s => (s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.phone?.includes(searchTerm)))
+              .filter(s => categoryFilter === 'All' || s.category === categoryFilter)
+              .map((s) => (
             <tr key={s.id}>
               <td><strong>{s.name}</strong></td>
+              <td>
+                {s.category ? (
+                  <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                    {s.category}
+                  </span>
+                ) : (
+                  <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>-</span>
+                )}
+              </td>
               <td>{s.role}</td>
               <td>{s.phone}</td>
               <td>
@@ -339,8 +503,8 @@ const AdminStudents = () => {
               </td>
               <td>{s.validity_end ? new Date(s.validity_end).toLocaleDateString() : 'N/A'}</td>
               <td>
-                {s.allowed_login_time_start && s.allowed_login_time_end 
-                  ? `${s.allowed_login_time_start} to ${s.allowed_login_time_end}` 
+                {s.allowed_login_time_start && s.allowed_login_time_end
+                  ? `${s.allowed_login_time_start} to ${s.allowed_login_time_end}`
                   : 'Anytime'}
               </td>
               <td>
