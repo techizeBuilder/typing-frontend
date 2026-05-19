@@ -219,8 +219,16 @@ const StudentDashboard = () => {
                 <div className="exam-cards-grid">
                   {loading ? (
                     <p>Loading patterns...</p>
-                  ) : (
-                    exams.map(exam => (
+                  ) : (() => {
+                    const modeExams = exams.filter(exam => {
+                      const groups = Array.isArray(exam.font_groups) && exam.font_groups.length > 0
+                        ? exam.font_groups
+                        : (exam.font_group ? [exam.font_group] : []);
+                      return groups.length === 0 || groups.includes(selectedMode);
+                    });
+                    return modeExams.length === 0
+                      ? <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No exams available for {selectedMode}.</p>
+                      : modeExams.map(exam => (
                       <div
                         key={exam.id}
                         className={`exam-card-custom ${selectedExam?.id === exam.id ? 'active-exam' : ''}`}
@@ -260,8 +268,8 @@ const StudentDashboard = () => {
                         </span>
                         <span className="exam-name-custom">{exam.name}</span>
                       </div>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </div>
               </div>
             )}

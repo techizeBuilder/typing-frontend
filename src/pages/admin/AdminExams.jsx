@@ -13,9 +13,48 @@ const resolveAssetUrl = (url) => {
   return url;
 };
 
+const FONT_GROUPS = [
+  'English Typing',
+  'Hindi Mangal',
+  'Hindi Kruti Dev',
+  'Hindi Remington (GAIL)',
+  'Steno English',
+  'Steno Hindi',
+];
+
+const getExamFontGroups = (exam) => {
+  if (Array.isArray(exam?.font_groups) && exam.font_groups.length > 0) return exam.font_groups;
+  if (exam?.font_group) return [exam.font_group];
+  return [];
+};
+
 const AdminExams = () => {
   const [activeTab, setActiveTab] = useState('exams'); // 'patterns' or 'exams'
+  const [fontGroupDropdownOpen, setFontGroupDropdownOpen] = useState(false);
   
+  const defaultPatternData = {
+    name: '',
+    speed_count: 'Words',
+    half_mistake_enabled: false,
+    penalty_type: 'Word',
+    penalty_value: 1,
+    count_right_words_only: false,
+    qualify_on: 'NWPM',
+    required_speed: 35,
+    required_accuracy: 95,
+    show_half_mistakes: true,
+    show_full_mistakes: true,
+    show_total_strokes: true,
+    show_total_words: true,
+    show_total_errors: true,
+    show_correct_words: true,
+    show_gross_speed: true,
+    show_net_speed: true,
+    show_accuracy: true,
+    show_penalty_words: true,
+    show_ignorable_mistakes: true,
+  };
+
   const [patterns, setPatterns] = useState([]);
   const [currentPattern, setCurrentPattern] = useState(null);
   const [showPatternForm, setShowPatternForm] = useState(false);
@@ -62,6 +101,7 @@ const AdminExams = () => {
     font_size_user_screen: 20,
     font_size_test_screen: 20,
     font_group: 'English Typing',
+    font_groups: ['English Typing'],
     test_paper_screen: 'Screen',
     auto_submit: false,
     test_re_type: false,
@@ -76,35 +116,47 @@ const AdminExams = () => {
   }, []);
 
   const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [fetchedPatterns, fetchedExams] = await Promise.all([
-        resultPatternService.getPatterns(),
-        examService.getExams()
-      ]);
-      setPatterns(fetchedPatterns);
-      setExams(fetchedExams);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
+    setLoading(true);
+    // Fetch independently so one failure does not wipe the other list
+    const [patternsResult, examsResult] = await Promise.allSettled([
+      resultPatternService.getPatterns(),
+      examService.getExams(),
+    ]);
+
+    if (patternsResult.status === 'fulfilled') {
+      setPatterns(patternsResult.value);
+    } else {
+      console.error('Error fetching patterns:', patternsResult.reason);
     }
+
+    if (examsResult.status === 'fulfilled') {
+      setExams(examsResult.value);
+    } else {
+      console.error('Error fetching exams:', examsResult.reason);
+    }
+
+    setLoading(false);
   };
 
   /* ----- PATTERN LOGIC ----- */
   const handlePatternSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Strip DB-managed fields so TypeORM doesn't reject them
+      const { id, created_at, updated_at, ...cleanData } = patternData;
       if (currentPattern) {
-        await resultPatternService.updatePattern(currentPattern.id, patternData);
+        await resultPatternService.updatePattern(currentPattern.id, cleanData);
       } else {
-        await resultPatternService.createPattern(patternData);
+        await resultPatternService.createPattern(cleanData);
       }
       setShowPatternForm(false);
       setCurrentPattern(null);
+      setPatternData(defaultPatternData);
       fetchData();
     } catch (error) {
-      alert('Error saving pattern!');
+      const msg = error?.response?.data?.message || error?.message || 'Unknown error';
+      alert(`Error saving pattern: ${Array.isArray(msg) ? msg.join(', ') : msg}`);
+      console.error('Pattern save error:', error?.response?.data || error);
     }
   };
 
@@ -133,6 +185,7 @@ const AdminExams = () => {
     font_size_user_screen: 20,
     font_size_test_screen: 20,
     font_group: 'English Typing',
+    font_groups: ['English Typing'],
     test_paper_screen: 'Screen',
     auto_submit: false,
     test_re_type: false,
@@ -145,15 +198,16 @@ const AdminExams = () => {
     try {
       const data = new FormData();
       Object.keys(examData).forEach(key => {
-        // Skip internal, relational, and null/undefined values
-        // 'result_pattern' = nested object from DB, 'result_pattern_id' = form-only field appended below
         if (
           key === 'id' || key === 'created_at' || key === 'updated_at' ||
           key === 'result_pattern' || key === 'result_pattern_id' ||
+          key === 'font_groups' || // handled separately below
           examData[key] === null || examData[key] === undefined
         ) return;
         data.append(key, examData[key]);
       });
+      // Send font_groups as JSON string; backend parses it
+      data.append('font_groups', JSON.stringify(examData.font_groups || []));
       // Attach pattern ID explicitly under the field name the backend expects
       if (examData.result_pattern_id) {
           data.append('result_pattern', examData.result_pattern_id);
@@ -212,7 +266,11 @@ const AdminExams = () => {
                 onChange={(e) => setPatternSearch(e.target.value)} 
                 style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '250px' }}
               />
-              <button className="btn-primary" onClick={() => { setShowPatternForm(!showPatternForm); setCurrentPattern(null); }}>
+              <button className="btn-primary" onClick={() => {
+                setShowPatternForm(o => !o);
+                setCurrentPattern(null);
+                setPatternData(defaultPatternData);
+              }}>
                 {showPatternForm ? 'Cancel' : '+ Add New Pattern'}
               </button>
            </div>
@@ -330,7 +388,12 @@ const AdminExams = () => {
                            <td>{p.penalty_value} {p.penalty_type}s</td>
                            <td>{p.required_speed} {p.qualify_on} / {p.required_accuracy}%</td>
                            <td>
-                               <button className="btn-action btn-edit" onClick={() => { setCurrentPattern(p); setPatternData({...p}); setShowPatternForm(true); }}>Edit</button>
+                               <button className="btn-action btn-edit" onClick={() => {
+                                   const { id, created_at, updated_at, ...editFields } = p;
+                                   setCurrentPattern(p);
+                                   setPatternData({ ...defaultPatternData, ...editFields });
+                                   setShowPatternForm(true);
+                               }}>Edit</button>
                                <button className="btn-action btn-delete" onClick={() => handlePatternDelete(p.id)} style={{ marginLeft: '10px' }}>Delete</button>
                            </td>
                        </tr>
@@ -410,6 +473,7 @@ const AdminExams = () => {
                             <option value="Screen 3">Screen 3 (SSC - No Sidebar)</option>
                             <option value="Screen 4">Screen 4 (Line-by-Line)</option>
                             <option value="Screen 5">Screen 5 (TCS)</option>
+                            <option value="Screen 6">Screen 6 (DSSSB)</option>
                         </select>
                     </div>
                     <div className="input-group">
@@ -521,16 +585,49 @@ const AdminExams = () => {
                             <option value="35">35px</option>
                         </select>
                     </div>
-                    <div className="input-group">
-                        <label>FONT GROUP</label>
-                        <select value={examData.font_group} onChange={(e) => setExamData({...examData, font_group: e.target.value})}>
-                            <option value="English Typing">English Typing</option>
-                            <option value="Hindi Mangal">Hindi Mangal</option>
-                            <option value="Hindi Kruti Dev">Hindi Kruti Dev</option>
-                            <option value="Hindi Remington (GAIL)">Hindi Remington (GAIL)</option>
-                            <option value="Steno English">Steno English</option>
-                            <option value="Steno Hindi">Steno Hindi</option>
-                        </select>
+                    <div className="input-group" style={{ position: 'relative' }}>
+                        <label>FONT GROUP (Multi-select)</label>
+                        <button
+                          type="button"
+                          onClick={() => setFontGroupDropdownOpen(o => !o)}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', textAlign: 'left', cursor: 'pointer', fontSize: '0.9rem', color: '#0f172a' }}
+                        >
+                          {(examData.font_groups || []).length === 0
+                            ? '-- Select Font Groups --'
+                            : (examData.font_groups || []).length === FONT_GROUPS.length
+                              ? 'All Font Groups'
+                              : (examData.font_groups || []).join(', ')}
+                          <span style={{ float: 'right', color: '#64748b' }}>▾</span>
+                        </button>
+                        {fontGroupDropdownOpen && (
+                          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #cbd5e1', borderRadius: '4px', marginTop: '2px', zIndex: 20, boxShadow: '0 4px 10px rgba(0,0,0,0.08)' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', fontWeight: 600, cursor: 'pointer', background: '#f8fafc' }}>
+                              <input
+                                type="checkbox"
+                                checked={(examData.font_groups || []).length === FONT_GROUPS.length}
+                                onChange={() => {
+                                  const all = (examData.font_groups || []).length === FONT_GROUPS.length;
+                                  setExamData({ ...examData, font_groups: all ? [] : [...FONT_GROUPS] });
+                                }}
+                              />
+                              Select All
+                            </label>
+                            {FONT_GROUPS.map(fg => (
+                              <label key={fg} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={(examData.font_groups || []).includes(fg)}
+                                  onChange={() => {
+                                    const set = new Set(examData.font_groups || []);
+                                    if (set.has(fg)) set.delete(fg); else set.add(fg);
+                                    setExamData({ ...examData, font_groups: Array.from(set) });
+                                  }}
+                                />
+                                {fg}
+                              </label>
+                            ))}
+                          </div>
+                        )}
                     </div>
 
                     <div className="input-group">
@@ -566,12 +663,22 @@ const AdminExams = () => {
                     </div>
 
                     <div className="input-group">
-                        <label>MAXIMUM WORD/ STORKS</label>
-                        <input type="number" value={examData.max_words_strokes || ''} onChange={(e) => setExamData({...examData, max_words_strokes: parseInt(e.target.value)})} />
+                        <label>MAXIMUM WORD/ STROKES</label>
+                        <select value={examData.max_words_strokes || 0} onChange={(e) => setExamData({...examData, max_words_strokes: parseInt(e.target.value)})}>
+                            <option value={0}>No Limit</option>
+                            {[100,150,200,250,300,350,400,450,500,600,700,800,900,1000,1200,1500,2000].map(v => (
+                                <option key={v} value={v}>{v}</option>
+                            ))}
+                        </select>
                     </div>
                     <div className="input-group">
-                        <label>NO. OF WORD/STROKS</label>
-                        <input type="number" value={examData.no_of_words_strokes || ''} onChange={(e) => setExamData({...examData, no_of_words_strokes: parseInt(e.target.value)})} />
+                        <label>NO. OF WORD/STROKES</label>
+                        <select value={examData.no_of_words_strokes || 0} onChange={(e) => setExamData({...examData, no_of_words_strokes: parseInt(e.target.value)})}>
+                            <option value={0}>No Limit</option>
+                            {[50,75,100,125,150,175,200,225,250,275,300,350,400,450,500,600,700,800,1000].map(v => (
+                                <option key={v} value={v}>{v}</option>
+                            ))}
+                        </select>
                     </div>
 
                     <div className="form-actions-full" style={{ gridColumn: '1 / -1' }}>
@@ -601,14 +708,15 @@ const AdminExams = () => {
                            <td>{e.screen_type}</td>
                            <td>{e.result_pattern?.name || 'Missing'}</td>
                            <td>
-                               <button className="btn-action btn-edit" onClick={() => { 
-                                   setCurrentExam(e); 
+                               <button className="btn-action btn-edit" onClick={() => {
+                                   setCurrentExam(e);
                                    setExamData({
-                                       ...e, 
-                                       result_pattern_id: e.result_pattern?.id || ''
-                                   }); 
+                                       ...e,
+                                       result_pattern_id: e.result_pattern?.id || '',
+                                       font_groups: getExamFontGroups(e),
+                                   });
                                    setSelectedFile(null);
-                                   setShowExamForm(true); 
+                                   setShowExamForm(true);
                                }}>Edit</button>
                                <button className="btn-action btn-delete" onClick={() => handleExamDelete(e.id)} style={{ marginLeft: '10px' }}>Delete</button>
                            </td>

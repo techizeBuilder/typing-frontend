@@ -65,6 +65,7 @@ const TestEngine = () => {
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [s6ShowText, setS6ShowText] = useState(false);
 
   // Mangal IME: track composition state to avoid double-firing on IME confirm
   const isComposingRef = useRef(false);
@@ -93,7 +94,21 @@ const TestEngine = () => {
     if (!c) { setLoading(false); return; }
     setChapter(c);
     const text = c.content_text || '';
-    const splitWords = text.trim() ? text.trim().split(/\s+/) : [];
+    let splitWords = text.trim() ? text.trim().split(/\s+/) : [];
+
+    const targetWords = exam?.no_of_words_strokes || 0;
+    if (targetWords > 0 && splitWords.length > 0) {
+      if (splitWords.length < targetWords) {
+        // Test is small — auto-repeat until we reach the target
+        const base = [...splitWords];
+        while (splitWords.length < targetWords) splitWords = splitWords.concat(base);
+        splitWords = splitWords.slice(0, targetWords);
+      } else {
+        // Test is big — trim to target
+        splitWords = splitWords.slice(0, targetWords);
+      }
+    }
+
     setWords(splitWords);
     setWordStatuses(new Array(splitWords.length).fill('pending'));
     setLoading(false);
@@ -816,7 +831,7 @@ const TestEngine = () => {
       />
     );
 
-    const tcsPassage = (
+    const tcsPassage = settings.paperMode ? null : (
       <div className="source-text-container tcs-passage" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
         <div className="text-display">{renderWords()}</div>
       </div>
@@ -891,7 +906,7 @@ const TestEngine = () => {
         <button className="tcs-blue-btn">{exam?.name || 'English Typing Test'}</button>
         <div className="tcs-user-block">
           <div className="tcs-user-photo"></div>
-          <div className="tcs-user-name">{localStorage.getItem('username') || 'John Smith'}</div>
+          <div className="tcs-user-name">{localStorage.getItem('name') || localStorage.getItem('username') || 'Student'}</div>
         </div>
       </div>
     );
@@ -930,7 +945,7 @@ const TestEngine = () => {
         <div className="tcs-content tcs-content-split">
           <div className="tcs-left-panel">
             {tcsPassage}
-            <div className="tcs-input-wrap">{tcsTextarea}</div>
+            <div className="tcs-input-wrap" style={settings.paperMode ? { flex: 1 } : {}}>{tcsTextarea}</div>
             <label className="tcs-sound-label">
               <input type="checkbox" /> Play Keyboard Sound
             </label>
@@ -948,10 +963,12 @@ const TestEngine = () => {
         <div className="tcs-purple-header"></div>
         {tcsThirdHeader(true)}
         <div className="tcs-content tcs-content-full">
-          <div className="tcs-fullwidth-passage" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
-            <div className="text-display">{renderWords()}</div>
-          </div>
-          <div className="tcs-fullwidth-input">{tcsTextarea}</div>
+          {!settings.paperMode && (
+            <div className="tcs-fullwidth-passage" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
+              <div className="text-display">{renderWords()}</div>
+            </div>
+          )}
+          <div className="tcs-fullwidth-input" style={settings.paperMode ? { flex: 1 } : {}}>{tcsTextarea}</div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
             <label className="tcs-sound-label">
               <input type="checkbox" /> Play Keyboard Sound
@@ -976,7 +993,7 @@ const TestEngine = () => {
         <div className="tcs-content tcs-content-split-narrow">
           <div className="tcs-left-panel tcs-left-panel-narrow">
             {tcsPassage}
-            <div className="tcs-input-wrap">{tcsTextarea}</div>
+            <div className="tcs-input-wrap" style={settings.paperMode ? { flex: 1 } : {}}>{tcsTextarea}</div>
             <label className="tcs-sound-label">
               <input type="checkbox" /> Play Keyboard Sound
             </label>
@@ -990,12 +1007,7 @@ const TestEngine = () => {
 
   // ─── Screen 2 (Green) Render ──────────────────────────────────────────────────
   if (screenType === 'Screen-2') {
-    const s2Passage = settings.paperMode ? (
-      <div style={{ textAlign: 'center', marginTop: '50px' }}>
-        <h3 style={{ color: '#64748b' }}>📄 PAPER MODE ACTIVE</h3>
-        <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Please read the text from your physical printed paper.</p>
-      </div>
-    ) : (
+    const s2Passage = (
       <div className="s2-passage-text" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
         <div className="text-display">{renderWords()}</div>
       </div>
@@ -1022,8 +1034,8 @@ const TestEngine = () => {
       />
     );
 
-    const userName = localStorage.getItem('username') || localStorage.getItem('userName') || 'DUMMY_1000003166';
-    const rollNumber = localStorage.getItem('userId') || localStorage.getItem('user_id') || userName;
+    const userName = localStorage.getItem('name') || localStorage.getItem('username') || 'Student';
+    const rollNumber = localStorage.getItem('roll_no') || localStorage.getItem('user_id') || localStorage.getItem('username') || '';
 
     return (
       <div className="s2-layout s2-new">
@@ -1072,17 +1084,19 @@ const TestEngine = () => {
 
         {/* ── Passage + Typing Areas ────────────────────────────────── */}
         <div className="s2new-body">
-          <div className="s2new-passage" style={{ position: 'relative' }}>
-            {s2Passage}
-            {isPaused && (
-              <div className="s2new-pause-overlay">
-                <div style={{ fontSize: '2rem' }}>⏸</div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
-                <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Click Resume to continue</div>
-              </div>
-            )}
-          </div>
-          <div className="s2new-input-area">
+          {!settings.paperMode && (
+            <div className="s2new-passage" style={{ position: 'relative' }}>
+              {s2Passage}
+              {isPaused && (
+                <div className="s2new-pause-overlay">
+                  <div style={{ fontSize: '2rem' }}>⏸</div>
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
+                  <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Click Resume to continue</div>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="s2new-input-area" style={settings.paperMode ? { flex: 1 } : {}}>
             {s2Textarea}
           </div>
         </div>
@@ -1145,12 +1159,7 @@ const TestEngine = () => {
 
   // ─── Screen 1 (CRPF Two-Column) Render ─────────────────────────────────────
   if (screenType === 'Screen-1') {
-    const s1Passage = settings.paperMode ? (
-      <div style={{ textAlign: 'center', marginTop: '40px' }}>
-        <h3 style={{ color: '#64748b' }}>📄 PAPER MODE ACTIVE</h3>
-        <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Please read the text from your physical printed paper.</p>
-      </div>
-    ) : (
+    const s1Passage = (
       <div className="s1new-passage-text" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
         <div className="text-display">{renderWords()}</div>
       </div>
@@ -1201,18 +1210,20 @@ const TestEngine = () => {
             </div>
           </div>
 
-          <div className="s1new-passage-box" style={{ position: 'relative' }}>
-            {s1Passage}
-            {isPaused && (
-              <div className="s1new-pause-overlay">
-                <div style={{ fontSize: '2rem' }}>⏸</div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
-                <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Click Resume to continue</div>
-              </div>
-            )}
-          </div>
+          {!settings.paperMode && (
+            <div className="s1new-passage-box" style={{ position: 'relative' }}>
+              {s1Passage}
+              {isPaused && (
+                <div className="s1new-pause-overlay">
+                  <div style={{ fontSize: '2rem' }}>⏸</div>
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
+                  <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Click Resume to continue</div>
+                </div>
+              )}
+            </div>
+          )}
 
-          <div className="s1new-input-box">
+          <div className="s1new-input-box" style={settings.paperMode ? { flex: 1 } : {}}>
             {s1Textarea}
           </div>
         </div>
@@ -1302,12 +1313,7 @@ const TestEngine = () => {
       ? hindiFontFamily
       : (settings.s3Font === 'Courier New' ? "'Courier New', monospace" : "'Calibri', 'Segoe UI', sans-serif");
 
-    const s3Passage = settings.paperMode ? (
-      <div style={{ textAlign: 'center', marginTop: '40px' }}>
-        <h3 style={{ color: '#64748b' }}>📄 PAPER MODE ACTIVE</h3>
-        <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Please read the text from your physical printed paper.</p>
-      </div>
-    ) : (
+    const s3Passage = (
       <div className="s3new-text" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: s3FontFamily }}>
         <div className="text-display">{renderWords()}</div>
       </div>
@@ -1386,18 +1392,20 @@ const TestEngine = () => {
           </div>
 
           {/* Passage card */}
-          <div className="s3new-card s3new-passage-card" style={{ position: 'relative' }}>
-            {s3Passage}
-            {isPaused && (
-              <div className="s3new-pause-overlay">
-                <div style={{ fontSize: '2rem' }}>⏸</div>
-                <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
-              </div>
-            )}
-          </div>
+          {!settings.paperMode && (
+            <div className="s3new-card s3new-passage-card" style={{ position: 'relative' }}>
+              {s3Passage}
+              {isPaused && (
+                <div className="s3new-pause-overlay">
+                  <div style={{ fontSize: '2rem' }}>⏸</div>
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Input card */}
-          <div className="s3new-card s3new-input-card">
+          <div className="s3new-card s3new-input-card" style={settings.paperMode ? { flex: 1 } : {}}>
             {s3Textarea}
           </div>
 
@@ -1424,6 +1432,93 @@ const TestEngine = () => {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ─── Screen 6 (DSSSB-style: topbar + show-text toggle + full textarea) ────────
+  if (screenType === 'Screen-6') {
+    const userName = localStorage.getItem('name') || localStorage.getItem('username') || 'Student';
+
+    return (
+      <div className="s6-layout">
+        {/* ── Top Bar ── */}
+        <div className="s6-topbar">
+          <div className="s6-topbar-left">
+            <span className="s6-label">Total Time</span>
+            <span className="s6-time-val">{exam?.test_time_minutes ?? 10} Mins</span>
+          </div>
+          <div className="s6-topbar-btns">
+            <button className="s6-btn s6-btn-finish" onClick={() => handleFinish()}>Finish</button>
+            <button
+              className="s6-btn s6-btn-pause"
+              onClick={handlePause}
+              disabled={!isPaused && pauseCount >= MAX_PAUSES}
+            >
+              {isPaused ? 'Resume' : 'Pause'}
+            </button>
+          </div>
+          <div className="s6-topbar-center">
+            <span className="s6-exam-name">{exam?.name || 'TYPING TEST'}</span>
+          </div>
+          <div className="s6-topbar-right">
+            <span className="s6-label">Name :</span>
+            <span className="s6-name-val">{userName}</span>
+            <span className="s6-label s6-time-remaining">{formatTime(timeLeft)}</span>
+          </div>
+          <button className="s6-btn s6-btn-exit" onClick={() => navigate('/dashboard')}>Exit</button>
+        </div>
+
+        {/* ── Sub Bar: Show Text toggle + warning ── */}
+        <div className="s6-subbar">
+          <label className="s6-show-text-label">
+            <input
+              type="checkbox"
+              className="s6-show-text-checkbox"
+              checked={s6ShowText}
+              onChange={(e) => setS6ShowText(e.target.checked)}
+            />
+            Show Text
+          </label>
+          <span className="s6-repeat-notice">
+            Passage Repetition Is Available Here For Pratice. In The Real Exam, It Is Allowed Only If Specified In the Exam Notification
+          </span>
+        </div>
+
+        {/* ── Passage (shown only when Show Text is checked) ── */}
+        {s6ShowText && (
+          <div className="s6-passage" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
+            <div className="text-display">{renderWords()}</div>
+          </div>
+        )}
+
+        {/* ── Full-height Typing Area ── */}
+        <div className="s6-input-wrap">
+          <textarea
+            className="s6-typing-input"
+            style={{ fontFamily: hindiFontFamily, fontSize: `${settings.fontSize}px` }}
+            autoFocus
+            value={userInput}
+            onKeyDown={handleEnglishKeyDown}
+            onChange={isPaused ? undefined : (isMangal ? handleMangalChange : handleEnglishChange)}
+            onCompositionStart={() => { isComposingRef.current = true; }}
+            onCompositionEnd={isMangal ? handleCompositionEnd : undefined}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            lang={isMangal ? 'hi' : 'en'}
+            disabled={timeLeft === 0}
+            readOnly={isPaused}
+            placeholder=""
+          />
+          {isPaused && (
+            <div className="s6-pause-overlay">
+              <div style={{ fontSize: '2rem' }}>⏸</div>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem' }}>Test Paused</div>
+              <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Click Resume to continue</div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -1598,7 +1693,7 @@ const TestEngine = () => {
         <div className="topbar-right">
           <div className="student-badge">
             <div className="student-photo-placeholder">👤</div>
-            <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '2px' }}>{localStorage.getItem('username') || 'Student'}</div>
+            <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '2px' }}>{localStorage.getItem('name') || localStorage.getItem('username') || 'Student'}</div>
           </div>
         </div>
       </div>
@@ -1613,14 +1708,7 @@ const TestEngine = () => {
             </div>
           )}
 
-          {settings.paperMode ? (
-            <div className="source-text-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' }}>
-              <div style={{ textAlign: 'center' }}>
-                <h3 style={{ color: '#64748b' }}>📄 PAPER MODE ACTIVE</h3>
-                <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Please read the text from your physical printed paper.</p>
-              </div>
-            </div>
-          ) : (
+          {!settings.paperMode && (
             <div className="source-text-container" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
               {isSelfAssessment && timeElapsed === 0 ? (
                 <textarea
@@ -1640,14 +1728,14 @@ const TestEngine = () => {
             </div>
           )}
 
-          {isLineByLine && (
+          {!settings.paperMode && isLineByLine && (
             <div style={{ padding: '10px 0', fontSize: '0.9rem', color: '#666', borderBottom: '1px solid #ccc', marginBottom: '10px' }}>
               Line {currentLineIndex + 1}/{Math.ceil(words.length / wordsPerLine)}
               <span style={{ float: 'right' }}>Press Space to advance →</span>
             </div>
           )}
 
-          <div className="input-container" style={{ fontSize: `${settings.fontSize}px` }}>
+          <div className="input-container" style={{ fontSize: `${settings.fontSize}px`, flex: settings.paperMode ? '1' : undefined }}>
             <textarea
               className="typing-input"
               style={{ fontFamily: hindiFontFamily, fontSize: `${settings.fontSize}px` }}
@@ -1745,7 +1833,10 @@ const TestEngine = () => {
                 <h3>{screenType === 'Screen-4' ? 'Student Profile' : 'Setting'}</h3>
                 {screenType === 'Screen-4' && (
                   <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                    <div style={{ fontWeight: 'bold', margin: '10px 0' }}>{localStorage.getItem('username') || 'Student'}</div>
+                    <div style={{ fontWeight: 'bold', margin: '10px 0' }}>{localStorage.getItem('name') || localStorage.getItem('username') || 'Student'}</div>
+                    {localStorage.getItem('roll_no') && (
+                      <div style={{ fontSize: '0.85rem', color: '#555', marginBottom: '6px' }}>Roll No: {localStorage.getItem('roll_no')}</div>
+                    )}
                     <hr style={{ margin: '15px 0', border: 'none', borderTop: '1px solid #ddd' }} />
                   </div>
                 )}

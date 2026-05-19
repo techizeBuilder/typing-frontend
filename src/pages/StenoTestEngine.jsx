@@ -426,7 +426,7 @@ const StenoTestEngine = () => {
             <span>Acc: <strong>{stats.accuracy}%</strong></span>
           </div>
           <div className="steno-student-badge">
-            👤 {localStorage.getItem('username') || 'Student'}
+            👤 {localStorage.getItem('name') || localStorage.getItem('username') || 'Student'}
           </div>
         </div>
       </div>
