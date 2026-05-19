@@ -96,14 +96,6 @@ const AdminChapters = () => {
     });
   };
 
-  const toggleSelectAllExams = () => {
-    setFormData(prev => {
-      const allIds = exams.map(e => e.id);
-      const allSelected = allIds.length > 0 && allIds.every(id => (prev.exam_ids || []).includes(id));
-      return { ...prev, exam_ids: allSelected ? [] : allIds };
-    });
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setUploading(true);
@@ -151,6 +143,14 @@ const AdminChapters = () => {
   };
 
   const isSteno = formData.font_group.includes('Steno');
+
+  // Only show exams that support the selected font group
+  const filteredExams = exams.filter(exam => {
+    const groups = Array.isArray(exam.font_groups) && exam.font_groups.length > 0
+      ? exam.font_groups
+      : (exam.font_group ? [exam.font_group] : []);
+    return groups.length === 0 || groups.includes(formData.font_group);
+  });
 
   return (
     <div className="admin-card">
@@ -204,6 +204,17 @@ const AdminChapters = () => {
                 <input type="date" value={formData.test_date} onChange={(e) => setFormData({...formData, test_date: e.target.value})} required />
               </div>
               <div className="input-group">
+                <label>Font Group</label>
+                <select value={formData.font_group} onChange={(e) => setFormData({...formData, font_group: e.target.value, exam_ids: []})}>
+                  <option value="English Typing">English Typing</option>
+                  <option value="Hindi Mangal">Hindi Mangal</option>
+                  <option value="Hindi Kruti Dev">Hindi Kruti Dev</option>
+                  <option value="Hindi Remington (GAIL)">Hindi Remington (GAIL)</option>
+                  <option value="Steno English">Steno English</option>
+                  <option value="Steno Hindi">Steno Hindi</option>
+                </select>
+              </div>
+              <div className="input-group">
                 <label>Assign to Exam</label>
                 <div style={{ position: 'relative' }}>
                   <button
@@ -224,8 +235,8 @@ const AdminChapters = () => {
                     {(() => {
                       const selected = formData.exam_ids || [];
                       if (selected.length === 0) return '-- No Exam (Independent) --';
-                      if (selected.length === exams.length && exams.length > 0) return 'All Exams Selected';
-                      const names = exams.filter(e => selected.includes(e.id)).map(e => e.name);
+                      if (selected.length === filteredExams.length && filteredExams.length > 0) return 'All Exams Selected';
+                      const names = filteredExams.filter(e => selected.includes(e.id)).map(e => e.name);
                       if (names.length <= 2) return names.join(', ');
                       return `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
                     })()}
@@ -262,12 +273,16 @@ const AdminChapters = () => {
                       >
                         <input
                           type="checkbox"
-                          checked={exams.length > 0 && exams.every(e => (formData.exam_ids || []).includes(e.id))}
-                          onChange={toggleSelectAllExams}
+                          checked={filteredExams.length > 0 && filteredExams.every(e => (formData.exam_ids || []).includes(e.id))}
+                          onChange={() => {
+                            const allIds = filteredExams.map(e => e.id);
+                            const allSelected = allIds.every(id => (formData.exam_ids || []).includes(id));
+                            setFormData(prev => ({ ...prev, exam_ids: allSelected ? [] : allIds }));
+                          }}
                         />
                         Select All
                       </label>
-                      {exams.map(exam => (
+                      {filteredExams.map(exam => (
                         <label
                           key={exam.id}
                           style={{
@@ -287,23 +302,12 @@ const AdminChapters = () => {
                           {exam.name}
                         </label>
                       ))}
-                      {exams.length === 0 && (
-                        <div style={{ padding: '10px', color: '#94a3b8', fontSize: '0.85rem' }}>No exams available</div>
+                      {filteredExams.length === 0 && (
+                        <div style={{ padding: '10px', color: '#94a3b8', fontSize: '0.85rem' }}>No exams support this font group</div>
                       )}
                     </div>
                   )}
                 </div>
-              </div>
-              <div className="input-group">
-                <label>Font Group</label>
-                <select value={formData.font_group} onChange={(e) => setFormData({...formData, font_group: e.target.value})}>
-                  <option value="English Typing">English Typing</option>
-                  <option value="Hindi Mangal">Hindi Mangal</option>
-                  <option value="Hindi Kruti Dev">Hindi Kruti Dev</option>
-                  <option value="Hindi Remington (GAIL)">Hindi Remington (GAIL)</option>
-                  <option value="Steno English">Steno English</option>
-                  <option value="Steno Hindi">Steno Hindi</option>
-                </select>
               </div>
               <div className="input-group">
                 <label>Test Type</label>

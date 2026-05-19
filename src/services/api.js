@@ -105,6 +105,9 @@ export const authService = {
 
         if (response.data.user) {
           localStorage.setItem('role', response.data.user.role);
+          if (response.data.user.name)    localStorage.setItem('name',    response.data.user.name);
+          if (response.data.user.roll_no) localStorage.setItem('roll_no', response.data.user.roll_no);
+          if (response.data.user.user_id) localStorage.setItem('user_id', response.data.user.user_id);
         }
 
         // Decode JWT to extract the DB UUID (payload.sub). This is the source of
