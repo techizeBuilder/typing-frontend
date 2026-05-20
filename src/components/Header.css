@@ -65,14 +65,17 @@
   flex: 1;
   display: flex;
   justify-content: flex-end;
-  align-items: center;
+  align-items: flex-end;
 }
 
 .parliament-svg {
+  height: 130px;
   width: auto;
-  height: 90px;
-  max-width: 150px;
+  max-width: 200px;
   object-fit: contain;
+  object-position: bottom;
+  align-self: flex-end;
+  margin-bottom: 0;
 }
 
 /* --- Mobile Responsiveness --- */
