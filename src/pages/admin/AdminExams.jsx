@@ -505,6 +505,10 @@ const AdminExams = () => {
                         <select value={examData.highlight_color} onChange={(e) => setExamData({...examData, highlight_color: e.target.value})}>
                             <option value="yellow">Yellow</option>
                             <option value="blue">Blue</option>
+                            <option value="green">Green</option>
+                            <option value="red">Red</option>
+                            <option value="orange">Orange</option>
+                            <option value="pink">Pink</option>
                             <option value="black">Black</option>
                         </select>
                     </div>
@@ -633,8 +637,8 @@ const AdminExams = () => {
                     <div className="input-group">
                         <label>TEST (PAPER/SCREEN)</label>
                         <select value={examData.test_paper_screen} onChange={(e) => setExamData({...examData, test_paper_screen: e.target.value})}>
-                            <option value="Screen">Screen</option>
-                            <option value="Paper">Paper</option>
+                            <option value="Screen">On Screen</option>
+                            <option value="Paper">On Paper</option>
                         </select>
                     </div>
                     <div className="input-group">

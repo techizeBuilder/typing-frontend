@@ -9,7 +9,7 @@
 
 .dashboard-welcome-bar {
   background-color: #0b4bcc;
-  padding: 15px 40px;
+  padding: 7px 40px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -18,14 +18,14 @@
 }
 
 .welcome-text-content h2 {
-  font-size: 1.4rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  margin: 0 0 5px 0;
+  margin: 0 0 2px 0;
   letter-spacing: 0.5px;
 }
 
 .welcome-text-content p {
-  font-size: 0.95rem;
+  font-size: 0.48rem;
   margin: 0;
   color: #e0e7ff;
 }

@@ -32,8 +32,10 @@ const AdminLayout = () => {
              <NavLink to="/admin/messages" className={({isActive}) => isActive ? "active" : ""}>Message Center</NavLink>}
           {(role === 'Admin' || role === 'SuperAdmin' || permissions.includes('flash_banner')) && 
              <NavLink to="/admin/flash-banner" className={({isActive}) => isActive ? "active" : ""}>Flash Banner</NavLink>}
-          {(role === 'Admin' || role === 'SuperAdmin' || permissions.includes('staff')) && 
+          {(role === 'Admin' || role === 'SuperAdmin' || permissions.includes('staff')) &&
              <NavLink to="/admin/staff" className={({isActive}) => isActive ? "active" : ""}>Staff Management</NavLink>}
+          {(role === 'Admin' || role === 'SuperAdmin') &&
+             <NavLink to="/admin/results" className={({isActive}) => isActive ? "active" : ""}>Results (Typing/Steno)</NavLink>}
 
           <div className="nav-divider"></div>
           <NavLink to="/dashboard" className="nav-secondary">Switch to Student View</NavLink>

@@ -583,7 +583,10 @@ const ResultScreen = () => {
 
   const isStenoResult = !!(typedText && referenceText);
 
-  const handleReturn = () => navigate('/dashboard');
+  const handleReturn = () => {
+    const role = localStorage.getItem('role');
+    navigate(role === 'Admin' || role === 'SuperAdmin' || role === 'SubAdmin' ? '/admin/students' : '/dashboard');
+  };
 
   const username     = studentName || profileData.name || localStorage.getItem('username') || 'Student';
   const rollNo       = stateRollNo || profileData.roll_no || '—';
@@ -656,6 +659,10 @@ const ResultScreen = () => {
   const netWordsCalculated = parseFloat(Math.max(0, totalWords - penaltyWords).toFixed(2));
   const netSpeedCalculated = parseFloat(Math.max(0, netWordsCalculated / timeMinutes).toFixed(2));
   const correctWordsCalculated = parseFloat(Math.max(0, totalWords - totalMistakes).toFixed(2));
+  // Accuracy = (NWPM / GWPM) × 100  per standard typing test formula (PDF rule)
+  const accuracyCalculated = grossSpeedCalculated > 0
+    ? parseFloat(Math.max(0, Math.min(100, (netSpeedCalculated / grossSpeedCalculated) * 100)).toFixed(2))
+    : 0;
 
   const qualifyOn     = pattern?.qualify_on ?? 'NWPM';
   const requiredSpeed = pattern?.required_speed ?? 30;
@@ -663,8 +670,9 @@ const ResultScreen = () => {
   const speedToCheck  = qualifyOn === 'GWPM' ? grossSpeedCalculated : netSpeedCalculated;
   const isQualified   = speedToCheck >= requiredSpeed;
 
+  // Shows actual mistake rate so it can be compared against the 7% ignorable threshold
   const ignorableMistakePercent = totalWords > 0
-    ? parseFloat(((halfErrors / totalWords) * 100).toFixed(1))
+    ? parseFloat(((totalMistakes / totalWords) * 100).toFixed(1))
     : 0;
   const testDurationMinutes = location.state?.testDurationMinutes || Math.floor(timeElapsed / 60) || 10;
   const backspaceControl = location.state?.backspaceControl || 'Full Backspace';
@@ -749,7 +757,7 @@ const ResultScreen = () => {
           totalWords={totalWords}
           grossSpeedCalculated={grossSpeedCalculated}
           netSpeedCalculated={netSpeedCalculated}
-          accuracy={accuracy}
+          accuracy={accuracyCalculated}
           qualifyOn={qualifyOn}
           requiredSpeed={requiredSpeed}
           isQualified={isQualified}
@@ -870,7 +878,7 @@ const ResultScreen = () => {
               <div className="stat-metric-label">Accuracy</div>
               <div className="stat-metric-body">
                 <span className="stat-metric-icon">🎯</span>
-                <span className="stat-metric-value">{accuracy}%</span>
+                <span className="stat-metric-value">{accuracyCalculated}%</span>
               </div>
               <div className="stat-metric-unit">&nbsp;</div>
             </div>
@@ -974,7 +982,7 @@ const ResultScreen = () => {
             {showAccuracy && (
               <div className="stat-line">
                 <span className="stat-label">Accuracy =</span>
-                <span className="stat-val">{accuracy}%</span>
+                <span className="stat-val">{accuracyCalculated}%</span>
               </div>
             )}
             {showNetSpeed && (
@@ -1077,7 +1085,7 @@ const ResultScreen = () => {
               testDurationMinutes={testDurationMinutes}
               netSpeedCalculated={netSpeedCalculated}
               grossSpeedCalculated={grossSpeedCalculated}
-              accuracy={accuracy}
+              accuracy={accuracyCalculated}
               lineChangeCount={lineChangeCount}
               alignedTypedWords={alignedTypedWords}
               extraTypedWords={extraTypedWords}

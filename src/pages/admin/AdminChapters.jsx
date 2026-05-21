@@ -11,6 +11,7 @@ const AdminChapters = () => {
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [testTypeFilter, setTestTypeFilter] = useState('All');
+  const [fontGroupFilter, setFontGroupFilter] = useState('All');
   const [filterDate, setFilterDate] = useState('');
   const [currentChapter, setCurrentChapter] = useState(null);
   const [audioFile, setAudioFile] = useState(null);   // raw File object for steno
@@ -25,6 +26,7 @@ const AdminChapters = () => {
     content_text: '',
   });
   const [examDropdownOpen, setExamDropdownOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   useEffect(() => {
     fetchChapters();
@@ -138,8 +140,25 @@ const AdminChapters = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this?')) {
       await chapterService.deleteChapter(id);
+      setSelectedIds(prev => prev.filter(sid => sid !== id));
       fetchChapters();
     }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.length} selected chapter(s)? This cannot be undone.`)) return;
+    try {
+      await Promise.all(selectedIds.map(id => chapterService.deleteChapter(id)));
+      setSelectedIds([]);
+      fetchChapters();
+    } catch (err) {
+      alert('Error deleting some chapters: ' + err.message);
+    }
+  };
+
+  const toggleSelectId = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(sid => sid !== id) : [...prev, id]);
   };
 
   const isSteno = formData.font_group.includes('Steno');
@@ -162,9 +181,22 @@ const AdminChapters = () => {
             onChange={(e) => setTestTypeFilter(e.target.value)}
             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
           >
-            <option value="All">All Tests</option>
+            <option value="All">All Test Types</option>
             <option value="Pre-load Test">Pre-load Test</option>
             <option value="Live Test">Live Test</option>
+          </select>
+          <select
+            value={fontGroupFilter}
+            onChange={(e) => setFontGroupFilter(e.target.value)}
+            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            <option value="All">All Font Groups</option>
+            <option value="English Typing">English Typing</option>
+            <option value="Hindi Mangal">Hindi Mangal</option>
+            <option value="Hindi Kruti Dev">Hindi Kruti Dev</option>
+            <option value="Hindi Remington (GAIL)">Hindi Remington (GAIL)</option>
+            <option value="Steno English">Steno English</option>
+            <option value="Steno Hindi">Steno Hindi</option>
           </select>
           <input
             type="date"
@@ -185,6 +217,15 @@ const AdminChapters = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
           />
+          {selectedIds.length > 0 && (
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              style={{ padding: '8px 14px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+            >
+              Delete Selected ({selectedIds.length})
+            </button>
+          )}
           <button className="btn-primary" onClick={() => { setShowForm(!showForm); setCurrentChapter(null); setAudioFile(null); }}>
             {showForm ? 'Cancel' : '+ Add Chapter'}
           </button>
@@ -389,80 +430,100 @@ const AdminChapters = () => {
         </div>
       )}
 
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>No</th>
-            <th>Exam</th>
-            <th>Type</th>
-            <th>Font Group</th>
-            <th>Audio</th>
-            <th>Date</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <tr><td colSpan="7">Loading...</td></tr>
-          ) : chapters
-            .filter(c => testTypeFilter === 'All' || c.test_type === testTypeFilter)
-            .filter(c => {
-              if (!filterDate) return true;
-              const chapDate = new Date(c.test_date).toISOString().split('T')[0];
-              return chapDate === filterDate;
-            })
-            .filter(c =>
-              !searchTerm ||
-              c.font_group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              String(c.chapter_no).includes(searchTerm)
-            ).map((c) => (
-            <tr key={c.id}>
-              <td>{c.id.substring(0, 8)}</td>
-              <td>{c.chapter_no}</td>
-              <td>
-                {(() => {
-                  const names = Array.isArray(c.exams) && c.exams.length > 0
-                    ? c.exams.map(e => e?.name).filter(Boolean)
-                    : (c.exam?.name ? [c.exam.name] : []);
-                  if (names.length === 0) return <span style={{color: '#94a3b8'}}>None</span>;
-                  return (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {names.map((n, i) => (
-                        <span
-                          key={i}
-                          style={{
-                            background: '#eff6ff',
-                            color: '#1e3a8a',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                            border: '1px solid #bfdbfe',
-                          }}
-                        >
-                          {n}
-                        </span>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </td>
-              <td><span className={`status-badge ${c.test_type === 'Live Test' ? 'active' : 'pending'}`}>{c.test_type}</span></td>
-              <td><span className="badge-control">{c.font_group}</span></td>
-              <td>
-                {c.audio_url
-                  ? <span style={{ color: '#16a34a', fontSize: '0.8rem' }}>🎙 Audio</span>
-                  : <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>}
-              </td>
-              <td>{new Date(c.test_date).toLocaleDateString()}</td>
-              <td>
-                <button className="btn-action btn-edit" onClick={() => handleEdit(c)}>Edit</button>
-                <button className="btn-action btn-delete" onClick={() => handleDelete(c.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {(() => {
+        const visibleChapters = chapters
+          .filter(c => testTypeFilter === 'All' || c.test_type === testTypeFilter)
+          .filter(c => fontGroupFilter === 'All' || c.font_group === fontGroupFilter)
+          .filter(c => {
+            if (!filterDate) return true;
+            const chapDate = new Date(c.test_date).toISOString().split('T')[0];
+            return chapDate === filterDate;
+          })
+          .filter(c =>
+            !searchTerm ||
+            c.font_group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(c.chapter_no).includes(searchTerm)
+          );
+        const visibleIds = visibleChapters.map(c => c.id);
+        const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id));
+        const toggleAll = () => {
+          if (allSelected) {
+            setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)));
+          } else {
+            setSelectedIds(prev => [...new Set([...prev, ...visibleIds])]);
+          }
+        };
+        return (
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    title="Select all visible"
+                  />
+                </th>
+                <th>ID</th>
+                <th>No</th>
+                <th>Exam</th>
+                <th>Type</th>
+                <th>Font Group</th>
+                <th>Audio</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan="9">Loading...</td></tr>
+              ) : visibleChapters.map((c) => (
+                <tr key={c.id} style={selectedIds.includes(c.id) ? { background: '#fef3c7' } : {}}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(c.id)}
+                      onChange={() => toggleSelectId(c.id)}
+                    />
+                  </td>
+                  <td>{c.id.substring(0, 8)}</td>
+                  <td>{c.chapter_no}</td>
+                  <td>
+                    {(() => {
+                      const names = Array.isArray(c.exams) && c.exams.length > 0
+                        ? c.exams.map(e => e?.name).filter(Boolean)
+                        : (c.exam?.name ? [c.exam.name] : []);
+                      if (names.length === 0) return <span style={{color: '#94a3b8'}}>None</span>;
+                      return (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {names.map((n, i) => (
+                            <span key={i} style={{ background: '#eff6ff', color: '#1e3a8a', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid #bfdbfe' }}>
+                              {n}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </td>
+                  <td><span className={`status-badge ${c.test_type === 'Live Test' ? 'active' : 'pending'}`}>{c.test_type}</span></td>
+                  <td><span className="badge-control">{c.font_group}</span></td>
+                  <td>
+                    {c.audio_url
+                      ? <span style={{ color: '#16a34a', fontSize: '0.8rem' }}>🎙 Audio</span>
+                      : <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>}
+                  </td>
+                  <td>{new Date(c.test_date).toLocaleDateString()}</td>
+                  <td>
+                    <button className="btn-action btn-edit" onClick={() => handleEdit(c)}>Edit</button>
+                    <button className="btn-action btn-delete" onClick={() => handleDelete(c.id)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      })()}
     </div>
   );
 };

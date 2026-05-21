@@ -160,8 +160,9 @@ const TestEngine = () => {
       const totalMistakes = fullErrors + (halfMistakeEnabled ? halfErrors * 0.5 : halfErrors);
       const penaltyWords = (pattern?.penalty_type === 'Stroke' ? totalMistakes / 5 : totalMistakes) * penaltyFactor;
       const nwpm = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
-      const accuracy = totalStrokes > 0
-        ? Math.round(((totalWordsTyped - totalMistakes) / totalWordsTyped) * 100)
+      // Accuracy = (NWPM / GWPM) × 100  [standard typing test formula]
+    const accuracy = gwpm > 0
+        ? Math.max(0, Math.min(100, Math.round((nwpm / gwpm) * 100)))
         : 100;
       setStats({ gwpm, nwpm, accuracy });
     }
@@ -644,8 +645,9 @@ const TestEngine = () => {
       : totalMist * pfactor;
     const finalGwpm = Math.round(totalWords / minutes);
     const finalNwpm = Math.max(0, Math.round((totalWords - penaltyWds) / minutes));
-    const finalAcc  = totalWords > 0
-      ? Math.max(0, Math.min(100, Math.round(((totalWords - totalMist) / totalWords) * 100)))
+    // Accuracy = (NWPM / GWPM) × 100  per standard typing test formula (PDF rule)
+    const finalAcc  = finalGwpm > 0
+      ? Math.max(0, Math.min(100, Math.round((finalNwpm / finalGwpm) * 100)))
       : 100;
 
     const userId = getCurrentUserUuid();
@@ -855,9 +857,9 @@ const TestEngine = () => {
               /> Same Size In Both Boxes
             </label>
             <div className="tcs-font-controls">
-              <button className="tcs-btn-font minus" onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 2), testFontSize: s.sameSize ? Math.max(10, s.fontSize - 2) : s.testFontSize }))}>A-</button>
+              <button className="tcs-btn-font minus" onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 2), testFontSize: Math.max(10, s.testFontSize - 2) }))}>A-</button>
               <span className="tcs-font-display">{settings.fontSize}</span>
-              <button className="tcs-btn-font plus" onClick={() => setSettings(s => ({ ...s, fontSize: s.fontSize + 2, testFontSize: s.sameSize ? s.fontSize + 2 : s.testFontSize }))}>A+</button>
+              <button className="tcs-btn-font plus" onClick={() => setSettings(s => ({ ...s, fontSize: s.fontSize + 2, testFontSize: s.testFontSize + 2 }))}>A+</button>
             </div>
             <label className="tcs-checkbox-label">
               <input type="checkbox" checked={settings.autoScroll} onChange={(e) => setSettings({ ...settings, autoScroll: e.target.checked })} /> Auto Scroll
@@ -920,9 +922,9 @@ const TestEngine = () => {
         <div className="tcs-th-line"></div>
         {withFontControls && !isFullscreen && (
           <div className="tcs-th-center-fonts" style={settingsLockStyle}>
-            <button className="tcs-btn-font minus" onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 2), testFontSize: s.sameSize ? Math.max(10, s.fontSize - 2) : s.testFontSize }))}>A-</button>
+            <button className="tcs-btn-font minus" onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 2), testFontSize: Math.max(10, s.testFontSize - 2) }))}>A-</button>
             <span className="tcs-font-display-inline">{settings.fontSize}</span>
-            <button className="tcs-btn-font plus" onClick={() => setSettings(s => ({ ...s, fontSize: s.fontSize + 2, testFontSize: s.sameSize ? s.fontSize + 2 : s.testFontSize }))}>A+</button>
+            <button className="tcs-btn-font plus" onClick={() => setSettings(s => ({ ...s, fontSize: s.fontSize + 2, testFontSize: s.testFontSize + 2 }))}>A+</button>
           </div>
         )}
         <div className="tcs-th-right">

@@ -304,6 +304,10 @@
 /* Highlight Color Variants */
 .word.current.hl-yellow { background-color: #fef08a; color: #854d0e; }
 .word.current.hl-blue { background-color: #bfdbfe; color: #1e40af; }
+.word.current.hl-green { background-color: #bbf7d0; color: #14532d; }
+.word.current.hl-red { background-color: #fecaca; color: #7f1d1d; }
+.word.current.hl-orange { background-color: #fed7aa; color: #7c2d12; }
+.word.current.hl-pink { background-color: #fbcfe8; color: #831843; }
 .word.current.hl-black { background-color: #1e293b; color: white; }
 
 .word.correct { color: #16a34a !important; }

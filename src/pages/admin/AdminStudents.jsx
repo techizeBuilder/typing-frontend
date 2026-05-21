@@ -127,6 +127,7 @@ const AdminStudents = () => {
       // Clean up empty fields
       if (!payload.validity_start) payload.validity_start = null;
       if (!payload.validity_end) payload.validity_end = null;
+      if (!payload.allowed_login_time_start) payload.allowed_login_time_start = null;
       if (!payload.allowed_login_time_end) payload.allowed_login_time_end = null;
       if (!payload.last_fees_submitted_date) payload.last_fees_submitted_date = null;
       if (payload.fees_amount === '') payload.fees_amount = null;
@@ -369,6 +370,15 @@ const AdminStudents = () => {
 
              <div className="form-section">
                 <h4>Login Control</h4>
+                <div className="input-group" style={{ marginBottom: '15px', padding: '10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px' }}>
+                  <label style={{ color: '#0369a1', fontWeight: 700, marginBottom: '6px', display: 'block' }}>Current Username (Login ID)</label>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 700, color: '#1e40af', background: '#fff', padding: '6px 12px', borderRadius: '4px', border: '1px solid #93c5fd' }}>
+                      {currentStudent?.user_id || currentStudent?.phone || '—'}
+                    </span>
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>This is the student's login username</span>
+                  </div>
+                </div>
                 <div className="admin-inline-group">
                   <div className="input-group">
                     <label>Allowed Start Time (e.g. 09:00)</label>
@@ -465,6 +475,7 @@ const AdminStudents = () => {
         <thead>
           <tr>
             <th>Name</th>
+            <th>Username (Login ID)</th>
             <th>Category</th>
             <th>Role</th>
             <th>Phone</th>
@@ -476,15 +487,20 @@ const AdminStudents = () => {
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan="8">Loading...</td></tr>
+            <tr><td colSpan="9">Loading...</td></tr>
           ) : students.length === 0 ? (
-            <tr><td colSpan="8">No Users found in database.</td></tr>
+            <tr><td colSpan="9">No Users found in database.</td></tr>
           ) : students
               .filter(s => (s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.phone?.includes(searchTerm)))
               .filter(s => categoryFilter === 'All' || s.category === categoryFilter)
               .map((s) => (
             <tr key={s.id}>
               <td><strong>{s.name}</strong></td>
+              <td>
+                <span style={{ fontFamily: 'monospace', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', color: '#1e40af', fontWeight: 600 }}>
+                  {s.user_id || s.phone || '—'}
+                </span>
+              </td>
               <td>
                 {s.category ? (
                   <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>

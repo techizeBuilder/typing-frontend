@@ -218,7 +218,7 @@ const AvailableTests = () => {
                 <thead>
                   <tr>
                     <th>S.No</th>
-                    <th>Exam No</th>
+                    <th>Test No</th>
                     <th>Exam Name</th>
                     <th>Exam Start</th>
                     <th>Exam end</th>
@@ -245,7 +245,7 @@ const AvailableTests = () => {
                       return (
                       <tr key={chapter.id}>
                         <td>{String(index + 1).padStart(2, '0')}</td>
-                        <td>{selectedExam?.id?.substring(0, 5) || '76299'}</td>
+                        <td><strong>{chapter.chapter_no}</strong></td>
                         <td>{selectedExam?.name}</td>
                         <td>12:00 AM</td>
                         <td>11:59 PM</td>
