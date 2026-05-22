@@ -254,7 +254,7 @@ const StudentDashboard = () => {
                             <img
                               src={resolveAssetUrl(exam.image_url)}
                               alt={`${exam.name} logo`}
-                              style={{ width: '20px', height: '20px', objectFit: 'contain' }}
+                              style={{ width: '80px', height: '80px', objectFit: 'contain' }}
                             />
                           ) : (
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

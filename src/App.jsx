@@ -21,6 +21,7 @@ import AdminStudents from './pages/admin/AdminStudents';
 import AdminMessages from './pages/admin/AdminMessages';
 import AdminFlashBanner from './pages/admin/AdminFlashBanner';
 import AdminStaff from './pages/admin/AdminStaff';
+import AdminResults from './pages/admin/AdminResults';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 
 function App() {
@@ -55,6 +56,7 @@ function App() {
               <Route path="messages" element={<AdminMessages />} />
               <Route path="flash-banner" element={<AdminFlashBanner />} />
               <Route path="staff" element={<AdminStaff />} />
+              <Route path="results" element={<AdminResults />} />
             </Route>
           </Route>
         </Routes>

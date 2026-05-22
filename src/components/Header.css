@@ -1,16 +1,17 @@
 .main-header {
   background-color: white;
-  padding: 10px 30px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-  margin-bottom: 20px;
+  padding: 0 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  margin: 0;
   position: relative;
-  border-bottom: 4px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  line-height: 1;
 }
 
 .header-content {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: stretch;
   max-width: 1400px;
   margin: 0 auto;
   position: relative;
@@ -21,44 +22,50 @@
   display: flex;
   align-items: center;
   flex: 1;
+  padding: 4px 0;
 }
 
 .logo-image {
-  height: 80px;
+  height: 88px;
   object-fit: contain;
 }
 
 .title-container {
   text-align: center;
   flex: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6px 0;
 }
 
 .title-container h1 {
-  font-size: 1.8rem;
+  font-size: 1.1rem;
   font-weight: 800;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  margin: 0 0 3px 0;
   color: #1e293b;
 }
 
 .title-container h2 {
-  font-size: 1.1rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: #0f172a;
-  margin-bottom: 8px;
+  margin: 0 0 3px 0;
 }
 
 .title-divider {
-  height: 2px;
+  height: 1px;
   background-color: #cbd5e1;
   width: 70%;
-  margin: 0 auto 10px;
+  margin: 0 auto 4px;
 }
 
 .title-container p {
-  font-size: 1rem;
+  font-size: 0.65rem;
   font-weight: 700;
   color: #1e293b;
+  margin: 0;
 }
 
 .right-graphics {
@@ -69,13 +76,14 @@
 }
 
 .parliament-svg {
-  height: 130px;
+  height: 132px;
   width: auto;
   max-width: 200px;
   object-fit: contain;
   object-position: bottom;
   align-self: flex-end;
-  margin-bottom: 0;
+  display: block;
+  margin: 0;
 }
 
 /* --- Mobile Responsiveness --- */
