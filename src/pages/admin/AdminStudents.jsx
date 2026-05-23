@@ -30,8 +30,11 @@ const AdminStudents = () => {
     fees_amount: '',
     roll_no: '',
     live_tests_limit: '',
-    category: ''
+    category: '',
+    selectedCategories: []
   });
+
+  const ALL_CATEGORIES = ['Typing English', 'Typing Hindi', 'Steno English', 'Steno Hindi'];
 
   // Add Student Modal State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -43,6 +46,7 @@ const AdminStudents = () => {
     user_id: '',
     password_hash: '',
     category: 'Typing English',
+    selectedCategories: ['Typing English'],
     status: 'Active',
     roll_no: '',
     fees_amount: '',
@@ -79,6 +83,9 @@ const AdminStudents = () => {
 
   const openEditModal = (student) => {
     setCurrentStudent(student);
+    const existingCats = student.category
+      ? student.category.split(',').map(c => c.trim()).filter(Boolean)
+      : [];
     setFormData({
       status: student.status || 'Active',
       validity_start: student.validity_start ? new Date(student.validity_start).toISOString().split('T')[0] : '',
@@ -90,15 +97,21 @@ const AdminStudents = () => {
       fees_amount: student.fees_amount || '',
       roll_no: student.roll_no || '',
       live_tests_limit: student.live_tests_limit !== null && student.live_tests_limit !== undefined ? student.live_tests_limit : '',
-      category: student.category || ''
+      category: student.category || '',
+      selectedCategories: existingCats
     });
     setShowEditModal(true);
   };
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
+    if (addFormData.selectedCategories.length === 0) {
+      alert('Please select at least one course category.');
+      return;
+    }
     try {
-      const payload = { ...addFormData, role: 'Student' };
+      const { selectedCategories, ...rest } = addFormData;
+      const payload = { ...rest, role: 'Student', category: selectedCategories.join(', ') };
       if (!payload.validity_end) delete payload.validity_end;
       if (payload.fees_amount === '') delete payload.fees_amount;
       if (!payload.user_id) payload.user_id = payload.phone;
@@ -106,7 +119,8 @@ const AdminStudents = () => {
       setShowAddModal(false);
       setAddFormData({
         name: '', fathers_name: '', phone: '', user_id: '', password_hash: '',
-        category: 'Typing English', status: 'Active', roll_no: '', fees_amount: '', validity_end: ''
+        category: 'Typing English', selectedCategories: ['Typing English'],
+        status: 'Active', roll_no: '', fees_amount: '', validity_end: ''
       });
       fetchStudents();
     } catch (error) {
@@ -122,8 +136,9 @@ const AdminStudents = () => {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
-      const payload = { ...formData };
-      
+      const { selectedCategories, ...rest } = formData;
+      const payload = { ...rest, category: selectedCategories.length > 0 ? selectedCategories.join(', ') : null };
+
       // Clean up empty fields
       if (!payload.validity_start) payload.validity_start = null;
       if (!payload.validity_end) payload.validity_end = null;
@@ -139,7 +154,6 @@ const AdminStudents = () => {
       if (!payload.password_hash || payload.password_hash.trim() === '') {
         delete payload.password_hash;
       }
-      if (!payload.category) payload.category = null;
 
       await userService.updateUser(currentStudent.id, payload);
       setShowEditModal(false);
@@ -263,13 +277,26 @@ const AdminStudents = () => {
               <h4>Course & Academic</h4>
               <div className="admin-inline-group">
                 <div className="input-group">
-                  <label>Category (Course) *</label>
-                  <select required value={addFormData.category} onChange={(e) => setAddFormData({...addFormData, category: e.target.value})}>
-                    <option value="Typing English">Typing English</option>
-                    <option value="Typing Hindi">Typing Hindi</option>
-                    <option value="Steno English">Steno English</option>
-                    <option value="Steno Hindi">Steno Hindi</option>
-                  </select>
+                  <label>Category (Course) * — select multiple</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px' }}>
+                    {ALL_CATEGORIES.map(cat => (
+                      <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', cursor: 'pointer', background: addFormData.selectedCategories.includes(cat) ? '#e0e7ff' : '#f1f5f9', border: addFormData.selectedCategories.includes(cat) ? '1.5px solid #6366f1' : '1.5px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontWeight: addFormData.selectedCategories.includes(cat) ? 700 : 400 }}>
+                        <input
+                          type="checkbox"
+                          checked={addFormData.selectedCategories.includes(cat)}
+                          onChange={() => {
+                            const set = new Set(addFormData.selectedCategories);
+                            if (set.has(cat)) set.delete(cat); else set.add(cat);
+                            setAddFormData({ ...addFormData, selectedCategories: Array.from(set) });
+                          }}
+                        />
+                        {cat}
+                      </label>
+                    ))}
+                  </div>
+                  {addFormData.selectedCategories.length === 0 && (
+                    <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '4px' }}>Please select at least one course.</p>
+                  )}
                 </div>
                 <div className="input-group">
                   <label>Roll No</label>
@@ -321,14 +348,23 @@ const AdminStudents = () => {
              <div className="form-section">
                 <h4>Status & Validity</h4>
                 <div className="input-group">
-                  <label>Category (Course)</label>
-                  <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
-                    <option value="">-- Select Course --</option>
-                    <option value="Typing English">Typing English</option>
-                    <option value="Typing Hindi">Typing Hindi</option>
-                    <option value="Steno English">Steno English</option>
-                    <option value="Steno Hindi">Steno Hindi</option>
-                  </select>
+                  <label>Category (Course) — select multiple</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px' }}>
+                    {ALL_CATEGORIES.map(cat => (
+                      <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', cursor: 'pointer', background: formData.selectedCategories.includes(cat) ? '#e0e7ff' : '#f1f5f9', border: formData.selectedCategories.includes(cat) ? '1.5px solid #6366f1' : '1.5px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontWeight: formData.selectedCategories.includes(cat) ? 700 : 400 }}>
+                        <input
+                          type="checkbox"
+                          checked={formData.selectedCategories.includes(cat)}
+                          onChange={() => {
+                            const set = new Set(formData.selectedCategories);
+                            if (set.has(cat)) set.delete(cat); else set.add(cat);
+                            setFormData({ ...formData, selectedCategories: Array.from(set) });
+                          }}
+                        />
+                        {cat}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="input-group">
                   <label>Status</label>
@@ -492,7 +528,7 @@ const AdminStudents = () => {
             <tr><td colSpan="9">No Users found in database.</td></tr>
           ) : students
               .filter(s => (s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.phone?.includes(searchTerm)))
-              .filter(s => categoryFilter === 'All' || s.category === categoryFilter)
+              .filter(s => categoryFilter === 'All' || (s.category && s.category.split(',').map(c => c.trim()).includes(categoryFilter)))
               .map((s) => (
             <tr key={s.id}>
               <td><strong>{s.name}</strong></td>
@@ -503,9 +539,13 @@ const AdminStudents = () => {
               </td>
               <td>
                 {s.category ? (
-                  <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                    {s.category}
-                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {s.category.split(',').map(c => c.trim()).filter(Boolean).map(c => (
+                      <span key={c} style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                        {c}
+                      </span>
+                    ))}
+                  </div>
                 ) : (
                   <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>-</span>
                 )}

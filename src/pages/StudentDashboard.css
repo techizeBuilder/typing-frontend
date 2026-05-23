@@ -9,7 +9,7 @@
 
 .dashboard-welcome-bar {
   background-color: #0b4bcc;
-  padding: 7px 40px;
+  padding: 3px 40px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -18,16 +18,18 @@
 }
 
 .welcome-text-content h2 {
-  font-size: 0.7rem;
+  font-size: 1.19rem;
   font-weight: 600;
-  margin: 0 0 2px 0;
+  margin: 0 0 1px 0;
   letter-spacing: 0.5px;
+  line-height: 1.1;
 }
 
 .welcome-text-content p {
-  font-size: 0.48rem;
+  font-size: 0.82rem;
   margin: 0;
   color: #e0e7ff;
+  line-height: 1.1;
 }
 
 .btn-days-left {

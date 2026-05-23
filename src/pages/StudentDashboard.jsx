@@ -220,11 +220,15 @@ const StudentDashboard = () => {
                   {loading ? (
                     <p>Loading patterns...</p>
                   ) : (() => {
+                    // Normalize steno mode button labels to match the stored font_group values in admin
+                    const normalizedMode = selectedMode === 'English Steno' ? 'Steno English'
+                      : selectedMode === 'Hindi Steno' ? 'Steno Hindi'
+                      : selectedMode;
                     const modeExams = exams.filter(exam => {
                       const groups = Array.isArray(exam.font_groups) && exam.font_groups.length > 0
                         ? exam.font_groups
                         : (exam.font_group ? [exam.font_group] : []);
-                      return groups.length === 0 || groups.includes(selectedMode);
+                      return groups.length === 0 || groups.includes(normalizedMode);
                     });
                     return modeExams.length === 0
                       ? <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No exams available for {selectedMode}.</p>
