@@ -210,87 +210,112 @@ const AvailableTests = () => {
             </div>
           )}
 
-          <div className="tests-table-container">
-            {loading ? (
-              <p style={{ padding: '20px', textAlign: 'center' }}>Loading available tests...</p>
-            ) : (
-              <table className="tests-table">
-                <thead>
-                  <tr>
-                    <th>S.No</th>
-                    <th>Test No</th>
-                    <th>Exam Name</th>
-                    <th>Exam Start</th>
-                    <th>Exam end</th>
-                    <th>Language</th>
-                    <th>Duration</th>
-                    {isLiveTest && <th>Rank</th>}
-                    {isLiveTest && <th>Result</th>}
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredChapters.length === 0 ? (
+          {/* ── Preloaded: Card Grid Layout ────────────────────────── */}
+          {!isLiveTest && (
+            <div className="preload-cards-grid">
+              {loading ? (
+                <p style={{ padding: '20px', textAlign: 'center', gridColumn: '1 / -1' }}>Loading available tests...</p>
+              ) : filteredChapters.length === 0 ? (
+                <p style={{ padding: '20px', textAlign: 'center', gridColumn: '1 / -1', color: '#94a3b8' }}>No exercises found for {selectedMode}.</p>
+              ) : (
+                filteredChapters.map((chapter) => {
+                  return (
+                    <div key={chapter.id} className="preload-card">
+                      <div className="preload-card-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="2" y="6" width="20" height="13" rx="2"/>
+                          <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h4M18 14h.01"/>
+                        </svg>
+                      </div>
+                      <div className="preload-card-title">Practice Test {chapter.chapter_no}</div>
+                      <button className="preload-card-btn" onClick={() => handleStartTest(chapter)}>
+                        Start Test
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* ── Live Test: Table Layout ─────────────────────────────── */}
+          {isLiveTest && (
+            <div className="tests-table-container">
+              {loading ? (
+                <p style={{ padding: '20px', textAlign: 'center' }}>Loading available tests...</p>
+              ) : (
+                <table className="tests-table">
+                  <thead>
                     <tr>
-                      <td colSpan={isLiveTest ? 10 : 8}>
-                        {isLiveTest
-                          ? `No live chapters found for ${selectedMode} on this date.`
-                          : `No exercises found for ${selectedMode}.`}
-                      </td>
+                      <th>S.No</th>
+                      <th>Test No</th>
+                      <th>Exam Name</th>
+                      <th>Exam Start</th>
+                      <th>Exam end</th>
+                      <th>Language</th>
+                      <th>Duration</th>
+                      <th>Rank</th>
+                      <th>Result</th>
+                      <th>Action</th>
                     </tr>
-                  ) : (
-                    filteredChapters.map((chapter, index) => {
-                      const userResult = resultsByChapter[chapter.id];
-                      const rankInfo = rankByChapter[chapter.id];
-                      return (
-                      <tr key={chapter.id}>
-                        <td>{String(index + 1).padStart(2, '0')}</td>
-                        <td><strong>{chapter.chapter_no}</strong></td>
-                        <td>{selectedExam?.name}</td>
-                        <td>12:00 AM</td>
-                        <td>11:59 PM</td>
-                        <td>{selectedMode.includes('Hindi') ? 'Hindi' : 'English'}</td>
-                        <td>{selectedExam?.test_time_minutes} Min</td>
-                        {isLiveTest && (
-                          <td>
-                            {rankInfo && rankInfo.rank
-                              ? <span style={{ fontWeight: 600, color: '#0b4bcc' }}>{rankInfo.rank}{rankInfo.total ? ` / ${rankInfo.total}` : ''}</span>
-                              : '-'}
-                          </td>
-                        )}
-                        {isLiveTest && (
-                          <td>
-                            {userResult ? (
-                              <button
-                                onClick={() => handleViewResult(chapter)}
-                                style={{ background: '#0b4bcc', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
-                              >
-                                View
-                              </button>
-                            ) : '-'}
-                          </td>
-                        )}
-                        <td>
-                          {index < unlockedCount ? (
-                            <button className="btn-start-table" onClick={() => handleStartTest(chapter)}>Start</button>
-                          ) : (
-                            <button className="btn-locked-table">
-                              Locked
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                              </svg>
-                            </button>
-                          )}
+                  </thead>
+                  <tbody>
+                    {filteredChapters.length === 0 ? (
+                      <tr>
+                        <td colSpan={10}>
+                          No live chapters found for {selectedMode} on this date.
                         </td>
                       </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            )}
-          </div>
+                    ) : (
+                      filteredChapters.map((chapter, index) => {
+                        const userResult = resultsByChapter[chapter.id];
+                        const rankInfo = rankByChapter[chapter.id];
+                        return (
+                          <tr key={chapter.id}>
+                            <td>{String(index + 1).padStart(2, '0')}</td>
+                            <td><strong>{chapter.chapter_no}</strong></td>
+                            <td>{selectedExam?.name}</td>
+                            <td>12:00 AM</td>
+                            <td>11:59 PM</td>
+                            <td>{selectedMode.includes('Hindi') ? 'Hindi' : 'English'}</td>
+                            <td>{selectedExam?.test_time_minutes} Min</td>
+                            <td>
+                              {rankInfo && rankInfo.rank
+                                ? <span style={{ fontWeight: 600, color: '#0b4bcc' }}>{rankInfo.rank}{rankInfo.total ? ` / ${rankInfo.total}` : ''}</span>
+                                : '-'}
+                            </td>
+                            <td>
+                              {userResult ? (
+                                <button
+                                  onClick={() => handleViewResult(chapter)}
+                                  style={{ background: '#0b4bcc', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                                >
+                                  View
+                                </button>
+                              ) : '-'}
+                            </td>
+                            <td>
+                              {index < unlockedCount ? (
+                                <button className="btn-start-table" onClick={() => handleStartTest(chapter)}>Start</button>
+                              ) : (
+                                <button className="btn-locked-table">
+                                  Locked
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                  </svg>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
 
           <div className="info-cards-container">
             <div className="info-card green">

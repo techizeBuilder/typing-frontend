@@ -23,6 +23,7 @@ import AdminFlashBanner from './pages/admin/AdminFlashBanner';
 import AdminStaff from './pages/admin/AdminStaff';
 import AdminResults from './pages/admin/AdminResults';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
+import SelfAssessmentSetup from './pages/SelfAssessmentSetup';
 
 function App() {
   return (
@@ -39,6 +40,7 @@ function App() {
             <Route path="/test" element={<TestEngine />} />
             <Route path="/steno-test" element={<StenoTestEngine />} />
             <Route path="/available-tests" element={<AvailableTests />} />
+            <Route path="/self-assessment" element={<SelfAssessmentSetup />} />
             <Route path="/steno-dictations" element={<StenoDictations />} />
             <Route path="/result" element={<ResultScreen />} />
             <Route path="/my-tests" element={<MyResults />} />

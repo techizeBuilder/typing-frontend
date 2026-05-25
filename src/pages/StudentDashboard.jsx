@@ -188,9 +188,7 @@ const StudentDashboard = () => {
                     className={`custom-tab-btn ${selectedMode === mode ? 'active' : ''}`}
                     onClick={() => {
                       if (mode === 'Self Assessment') {
-                        navigate('/test', {
-                          state: { mode: 'Self Assessment', isSelfAssessment: true }
-                        });
+                        navigate('/self-assessment');
                         return;
                       }
 

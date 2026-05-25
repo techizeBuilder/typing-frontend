@@ -53,6 +53,7 @@ const AdminExams = () => {
     show_accuracy: true,
     show_penalty_words: true,
     show_ignorable_mistakes: true,
+    count_omissions_as_errors: true,
   };
 
   const [patterns, setPatterns] = useState([]);
@@ -80,6 +81,7 @@ const AdminExams = () => {
     show_accuracy: true,
     show_penalty_words: true,
     show_ignorable_mistakes: true,
+    count_omissions_as_errors: true,
   });
 
   // Exam States
@@ -312,6 +314,13 @@ const AdminExams = () => {
                     <div className="input-group">
                         <label>Count only Right Words (Y/N)</label>
                         <select value={patternData.count_right_words_only ? "Yes" : "No"} onChange={(e) => setPatternData({...patternData, count_right_words_only: e.target.value === "Yes"})}>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
+                        <label>Count Omitted/Left Words as Error</label>
+                        <select value={patternData.count_omissions_as_errors !== false ? "Yes" : "No"} onChange={(e) => setPatternData({...patternData, count_omissions_as_errors: e.target.value === "Yes"})}>
                             <option value="Yes">Yes</option>
                             <option value="No">No</option>
                         </select>

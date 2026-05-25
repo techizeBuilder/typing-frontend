@@ -20,7 +20,7 @@ const AdminResults = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
-  const [modeFilter, setModeFilter] = useState('All');
+  const [testTypeFilter, setTestTypeFilter] = useState('All');
 
   useEffect(() => {
     fetchResults();
@@ -43,10 +43,10 @@ const AdminResults = () => {
     setDateFrom('');
     setDateTo('');
     setCourseFilter('All');
-    setModeFilter('All');
+    setTestTypeFilter('All');
   };
 
-  const hasActiveFilter = usernameSearch || dateFrom || dateTo || courseFilter !== 'All' || modeFilter !== 'All';
+  const hasActiveFilter = usernameSearch || dateFrom || dateTo || courseFilter !== 'All' || testTypeFilter !== 'All';
 
   const handleViewResult = (r) => {
     navigate('/result', {
@@ -73,12 +73,6 @@ const AdminResults = () => {
     });
   };
 
-  const getModeLabel = (mode) => {
-    if (!mode) return 'Typing';
-    if (mode.toLowerCase().includes('steno')) return 'Steno';
-    return 'Typing';
-  };
-
   const filtered = results.filter((r) => {
     // Username / name search
     const uName = (r.user?.name || '').toLowerCase();
@@ -97,13 +91,13 @@ const AdminResults = () => {
     const matchCourse =
       courseFilter === 'All' || (r.user?.category || '') === courseFilter;
 
-    // Mode (Typing / Steno)
-    const matchMode =
-      modeFilter === 'All' ||
-      (modeFilter === 'Steno'  && getModeLabel(r.mode) === 'Steno') ||
-      (modeFilter === 'Typing' && getModeLabel(r.mode) === 'Typing');
+    // Test Type (Preloaded / Live)
+    const matchTestType =
+      testTypeFilter === 'All' ||
+      (testTypeFilter === 'Preloaded' && r.test_type === 'Pre-load Test') ||
+      (testTypeFilter === 'Live'      && r.test_type === 'Live Test');
 
-    return matchUsername && matchFrom && matchTo && matchCourse && matchMode;
+    return matchUsername && matchFrom && matchTo && matchCourse && matchTestType;
   });
 
   const inputStyle = {
@@ -198,17 +192,17 @@ const AdminResults = () => {
             </select>
           </div>
 
-          {/* Mode */}
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: '140px' }}>
-            <label style={labelStyle}>Mode</label>
+          {/* Test Type */}
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: '150px' }}>
+            <label style={labelStyle}>Test Type</label>
             <select
-              value={modeFilter}
-              onChange={(e) => setModeFilter(e.target.value)}
+              value={testTypeFilter}
+              onChange={(e) => setTestTypeFilter(e.target.value)}
               style={inputStyle}
             >
-              <option value="All">All Modes</option>
-              <option value="Typing">Typing</option>
-              <option value="Steno">Steno</option>
+              <option value="All">All Types</option>
+              <option value="Preloaded">Preloaded</option>
+              <option value="Live">Live</option>
             </select>
           </div>
         </div>
@@ -227,7 +221,9 @@ const AdminResults = () => {
             <th>Username</th>
             <th>Course</th>
             <th>Mode</th>
+            <th>Test Type</th>
             <th>Exam</th>
+            <th>Chapter No.</th>
             <th>NWPM</th>
             <th>GWPM</th>
             <th>Accuracy</th>
@@ -237,9 +233,9 @@ const AdminResults = () => {
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan="11">Loading results...</td></tr>
+            <tr><td colSpan="13">Loading results...</td></tr>
           ) : filtered.length === 0 ? (
-            <tr><td colSpan="11" style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>No results found matching the selected filters.</td></tr>
+            <tr><td colSpan="13" style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>No results found matching the selected filters.</td></tr>
           ) : (
             filtered.map((r) => (
               <tr key={r.id}>
@@ -256,11 +252,21 @@ const AdminResults = () => {
                     : <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>}
                 </td>
                 <td>
-                  <span className={`status-badge ${getModeLabel(r.mode) === 'Steno' ? 'pending' : 'active'}`}>
+                  <span className={`status-badge ${r.mode?.toLowerCase().includes('steno') ? 'pending' : 'active'}`}>
                     {r.mode || 'Typing'}
                   </span>
                 </td>
+                <td>
+                  {r.test_type
+                    ? <span style={{ background: r.test_type === 'Live Test' ? '#fef9c3' : '#dcfce7', color: r.test_type === 'Live Test' ? '#854d0e' : '#166534', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>{r.test_type === 'Live Test' ? 'Live' : 'Preloaded'}</span>
+                    : <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>}
+                </td>
                 <td>{r.exam ? r.exam.name : <span style={{ color: '#94a3b8' }}>Practice</span>}</td>
+                <td>
+                  {r.chapter?.chapter_no
+                    ? <span style={{ fontWeight: 700, color: '#1e40af' }}>#{r.chapter.chapter_no}</span>
+                    : <span style={{ color: '#94a3b8' }}>—</span>}
+                </td>
                 <td><strong>{r.nwpm}</strong></td>
                 <td>{r.gwpm}</td>
                 <td>{r.accuracy}%</td>
