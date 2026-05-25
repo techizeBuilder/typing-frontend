@@ -157,7 +157,7 @@ const TestEngine = () => {
       const gwpm = Math.round(totalWordsTyped / minutes);
       const halfMistakeEnabled = pattern?.half_mistake_enabled || false;
       const penaltyFactor = pattern?.penalty_value || 1;
-      const totalMistakes = fullErrors + (halfMistakeEnabled ? halfErrors * 0.5 : halfErrors);
+      const totalMistakes = fullErrors + halfErrors * 0.5;
       const penaltyWords = (pattern?.penalty_type === 'Stroke' ? totalMistakes / 5 : totalMistakes) * penaltyFactor;
       const nwpm = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
       // Accuracy = (NWPM / GWPM) × 100  [standard typing test formula]
@@ -199,9 +199,6 @@ const TestEngine = () => {
 
     // Exact match
     if (t === r) return 'correct';
-
-    const halfEnabled = pattern?.half_mistake_enabled ?? true;
-    if (!halfEnabled) return 'error'; // When disabled, all non-exact = full error
 
     // B.iii: Wrong capitalisation — ENGLISH ONLY
     // Rule: "This does not apply to Hindi Typewriting Scripts"
@@ -434,45 +431,45 @@ const TestEngine = () => {
 
     // ── Pass 2: B.i Spacing error — two ref words merged without space ────────
     // e.g. typed "Ihope" where ref[i]="I" and ref[i+1]="hope" → half-error
-    const halfEnabled = pattern?.half_mistake_enabled ?? true;
-    if (halfEnabled) {
-      for (let i = 0; i < currentIndex; i++) {
-        if (newStatuses[i] === 'error' && words[i] && words[i + 1]) {
-          const mergedLower = (words[i] + words[i + 1]).toLowerCase();
-          if ((typedWords[i] || '').toLowerCase() === mergedLower) {
-            newStatuses[i] = 'half-error'; // B.i spacing error
-          }
-        }
-      }
-
-      // ── Pass 3: B.iv Transposition — adjacent words swapped ─────────────────
-      for (let i = 0; i < currentIndex - 1; i++) {
-        const ti  = (typedWords[i]     || '').toLowerCase();
-        const ti1 = (typedWords[i + 1] || '').toLowerCase();
-        const ri  = (words[i]          || '').toLowerCase();
-        const ri1 = (words[i + 1]      || '').toLowerCase();
-        if (ti === ri1 && ti1 === ri && ti !== ri) {
-          if (newStatuses[i]     === 'error') newStatuses[i]     = 'half-error';
-          if (newStatuses[i + 1] === 'error') newStatuses[i + 1] = 'half-error';
+    for (let i = 0; i < currentIndex; i++) {
+      if (newStatuses[i] === 'error' && words[i] && words[i + 1]) {
+        const mergedLower = (words[i] + words[i + 1]).toLowerCase();
+        if ((typedWords[i] || '').toLowerCase() === mergedLower) {
+          newStatuses[i] = 'half-error'; // B.i spacing error
         }
       }
     }
 
+    // ── Pass 3: B.iv Transposition — adjacent words swapped ─────────────────
+    for (let i = 0; i < currentIndex - 1; i++) {
+      const ti  = (typedWords[i]     || '').toLowerCase();
+      const ti1 = (typedWords[i + 1] || '').toLowerCase();
+      const ri  = (words[i]          || '').toLowerCase();
+      const ri1 = (words[i + 1]      || '').toLowerCase();
+      if (ti === ri1 && ti1 === ri && ti !== ri) {
+        if (newStatuses[i]     === 'error') newStatuses[i]     = 'half-error';
+        if (newStatuses[i + 1] === 'error') newStatuses[i + 1] = 'half-error';
+      }
+    }
+
     // ── Count word-level errors ───────────────────────────────────────────────
-    let full = 0, half = 0;
+    let fullBase = 0, half = 0;
     for (let i = 0; i < currentIndex; i++) {
-      if (newStatuses[i] === 'error')      full++;
+      if (newStatuses[i] === 'error')      fullBase++;
       if (newStatuses[i] === 'half-error') half++;
     }
 
     // ── Pass 4: B.i Extra spaces — count groups of 2+ consecutive spaces ──────
     // "I   hope" typed = 1 extra-space half-error (not visible in word split)
     // Only scan the already-committed portion (up to last space)
-    if (halfEnabled) {
+    {
       const committed = fullValue.slice(0, fullValue.lastIndexOf(' ') + 1);
       const extraGroups = committed.match(/ {2,}/g);
       if (extraGroups) half += extraGroups.length;
     }
+
+    // Full = ALL errors (spelling/omission-base + formatting/cap+punct)
+    const full = fullBase + half;
 
     setWordStatuses(newStatuses);
     setFullErrors(full);
@@ -657,14 +654,16 @@ const TestEngine = () => {
     finalStatuses = lineDetect.statuses;
     // Re-derive error counts respecting the admin's omission setting
     const countOmissions = pattern?.count_omissions_as_errors ?? true;
-    let derivedFull = extraTypedWords.length; // A.iii extra typed words always count
+    let derivedBase = extraTypedWords.length; // A.iii addition errors
     let derivedHalf = 0;
     for (const s of finalStatuses) {
-      if (s === 'error')           derivedFull++;
-      else if (s === 'half-error') derivedHalf++;
-      else if (s === 'pending' && countOmissions) derivedFull++; // A.i omission (if enabled)
+      if (s === 'error')           derivedBase++;              // spelling/substitution
+      else if (s === 'half-error') derivedHalf++;             // cap/punct
+      else if (s === 'pending' && countOmissions) derivedBase++; // A.i omission
     }
-    finalFull = derivedFull;
+    // Full mistakes = ALL error types (spelling + omission + addition + formatting/cap+punct)
+    // Half mistakes = cap/punct subset (gets a 0.5 discount in the formula)
+    finalFull = derivedBase + derivedHalf;
     finalHalf = derivedHalf;
 
     // Detect repeated word sequences (user typed the same line twice).
@@ -682,8 +681,7 @@ const TestEngine = () => {
     const totalWords  = speedCount === 'Words'
       ? typedFinalWords.length
       : finalStrokes / 5;
-    const halfEnabled = pattern?.half_mistake_enabled ?? true;
-    const totalMist   = finalFull + (halfEnabled ? finalHalf * 0.5 : finalHalf);
+    const totalMist   = finalFull + finalHalf * 0.5;
     const pfactor     = pattern?.penalty_value ?? 1;
     const ptype       = pattern?.penalty_type  ?? 'Word';
     const penaltyWds  = ptype === 'Stroke'
