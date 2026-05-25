@@ -1,0 +1,235 @@
+/* ─── Self Assessment Setup Page ─────────────────────────────────────────── */
+
+.sa-page {
+  min-height: 100vh;
+  background: #f0f2f5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 28px 16px 60px;
+}
+
+.sa-container {
+  width: 100%;
+  max-width: 960px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.10);
+  overflow: hidden;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+.sa-header {
+  background: linear-gradient(135deg, #0f1f3d 0%, #1a3a6c 100%);
+  color: #fff;
+  padding: 28px 32px 24px;
+}
+
+.sa-back-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  margin-bottom: 16px;
+  display: inline-block;
+  transition: background 0.2s;
+}
+.sa-back-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.sa-title {
+  margin: 0 0 6px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.sa-subtitle {
+  margin: 0;
+  opacity: 0.72;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+.sa-body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  min-height: 520px;
+}
+
+/* ── Left: text column ────────────────────────────────────────────────────── */
+.sa-text-col {
+  padding: 28px 28px 24px;
+  border-right: 1px solid #eaeaea;
+  display: flex;
+  flex-direction: column;
+}
+
+.sa-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 4px;
+}
+
+.sa-hint {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: #999;
+}
+
+.sa-textarea {
+  flex: 1;
+  min-height: 380px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: #2c2c2c;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.sa-textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+.sa-textarea::placeholder {
+  color: #c0c0c0;
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+.sa-stats {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: #aaa;
+  text-align: right;
+}
+.sa-stats strong {
+  color: #555;
+}
+
+/* ── Right: settings column ───────────────────────────────────────────────── */
+.sa-settings-col {
+  padding: 28px 24px;
+  background: #f8f9fb;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sa-setting-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sa-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 7px;
+  font-size: 0.88rem;
+  color: #333;
+  background: #fff;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.sa-select:focus {
+  border-color: #2563eb;
+}
+
+/* ── Preview box ─────────────────────────────────────────────────────────── */
+.sa-preview-box {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sa-preview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: #666;
+}
+.sa-preview-row strong {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+/* ── Start button ────────────────────────────────────────────────────────── */
+.sa-start-btn {
+  margin-top: auto;
+  width: 100%;
+  padding: 14px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+.sa-start-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+}
+.sa-start-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.sa-start-btn:disabled {
+  background: #c5c5c5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.sa-start-hint {
+  text-align: center;
+  font-size: 0.78rem;
+  color: #aaa;
+  margin: 0;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .sa-body {
+    grid-template-columns: 1fr;
+  }
+  .sa-text-col {
+    border-right: none;
+    border-bottom: 1px solid #eaeaea;
+  }
+  .sa-textarea {
+    min-height: 220px;
+  }
+  .sa-header {
+    padding: 20px 20px 18px;
+  }
+  .sa-title {
+    font-size: 1.4rem;
+  }
+}

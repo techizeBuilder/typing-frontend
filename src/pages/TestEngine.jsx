@@ -44,7 +44,7 @@ const TestEngine = () => {
     backspaceControl: exam?.backspace_control || 'Full Backspace',
   });
 
-  const [timeLeft, setTimeLeft] = useState(exam?.test_time_minutes * 60 || 600);
+  const [timeLeft, setTimeLeft] = useState(exam?.test_time_minutes * 60 || (passedChapter?.time_minutes ?? 10) * 60);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [chapter, setChapter] = useState(passedChapter || (isSelfAssessment ? { name: 'Self Assessment', content_text: '', time_minutes: 15 } : null));
   const [loading, setLoading] = useState(!passedChapter && !isSelfAssessment);
@@ -226,25 +226,28 @@ const TestEngine = () => {
     return 'error';
   }, [isHindiMode, pattern]);
 
-  // ─── Word-level edit-distance alignment ─────────────────────────────────────
-  // Uses Needleman-Wunsch / Levenshtein on words to find the optimal alignment
-  // between typed and reference word sequences. Single-word insertions,
-  // deletions, and substitutions stay LOCAL — they don't cascade and turn the
-  // rest of the passage into mismatches.
+  // ─── Sequential word alignment ───────────────────────────────────────────────
+  // Processes typed words in order, matching each against the current reference
+  // position. When a typed word misses the current ref word:
   //
-  // Op costs:
-  //   match (typed == ref)            = 0
-  //   half-error (case / punctuation) = 1
-  //   substitution (different word)   = 2
-  //   insertion (extra typed word)    = 2
-  //   deletion (omitted ref word)     = 2
+  //   Rule 4: Look ahead through the reference until the typed word is found.
+  //           If found within the small window → skip ref words (omissions), align there.
   //
-  // Returns the same shape as the previous detector for drop-in compatibility:
+  //   Rule 5: For large skips (beyond SMALL_WIN), require 2 consecutive typed+ref
+  //           word matches before committing to the jump. This prevents false anchors
+  //           on common single words (e.g. "the", "and", "a").
+  //
+  //   Extra word: if none of the next INSERT_LOOK typed words find an anchor,
+  //               check if an upcoming typed word matches current ref. If so,
+  //               the current typed word is an insertion (extra word); refPos stays.
+  //   Substitution: if no anchor and no insertion → pair typed word with current ref.
+  //
+  // Returns:
   //   statuses        – status for each REF word (correct | half-error | error | pending)
-  //   typedAtRef      – typed word that aligns to ref[i] (or '' if omitted)
-  //   extraTypedWords – typed words inserted between ref positions
-  //   lineChangeCount – count of "jumps" (3+ consecutive omissions in a row)
-  //   fullErrors / halfErrors – counts from the aligned statuses
+  //   typedAtRef      – typed word aligned to ref[i] (or '' if omitted)
+  //   extraTypedWords – typed words with no ref counterpart (insertions)
+  //   lineChangeCount – count of "jumps" (3+ consecutive omissions)
+  //   fullErrors / halfErrors – counts (omissions counted as full per Rule A.i)
   const detectLineChanges = useCallback((typedWords, refWords) => {
     const T = typedWords.length;
     const R = refWords.length;
@@ -256,70 +259,104 @@ const TestEngine = () => {
       };
     }
 
-    // Cost helper
-    const wordOpCost = (typed, ref) => {
-      const cmp = compareWords(typed, ref);
-      if (cmp === 'correct')    return { cost: 0, status: 'correct' };
-      if (cmp === 'half-error') return { cost: 1, status: 'half-error' };
-      return { cost: 2, status: 'error' };
-    };
-    const INDEL_COST = 2; // insertion or deletion
+    // Rule 4: small window — single-word match for same-sentence omissions
+    // Rule 5: large window — require MIN_CLUSTER consecutive matches for paragraph-level jumps
+    const SMALL_WIN   = 10;  // single-word look-ahead within a sentence
+    const LARGE_WIN   = 150; // extended look-ahead for bigger skips
+    const MIN_CLUSTER = 2;   // consecutive typed+ref matches required for large jumps
+    const INSERT_LOOK = 5;   // how many typed words ahead to check for extra-word detection
 
-    // dp[i][j] = min cost to align refWords[0..i-1] with typedWords[0..j-1]
-    const dp = Array.from({ length: R + 1 }, () => new Array(T + 1).fill(0));
-    for (let i = 0; i <= R; i++) dp[i][0] = i * INDEL_COST;
-    for (let j = 0; j <= T; j++) dp[0][j] = j * INDEL_COST;
-
-    for (let i = 1; i <= R; i++) {
-      for (let j = 1; j <= T; j++) {
-        const { cost } = wordOpCost(typedWords[j - 1], refWords[i - 1]);
-        dp[i][j] = Math.min(
-          dp[i - 1][j - 1] + cost,    // match / substitution
-          dp[i - 1][j] + INDEL_COST,  // deletion (omitted ref word)
-          dp[i][j - 1] + INDEL_COST,  // insertion (extra typed word)
-        );
-      }
-    }
-
-    // Traceback to derive the alignment
     const statuses   = new Array(R).fill('pending');
     const typedAtRef = new Array(R).fill('');
     const extraTypedWords = [];
     let omissionRunLen = 0;
     let lineChangeCount = 0;
+    let refPos = 0;
 
-    let i = R, j = T;
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0) {
-        const { cost, status } = wordOpCost(typedWords[j - 1], refWords[i - 1]);
-        if (dp[i][j] === dp[i - 1][j - 1] + cost) {
-          statuses[i - 1] = status;
-          typedAtRef[i - 1] = typedWords[j - 1];
-          omissionRunLen = 0;
-          i--; j--;
-          continue;
-        }
-      }
-      if (i > 0 && (j === 0 || dp[i][j] === dp[i - 1][j] + INDEL_COST)) {
-        // Reference word i-1 was omitted
-        statuses[i - 1] = 'pending';
-        typedAtRef[i - 1] = '';
-        omissionRunLen++;
-        if (omissionRunLen === 3) lineChangeCount++; // bigger jump
-        i--;
+    for (let tp = 0; tp < T; tp++) {
+      if (refPos >= R) {
+        extraTypedWords.push(typedWords[tp]);
         continue;
       }
-      // Insertion: typed word j-1 has no ref counterpart
-      extraTypedWords.unshift(typedWords[j - 1]);
-      omissionRunLen = 0;
-      j--;
+
+      const tw  = typedWords[tp];
+      const cmp = compareWords(tw, refWords[refPos]);
+
+      if (cmp !== 'error') {
+        statuses[refPos]   = cmp;
+        typedAtRef[refPos] = tw;
+        omissionRunLen = 0;
+        refPos++;
+        continue;
+      }
+
+      // Rule 4: small window — single-word match is reliable for short skips
+      const smallEnd = Math.min(refPos + SMALL_WIN + 1, R);
+      let jumpRefPos = -1;
+      for (let look = refPos + 1; look < smallEnd; look++) {
+        if (compareWords(tw, refWords[look]) !== 'error') {
+          jumpRefPos = look;
+          break;
+        }
+      }
+
+      // Rule 5: large window — require MIN_CLUSTER consecutive matches before jumping
+      if (jumpRefPos < 0) {
+        const largeEnd = Math.min(refPos + LARGE_WIN + 1, R);
+        for (let look = refPos + SMALL_WIN + 1; look < largeEnd; look++) {
+          let consec = 0;
+          for (let k = 0; k < MIN_CLUSTER; k++) {
+            const twk = tp + k < T ? typedWords[tp + k] : null;
+            const rwk = look + k < R ? refWords[look + k] : null;
+            if (twk && rwk && compareWords(twk, rwk) !== 'error') consec++;
+            else break;
+          }
+          if (consec >= MIN_CLUSTER) { jumpRefPos = look; break; }
+        }
+      }
+
+      if (jumpRefPos >= 0) {
+        // Mark omitted ref words as pending
+        for (let skip = refPos; skip < jumpRefPos; skip++) {
+          statuses[skip]   = 'pending'; // omission
+          typedAtRef[skip] = '';
+          omissionRunLen++;
+          if (omissionRunLen === 3) lineChangeCount++;
+        }
+        statuses[jumpRefPos]   = compareWords(tw, refWords[jumpRefPos]);
+        typedAtRef[jumpRefPos] = tw;
+        omissionRunLen = 0;
+        refPos = jumpRefPos + 1;
+      } else {
+        // No anchor found. Check if this is an extra (inserted) typed word:
+        // look ahead INSERT_LOOK typed words for a match with current ref word.
+        let isInsertion = false;
+        for (let look = tp + 1; look <= tp + INSERT_LOOK && look < T; look++) {
+          if (compareWords(typedWords[look], refWords[refPos]) !== 'error') {
+            isInsertion = true;
+            break;
+          }
+        }
+
+        if (isInsertion) {
+          extraTypedWords.push(tw); // extra word typed — refPos does NOT advance
+        } else {
+          // Substitution: wrong word typed for current ref word
+          statuses[refPos]   = 'error';
+          typedAtRef[refPos] = tw;
+          omissionRunLen = 0;
+          refPos++;
+        }
+      }
     }
+
+    // Remaining ref words that were never typed stay as 'pending' (omission)
 
     let full = 0, half = 0;
     for (const s of statuses) {
-      if (s === 'error')      full++;
+      if (s === 'error')           full++;
       else if (s === 'half-error') half++;
-      else if (s === 'pending') full++; // omission = full mistake (Rule A.i)
+      else if (s === 'pending')    full++; // omission = full mistake (Rule A.i)
     }
 
     return {
@@ -618,8 +655,17 @@ const TestEngine = () => {
     let   alignedTypedWords = lineDetect.typedAtRef;
 
     finalStatuses = lineDetect.statuses;
-    finalFull     = lineDetect.fullErrors + extraTypedWords.length; // A.iii addition = full mistake
-    finalHalf     = lineDetect.halfErrors;
+    // Re-derive error counts respecting the admin's omission setting
+    const countOmissions = pattern?.count_omissions_as_errors ?? true;
+    let derivedFull = extraTypedWords.length; // A.iii extra typed words always count
+    let derivedHalf = 0;
+    for (const s of finalStatuses) {
+      if (s === 'error')           derivedFull++;
+      else if (s === 'half-error') derivedHalf++;
+      else if (s === 'pending' && countOmissions) derivedFull++; // A.i omission (if enabled)
+    }
+    finalFull = derivedFull;
+    finalHalf = derivedHalf;
 
     // Detect repeated word sequences (user typed the same line twice).
     // Each word inside a repeat counts as a full error.
@@ -651,9 +697,11 @@ const TestEngine = () => {
       : 100;
 
     const userId = getCurrentUserUuid();
+    const rollNo = localStorage.getItem('roll_no') || '';
     const finalData = {
       gwpm: finalGwpm, nwpm: finalNwpm, accuracy: finalAcc,
       fullErrors: finalFull, halfErrors: finalHalf,
+      rollNo,
       totalStrokes: finalStrokes, timeElapsed,
       lineChangeCount,
       alignedTypedWords,
@@ -685,6 +733,7 @@ const TestEngine = () => {
         show_accuracy: pattern.show_accuracy,
         show_penalty_words: pattern.show_penalty_words,
         show_ignorable_mistakes: pattern.show_ignorable_mistakes,
+        count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
       } : null,
     };
 
@@ -727,6 +776,7 @@ const TestEngine = () => {
           show_accuracy: pattern.show_accuracy,
           show_penalty_words: pattern.show_penalty_words,
           show_ignorable_mistakes: pattern.show_ignorable_mistakes,
+          count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
           repeated_ranges: repeatedRanges,
         } : { repeated_ranges: repeatedRanges },
         mode: mode || null,
@@ -1712,7 +1762,7 @@ const TestEngine = () => {
 
           {!settings.paperMode && (
             <div className="source-text-container" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
-              {isSelfAssessment && timeElapsed === 0 ? (
+              {isSelfAssessment && timeElapsed === 0 && !passedChapter?.content_text ? (
                 <textarea
                    className="typing-input"
                    placeholder="Paste your custom text here before typing begins..."
@@ -1798,7 +1848,7 @@ const TestEngine = () => {
                   <div className="practice-warning" style={{ marginTop: '15px', textAlign: 'center' }}>Only for practice</div>
                 </fieldset>
 
-                {isSelfAssessment && timeElapsed === 0 && (
+                {isSelfAssessment && timeElapsed === 0 && !passedChapter?.content_text && (
                   <fieldset className="setting-fieldset" style={{ marginTop: '25px' }}>
                     <legend>Assessment Setup</legend>
                     <div style={{ marginBottom: '10px' }}>

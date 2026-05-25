@@ -48,9 +48,9 @@ const StenoTestEngine = () => {
   const textareaRef = useRef(null);
 
   // ─── Audio URL resolution ────────────────────────────────────────────────────
-  const audioUrl = chapter?.audio_url
-    ? (chapter.audio_url.startsWith('http') ? chapter.audio_url : `${API_BASE_URL}${chapter.audio_url}`)
-    : null;
+  // Stream through the NestJS controller endpoint so CORS, routing and nginx
+  // proxy all work automatically — no dependency on static file serving config.
+  const audioUrl = chapter?.id ? `${API_BASE_URL}/chapters/${chapter.id}/audio` : null;
 
   // ─── Audio event handlers ────────────────────────────────────────────────────
   useEffect(() => {
@@ -72,8 +72,12 @@ const StenoTestEngine = () => {
   const handlePlay = () => {
     if (!audioRef.current) return;
     audioRef.current.playbackRate = audioSpeed / 100;
-    audioRef.current.play();
-    setAudioPlaying(true);
+    audioRef.current.play().then(() => {
+      setAudioPlaying(true);
+    }).catch((err) => {
+      console.error('Audio play failed:', audioUrl, err);
+      alert('Audio could not be played. The file may still be loading or the URL is unreachable:\n' + audioUrl);
+    });
   };
 
   const handlePause = () => {
@@ -154,80 +158,137 @@ const StenoTestEngine = () => {
   // We keep the raw words list; normalization handles case/punctuation.
   const tokenize = (text) => text.trim().split(/\s+/).filter(Boolean);
 
-  // ─── LCS-based fuzzy comparison ─────────────────────────────────────────────
-  // Finds the longest common subsequence of (normalised) reference words
-  // inside the typed words list, then classifies all words.
+  // ─── Sequential comparison ───────────────────────────────────────────────────
+  // Replaces the old LCS approach. Detects where the student started writing
+  // (anchor), then matches strictly in the FORWARD direction with a limited
+  // look-ahead window — never jumps to a far-later paragraph.
   //
-  // Returns:
-  //   full  – words in ref that were typed with a wrong spelling
-  //   half  – words in ref that matched only after ignoring case/punctuation
-  //   missed – words in ref that were not typed at all
-  //   typedWords / refWords – raw token arrays for the diff display
+  // Error classification:
+  //   full  – omission (untyped ref word), substitution (wrong word), or extra
+  //           typed word that has no ref counterpart
+  //   half  – ref word matched but only after ignoring case / punctuation
+  //
+  // "Left" words before the detected start and within skipped omission runs
+  // are ALL counted as full errors per the exam rule.
   const compareTexts = useCallback((typed, reference) => {
     const typedWords = tokenize(typed);
     const refWords   = tokenize(reference);
+    const typedNorm  = typedWords.map(normalizeWord);
+    const refNorm    = refWords.map(normalizeWord);
+    const R = refWords.length;
+    const T = typedWords.length;
 
-    // Build normalised versions
-    const typedNorm = typedWords.map(normalizeWord);
-    const refNorm   = refWords.map(normalizeWord);
+    if (T === 0) return { full: R, half: 0, typedWords, refWords, matchedRef: new Array(R).fill(-1) };
+    if (R === 0) return { full: T, half: 0, typedWords, refWords, matchedRef: [] };
 
-    const R = refNorm.length;
-    const T = typedNorm.length;
+    // ── Anchor detection: find nearest forward start position ────────────────
+    const ANCHOR_LEN = Math.min(5, T);
+    let startRefPos  = 0;
+    let bestScore    = 0;
 
-    // ── LCS DP ───────────────────────────────────────────────────────────────
-    // dp[i][j] = length of LCS of refNorm[0..i-1] and typedNorm[0..j-1]
-    const dp = Array.from({ length: R + 1 }, () => new Array(T + 1).fill(0));
-    for (let i = 1; i <= R; i++) {
-      for (let j = 1; j <= T; j++) {
-        if (refNorm[i - 1] === typedNorm[j - 1]) {
-          dp[i][j] = dp[i - 1][j - 1] + 1;
-        } else {
-          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+    for (let ri = 0; ri <= R - 1; ri++) {
+      let score = 0;
+      for (let k = 0; k < ANCHOR_LEN && ri + k < R; k++) {
+        if (refNorm[ri + k] === typedNorm[k]) score++;
+        else break; // require consecutive run
+      }
+      if (score > bestScore) {
+        bestScore   = score;
+        startRefPos = ri;
+        if (score === ANCHOR_LEN) break; // perfect match — stop searching
+      }
+    }
+    if (bestScore < 2) startRefPos = 0; // not enough confidence — start from top
+
+    // ── Two-level sequential greedy matching ─────────────────────────────────
+    // SMALL_WIN: single-word omissions in the same sentence (no cluster needed)
+    // LARGE_WIN: paragraph jumps — require MIN_CLUSTER consecutive typed words
+    //            matching at a forward ref position before jumping there
+    const SMALL_WIN   = 10;
+    const LARGE_WIN   = 150;
+    const MIN_CLUSTER = 2;
+
+    const matchedRef  = new Array(R).fill(-1);
+    let refPos = startRefPos;
+
+    for (let tp = 0; tp < T; tp++) {
+      if (refPos >= R) break;
+      const tw = typedNorm[tp];
+
+      // 1. Direct match
+      if (tw === refNorm[refPos]) {
+        matchedRef[refPos] = tp; refPos++; continue;
+      }
+
+      // 2. Small window: single-word omission within same sentence
+      const smallEnd = Math.min(refPos + SMALL_WIN + 1, R);
+      let matchPos = -1;
+      for (let look = refPos + 1; look < smallEnd; look++) {
+        if (tw === refNorm[look]) { matchPos = look; break; }
+      }
+
+      if (matchPos >= 0) {
+        matchedRef[matchPos] = tp;
+        refPos = matchPos + 1;
+        continue;
+      }
+
+      // 3. Large window: paragraph jump — require MIN_CLUSTER consecutive matches
+      const largeEnd = Math.min(refPos + LARGE_WIN + 1, R);
+      let clusterRef = -1;
+      for (let lookRef = refPos + SMALL_WIN + 1; lookRef < largeEnd; lookRef++) {
+        let consec = 0;
+        for (let k = 0; k < MIN_CLUSTER; k++) {
+          if (tp + k < T && lookRef + k < R && typedNorm[tp + k] === refNorm[lookRef + k]) {
+            consec++;
+          } else {
+            break;
+          }
         }
+        if (consec >= MIN_CLUSTER) { clusterRef = lookRef; break; }
       }
-    }
 
-    // ── Back-track to find the matched pairs ─────────────────────────────────
-    // matchedRef[i] = index in typedWords that matched refWords[i], or -1
-    const matchedRef = new Array(R).fill(-1);
-    let i = R, j = T;
-    while (i > 0 && j > 0) {
-      if (refNorm[i - 1] === typedNorm[j - 1]) {
-        matchedRef[i - 1] = j - 1;
-        i--; j--;
-      } else if (dp[i - 1][j] > dp[i][j - 1]) {
-        i--;
+      if (clusterRef >= 0) {
+        // Ref words refPos … clusterRef-1 are omissions (stay -1)
+        refPos = clusterRef;
+        tp--; // re-process this typed word at the new refPos (for-loop will tp++)
+        continue;
+      }
+
+      // 4. Insertion check: next typed word matches current ref → this is extra
+      const nextT = tp + 1 < T ? typedNorm[tp + 1] : null;
+      if (nextT !== null && nextT === refNorm[refPos]) {
+        // insertion — refPos stays, extra word counted below
       } else {
-        j--;
+        matchedRef[refPos] = tp; // substitution
+        refPos++;
       }
     }
 
-    // ── Count errors based on the original (non-normalised) words ────────────
-    let full = 0, half = 0, missed = 0;
+    // ── Count errors ──────────────────────────────────────────────────────────
+    let full = 0, half = 0;
     for (let ri = 0; ri < R; ri++) {
       if (matchedRef[ri] === -1) {
-        // Reference word not found anywhere in typed text → missed
-        missed++;
+        full++; // omission (includes words before start anchor) = full error
       } else {
-        const rawTyped = typedWords[matchedRef[ri]];
-        const rawRef   = refWords[ri];
-        if (rawTyped === rawRef) {
-          // Exact match → correct (no penalty)
+        const rawT = typedWords[matchedRef[ri]];
+        const rawR = refWords[ri];
+        if (rawT === rawR) {
+          // exact match → correct
+        } else if (typedNorm[matchedRef[ri]] === refNorm[ri]) {
+          half++; // case / punctuation only → half error
         } else {
-          // Normalised match but raw differs → half mistake
-          // (punctuation / capitalization difference)
-          half++;
+          full++; // completely wrong word substituted → full error
         }
       }
     }
-
-    // ── Extra typed words (beyond reference) count as full errors ────────────
+    // Extra typed words (insertions + overflow) → full errors
     const usedTypedIdx = new Set(matchedRef.filter(x => x !== -1));
     for (let ti = 0; ti < T; ti++) {
       if (!usedTypedIdx.has(ti)) full++;
     }
 
-    return { full, half, missed, typedWords, refWords, matchedRef };
+    return { full, half, typedWords, refWords, matchedRef };
   }, []);
 
   // ─── Finish / Submit ─────────────────────────────────────────────────────
@@ -235,7 +296,7 @@ const StenoTestEngine = () => {
     if (!isStartedRef.current) { navigate('/dashboard'); return; }
 
     const referenceText = chapter?.content_text || '';
-    const { full, half } = compareTexts(typedText, referenceText);
+    const { full, half } = compareTexts(typedText, referenceText); // full includes omissions + substitutions + extra words
 
     const finalStrokes = typedText.length;
     const minutes      = Math.max(timeElapsed, 1) / 60;

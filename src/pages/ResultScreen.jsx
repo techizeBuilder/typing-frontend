@@ -19,10 +19,20 @@ const PrintSheet = ({
   showAccuracy, showPenaltyWords, showIgnorableMistakes,
   userInput, referenceWords, wordStatuses, typedText, referenceText, isStenoResult,
   lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
+  countOmissions = true,
 }) => {
   const typedWordsPrt = userInput ? userInput.trim().split(/\s+/).filter(Boolean) : [];
   const totalTypedWords = typedWordsPrt.length;
   const avgStrokesPerWord = totalTypedWords > 0 ? (totalStrokes / totalTypedWords).toFixed(2) : '5.00';
+
+  // Last ref index that was actually typed (non-pending) — everything after this is trailing
+  const lastTypedRefIdxPrt = (() => {
+    if (!wordStatuses) return -1;
+    for (let i = wordStatuses.length - 1; i >= 0; i--) {
+      if (wordStatuses[i] && wordStatuses[i] !== 'pending') return i;
+    }
+    return -1;
+  })();
 
   // Colour-coded passage tokens
   const buildPassageTokens = () => {
@@ -36,6 +46,9 @@ const PrintSheet = ({
       if (status === 'correct')    return <span key={i} className="prt-word prt-correct">{typed} </span>;
       if (status === 'error')      return <span key={i} className="prt-word prt-full-err">{typed || `–${refWord}`} </span>;
       if (status === 'half-error') return <span key={i} className="prt-word prt-half-err">{typed} </span>;
+      // pending — trailing (after last typed word) vs mid-text skip
+      if (i > lastTypedRefIdxPrt && !countOmissions)
+        return <span key={i} className="prt-word prt-trailing">{refWord} </span>;
       return <span key={i} className="prt-word prt-omit">–{refWord} </span>;
     });
   };
@@ -216,23 +229,115 @@ const PrintSheet = ({
 const normalizeWordResult = (w) => w.toLowerCase().replace(/[^a-z0-9\u0900-\u097f]/gi, '');
 const tokenizeResult      = (text) => text.trim().split(/\s+/).filter(Boolean);
 
-// ─── LCS alignment ───────────────────────────────────────────────────────────
-function lcsAlign(refNorm, typedNorm) {
+// ─── Sequential alignment ────────────────────────────────────────────────────
+// Replaces LCS. Detects where the student started (anchor), then matches
+// strictly in the FORWARD direction — never jumps to a far-later paragraph.
+//
+// Step 1 – Anchor detection: scan the reference for the earliest position
+//   where at least 2 of the first 5 typed words match consecutively.
+//   That is the student's detected start position.
+//   All reference words before the start are left unmatched (= omissions).
+//
+// Step 2 – Greedy sequential matching from the start position:
+//   • Direct match at current ref pos → correct.
+//   • No match → look ahead up to OMIT_WINDOW ref positions for this
+//     typed word.  If found nearby → skip ref words (omissions), align here.
+//   • If next typed word matches current ref → current typed word is an
+//     insertion (extra word); ref pos does NOT advance.
+//   • Otherwise → substitution; pair typed word with current ref word.
+function seqAlign(refNorm, typedNorm) {
   const R = refNorm.length, T = typedNorm.length;
-  const dp = Array.from({ length: R + 1 }, () => new Array(T + 1).fill(0));
-  for (let i = 1; i <= R; i++)
-    for (let j = 1; j <= T; j++)
-      dp[i][j] = refNorm[i-1] === typedNorm[j-1]
-        ? dp[i-1][j-1] + 1
-        : Math.max(dp[i-1][j], dp[i][j-1]);
+  if (T === 0 || R === 0) return new Array(R).fill(-1);
 
-  const matchedRef = new Array(R).fill(-1);
-  let i = R, j = T;
-  while (i > 0 && j > 0) {
-    if (refNorm[i-1] === typedNorm[j-1]) { matchedRef[i-1] = j-1; i--; j--; }
-    else if (dp[i-1][j] > dp[i][j-1]) i--;
-    else j--;
+  // ── Anchor detection ────────────────────────────────────────────────────
+  const ANCHOR_LEN = Math.min(5, T);
+  let startRefPos  = 0;
+  let bestScore    = 0;
+
+  for (let ri = 0; ri <= R - 1; ri++) {
+    let score = 0;
+    for (let k = 0; k < ANCHOR_LEN && ri + k < R; k++) {
+      if (refNorm[ri + k] === typedNorm[k]) score++;
+      else break; // require consecutive run from the anchor point
+    }
+    if (score > bestScore) {
+      bestScore   = score;
+      startRefPos = ri;
+      if (score === ANCHOR_LEN) break; // perfect match — stop early
+    }
   }
+  if (bestScore < 2) startRefPos = 0; // fallback: assume student started at top
+
+  // ── Two-level sequential greedy matching ────────────────────────────────
+  // SMALL_WIN: single-word omissions in the same sentence (no cluster needed)
+  // LARGE_WIN: paragraph jumps — require MIN_CLUSTER consecutive typed words
+  //            matching at a forward ref position before jumping there
+  const SMALL_WIN   = 10;
+  const LARGE_WIN   = 150;
+  const MIN_CLUSTER = 2;
+
+  const matchedRef  = new Array(R).fill(-1);
+  let refPos = startRefPos;
+
+  for (let tp = 0; tp < T; tp++) {
+    if (refPos >= R) break;
+    const tw = typedNorm[tp];
+
+    // 1. Direct match
+    if (tw === refNorm[refPos]) {
+      matchedRef[refPos] = tp; refPos++; continue;
+    }
+
+    // 2. Small window: single-word omission within same sentence
+    const smallEnd = Math.min(refPos + SMALL_WIN + 1, R);
+    let matchPos = -1;
+    for (let look = refPos + 1; look < smallEnd; look++) {
+      if (tw === refNorm[look]) { matchPos = look; break; }
+    }
+
+    if (matchPos >= 0) {
+      matchedRef[matchPos] = tp;
+      refPos = matchPos + 1;
+      continue;
+    }
+
+    // 3. Large window: paragraph jump — require MIN_CLUSTER consecutive matches
+    const largeEnd = Math.min(refPos + LARGE_WIN + 1, R);
+    let clusterRef = -1;
+    for (let lookRef = refPos + SMALL_WIN + 1; lookRef < largeEnd; lookRef++) {
+      let consec = 0;
+      for (let k = 0; k < MIN_CLUSTER; k++) {
+        if (tp + k < T && lookRef + k < R && typedNorm[tp + k] === refNorm[lookRef + k]) {
+          consec++;
+        } else {
+          break;
+        }
+      }
+      if (consec >= MIN_CLUSTER) { clusterRef = lookRef; break; }
+    }
+
+    if (clusterRef >= 0) {
+      // Ref words refPos … clusterRef-1 are omissions (stay -1)
+      refPos = clusterRef;
+      tp--; // re-process this typed word at the new refPos (for-loop will tp++)
+      continue;
+    }
+
+    // 4. Extra-word check: look ahead INSERT_LOOK typed words for a match with
+    //    current ref. If found, the current typed word is an insertion (extra word)
+    //    and refPos does NOT advance. Otherwise it is a substitution.
+    const INSERT_LOOK_S = 5;
+    let isInsertionS = false;
+    for (let look = tp + 1; look <= tp + INSERT_LOOK_S && look < T; look++) {
+      if (typedNorm[look] === refNorm[refPos]) { isInsertionS = true; break; }
+    }
+    if (!isInsertionS) {
+      matchedRef[refPos] = tp; // substitution
+      refPos++;
+    }
+    // if isInsertionS: refPos stays, typed word at tp is unclaimed → classified as 'extra' below
+  }
+
   return matchedRef;
 }
 
@@ -243,9 +348,15 @@ const StenoDiff = ({ typed = '', reference = '' }) => {
   const typedNorm  = typedWords.map(normalizeWordResult);
   const refNorm    = refWords.map(normalizeWordResult);
 
-  const matchedRef = lcsAlign(refNorm, typedNorm);
+  const matchedRef = seqAlign(refNorm, typedNorm);
   const usedTyped  = new Set(matchedRef.filter(x => x !== -1));
 
+  // Token types:
+  //   correct – exact match
+  //   half    – normalized match (only case / punctuation differs)
+  //   sub     – completely different word substituted (full error)
+  //   missed  – reference word not typed at all (omission — full error)
+  //   extra   – typed word with no reference counterpart (insertion — full error)
   const tokens = [];
   for (let ri = 0; ri < refWords.length; ri++) {
     const ti = matchedRef[ri];
@@ -253,9 +364,13 @@ const StenoDiff = ({ typed = '', reference = '' }) => {
       tokens.push({ type: 'missed', typed: null, ref: refWords[ri] });
     } else {
       const rawT = typedWords[ti], rawR = refWords[ri];
-      tokens.push(rawT === rawR
-        ? { type: 'correct', typed: rawT, ref: rawR }
-        : { type: 'half',    typed: rawT, ref: rawR });
+      if (rawT === rawR) {
+        tokens.push({ type: 'correct', typed: rawT, ref: rawR });
+      } else if (typedNorm[ti] === refNorm[ri]) {
+        tokens.push({ type: 'half', typed: rawT, ref: rawR });   // case/punct only
+      } else {
+        tokens.push({ type: 'sub',  typed: rawT, ref: rawR });   // wrong word
+      }
     }
   }
   for (let ti = 0; ti < typedWords.length; ti++) {
@@ -264,32 +379,43 @@ const StenoDiff = ({ typed = '', reference = '' }) => {
   }
 
   const counts = tokens.reduce((acc, tok) => { acc[tok.type] = (acc[tok.type] || 0) + 1; return acc; }, {});
+  const fullErrCount = (counts.sub || 0) + (counts.missed || 0) + (counts.extra || 0);
 
   const styles = {
-    wrap:    { fontFamily: "'Courier New', monospace", lineHeight: 2, wordSpacing: '4px', flexWrap: 'wrap', display: 'flex', gap: '6px', padding: '16px 0' },
+    wrap:    { fontFamily: "'Courier New', monospace", lineHeight: 2.2, wordSpacing: '4px', flexWrap: 'wrap', display: 'flex', gap: '6px', padding: '16px 0' },
     correct: { color: '#16a34a', display: 'inline-block' },
     half:    { display: 'inline-block', background: '#fef3c7', borderRadius: '4px', padding: '0 4px', color: '#92400e' },
-    missed:  { display: 'inline-block', background: '#f1f5f9', borderRadius: '4px', padding: '0 4px', color: '#dc2626', textDecoration: 'line-through', opacity: 0.7 },
+    sub:     { display: 'inline-block', background: '#fee2e2', borderRadius: '4px', padding: '0 4px', color: '#dc2626', fontWeight: 600 },
+    missed:  { display: 'inline-block', background: '#f1f5f9', borderRadius: '4px', padding: '0 4px', color: '#dc2626', textDecoration: 'line-through', opacity: 0.75 },
     extra:   { display: 'inline-block', background: '#eff6ff', borderRadius: '4px', padding: '0 4px', color: '#1d4ed8' },
   };
 
   return (
     <div>
-      <div className="legend-row" style={{ marginBottom: '8px' }}>
+      <div className="legend-row" style={{ marginBottom: '8px', flexWrap: 'wrap', gap: '10px' }}>
         <span style={{ color: '#16a34a', fontWeight: 600 }}>✔ Correct: {counts.correct || 0}</span>
-        <span style={{ color: '#dc2626', fontWeight: 600 }}>✘ Extra/Wrong: {counts.extra || 0}</span>
+        <span style={{ color: '#dc2626', fontWeight: 600 }}>✘ Full Errors: {fullErrCount}</span>
         <span style={{ color: '#d97706', fontWeight: 600 }}>~ Half Error (case/punct): {counts.half || 0}</span>
-        <span style={{ color: '#64748b', fontWeight: 600 }}>— Missed: {counts.missed || 0}</span>
+        <span style={{ color: '#64748b', fontWeight: 600, fontSize: '0.82rem' }}>
+          (Substitution: {counts.sub || 0} · Omission: {counts.missed || 0} · Extra: {counts.extra || 0})
+        </span>
       </div>
       <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '10px', fontStyle: 'italic' }}>
-        ℹ️ Comparison is fuzzy: spaces, punctuation &amp; capitalization are forgiven.
+        Substituted words shown in <span style={{background:'#fee2e2',borderRadius:'3px',padding:'0 3px',color:'#dc2626',fontWeight:600}}>red</span>,
+        omitted in <span style={{textDecoration:'line-through',color:'#dc2626',fontWeight:600}}>strikethrough</span>,
+        extra words in <span style={{background:'#eff6ff',borderRadius:'3px',padding:'0 3px',color:'#1d4ed8',fontWeight:600}}>blue</span>.
       </div>
       <div style={styles.wrap}>
         {tokens.map((tok, idx) => {
           if (tok.type === 'correct') return <span key={idx} style={styles.correct}>{tok.typed}</span>;
           if (tok.type === 'half')    return (
             <span key={idx} style={styles.half}>
-              {tok.typed}<span style={{ fontSize: '0.78em', color: '#b45309' }}>{'{'+tok.ref+'}'}</span>
+              {tok.typed}<span style={{ fontSize: '0.75em', color: '#b45309' }}>({tok.ref})</span>
+            </span>
+          );
+          if (tok.type === 'sub')     return (
+            <span key={idx} style={styles.sub}>
+              {tok.typed}<span style={{ fontSize: '0.75em', fontWeight: 400 }}>({tok.ref})</span>
             </span>
           );
           if (tok.type === 'missed') return <span key={idx} style={styles.missed}>-{tok.ref}</span>;
@@ -307,6 +433,7 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   testDurationMinutes = 10,
   netSpeedCalculated = 0, grossSpeedCalculated = 0, accuracy = 0,
   lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
+  countOmissions = true,
 }) => {
   const [view, setView] = React.useState(null);
   const [showCat, setShowCat] = React.useState(null);
@@ -314,6 +441,14 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   const typedWords = userInput.trim().split(/\s+/).filter(Boolean);
   // When a line change was detected, use re-aligned word-at-position instead of raw index
   const wordAt = (i) => alignedTypedWords ? (alignedTypedWords[i] || '') : (typedWords[i] || '');
+
+  // Last ref index that was actually typed (non-pending) — everything after is trailing
+  const lastTypedRefIdx = (() => {
+    for (let i = wordStatuses.length - 1; i >= 0; i--) {
+      if (wordStatuses[i] && wordStatuses[i] !== 'pending') return i;
+    }
+    return -1;
+  })();
 
   // Addition errors: prefer alignment-derived extras (insertions anywhere in the typed stream),
   // fall back to the simple "extra at end" heuristic.
@@ -325,8 +460,12 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   referenceWords.forEach((refWord, i) => {
     const status = wordStatuses[i] || 'pending';
     const typed = wordAt(i);
-    if (status === 'error')      spellingWords.push({ refWord, typed });
-    if (status === 'pending')    omissionWords.push({ refWord, typed: '' });
+    if (status === 'error')   spellingWords.push({ refWord, typed });
+    if (status === 'pending') {
+      // Exclude trailing omissions (after last typed word) when admin disabled omission counting
+      const isTrailing = i > lastTypedRefIdx;
+      if (!isTrailing || countOmissions) omissionWords.push({ refWord, typed: '' });
+    }
     if (status === 'half-error') {
       if (typed.toLowerCase() === refWord.toLowerCase()) capWords.push({ refWord, typed });
       else punctWords.push({ refWord, typed });
@@ -507,6 +646,11 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
               if(status==='correct')    return <span key={i}>{typed} </span>;
               if(status==='error')      return <span key={i}><span className="pa-res-wrong">{typed}({refWord})</span> </span>;
               if(status==='half-error') return <span key={i}><span className="pa-res-half">{typed}({refWord})</span> </span>;
+              // pending — show trailing omissions (after last typed word) without strikethrough
+              // when admin has disabled omission error counting
+              const isTrailing = i > lastTypedRefIdx;
+              if(isTrailing && !countOmissions)
+                return <span key={i} style={{color:'#94a3b8'}}>{refWord} </span>;
               return <span key={i}><span className="pa-res-omit">-{refWord}</span> </span>;
             })}
             {typedWords.slice(referenceWords.length).map((w,i)=>(
@@ -643,6 +787,7 @@ const ResultScreen = () => {
   const showAccuracy = pattern?.show_accuracy ?? true;
   const showPenaltyWords = pattern?.show_penalty_words ?? true;
   const showIgnorableMistakes = pattern?.show_ignorable_mistakes ?? true;
+  const countOmissions = pattern?.count_omissions_as_errors ?? true;
 
   const totalMistakes = parseFloat(
     (fullErrors + (halfMistakeEnabled ? halfErrors * 0.5 : halfErrors)).toFixed(2)
@@ -784,6 +929,7 @@ const ResultScreen = () => {
           lineChangeCount={lineChangeCount}
           alignedTypedWords={alignedTypedWords}
           extraTypedWords={extraTypedWords}
+          countOmissions={countOmissions}
         />
       </div>
 
@@ -1089,6 +1235,7 @@ const ResultScreen = () => {
               lineChangeCount={lineChangeCount}
               alignedTypedWords={alignedTypedWords}
               extraTypedWords={extraTypedWords}
+              countOmissions={countOmissions}
             />
           )}
         </div>
