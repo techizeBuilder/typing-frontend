@@ -57,9 +57,7 @@ const PrintSheet = ({
     ? extraTypedWords.slice()
     : typedWordsPrt.slice(referenceWords ? referenceWords.length : 0);
 
-  const totalMistakesFormula = halfMistakeEnabled
-    ? `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`
-    : `${fullErrors} + ${halfErrors} = ${totalMistakes}`;
+  const totalMistakesFormula = `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`;
   const penaltyFormula = penaltyType === 'Stroke'
     ? `${totalMistakes} × 5 ÷ 5 × ${penaltyFactor} = ${penaltyWords}`
     : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
@@ -142,7 +140,7 @@ const PrintSheet = ({
             <td className="prt-perf-val">{timeTakenStr}</td>
           </tr>
           <tr>
-            <td className="prt-perf-lbl">{showTotalErrors ? 'Total Errors (full + half/2):' : ''}</td>
+            <td className="prt-perf-lbl">{showTotalErrors ? 'Total Mistakes (full + half×0.5):' : ''}</td>
             <td className="prt-perf-val">{showTotalErrors ? totalMistakes : ''}</td>
             <td className="prt-perf-lbl prt-formula-col" colSpan={2}>{showTotalErrors ? `[${totalMistakesFormula}]` : ''}</td>
             <td className="prt-perf-lbl">Backspace Used:-</td>
@@ -474,7 +472,9 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   const totalErrors = spellingWords.length + omissionWords.length + additionWords.length + capWords.length + punctWords.length;
   const timeMin = timeElapsed > 0 ? timeElapsed / 60 : 1;
   const totalWords = parseFloat((totalStrokes / 5).toFixed(1));
-  const correctStrokes = Math.max(0, totalStrokes - fullErrors * 5);
+  // Deduct 5 strokes only for pure full errors (spelling/omission/addition), not half-errors (cap/punct)
+  const pureFullErrors = fullErrors - halfErrors;
+  const correctStrokes = Math.max(0, totalStrokes - pureFullErrors * 5);
 
   const handleFullScreen = () => {
     const el = panelRef.current;
@@ -789,8 +789,43 @@ const ResultScreen = () => {
   const showIgnorableMistakes = pattern?.show_ignorable_mistakes ?? true;
   const countOmissions = pattern?.count_omissions_as_errors ?? true;
 
+  // ─── Recompute error counts from wordStatuses ────────────────────────────────
+  // Always derive from wordStatuses so Full Mistakes = Total Errors in analysis panel.
+  // Fixes mismatches from old stored results or detectLineChanges divergence.
+  const _typedWds  = userInput.trim().split(/\s+/).filter(Boolean);
+  const _wordAtFn  = (i) => alignedTypedWords ? (alignedTypedWords[i] || '') : (_typedWds[i] || '');
+  const _lastTyped = (() => {
+    for (let i = wordStatuses.length - 1; i >= 0; i--) {
+      if (wordStatuses[i] && wordStatuses[i] !== 'pending') return i;
+    }
+    return -1;
+  })();
+  const _addCount = extraTypedWords && extraTypedWords.length > 0
+    ? extraTypedWords.length
+    : _typedWds.slice(referenceWords.length).length;
+
+  let _sp = 0, _om = 0, _cap = 0, _pct = 0;
+  if (!isStenoResult && referenceWords.length > 0) {
+    referenceWords.forEach((refWord, i) => {
+      const s = wordStatuses[i] || 'pending';
+      const t = _wordAtFn(i);
+      if (s === 'error') _sp++;
+      if (s === 'pending') {
+        const isTrailing = i > _lastTyped;
+        if (!isTrailing || countOmissions) _om++;
+      }
+      if (s === 'half-error') {
+        if (t.toLowerCase() === refWord.toLowerCase()) _cap++;
+        else _pct++;
+      }
+    });
+  }
+  // For steno fall back to passed-in props; for typing always use wordStatuses-derived values
+  const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + _cap + _pct);
+  const effectiveHalfErrors = isStenoResult ? halfErrors : (_cap + _pct);
+
   const totalMistakes = parseFloat(
-    (fullErrors + (halfMistakeEnabled ? halfErrors * 0.5 : halfErrors)).toFixed(2)
+    (effectiveFullErrors + effectiveHalfErrors * 0.5).toFixed(2)
   );
 
   const penaltyFactor = pattern?.penalty_value ?? 1;
@@ -890,8 +925,8 @@ const ResultScreen = () => {
           mode={mode}
           testDurationMinutes={testDurationMinutes}
           timeTakenStr={timeTakenStr}
-          fullErrors={fullErrors}
-          halfErrors={halfErrors}
+          fullErrors={effectiveFullErrors}
+          halfErrors={effectiveHalfErrors}
           totalMistakes={totalMistakes}
           halfMistakeEnabled={halfMistakeEnabled}
           ignorableMistakePercent={ignorableMistakePercent}
@@ -1054,7 +1089,7 @@ const ResultScreen = () => {
               <div className="stat-metric-label">Wrong Words</div>
               <div className="stat-metric-body">
                 <span className="stat-metric-icon">❌</span>
-                <span className="stat-metric-value">{fullErrors}</span>
+                <span className="stat-metric-value">{effectiveFullErrors}</span>
               </div>
               <div className="stat-metric-unit">&nbsp;</div>
             </div>
@@ -1074,14 +1109,14 @@ const ResultScreen = () => {
             {showFullMistakes && (
               <div className="stat-line">
                 <span className="stat-label">Full Mistakes =</span>
-                <span className="stat-val">{fullErrors}</span>
+                <span className="stat-val">{effectiveFullErrors}</span>
               </div>
             )}
             {showHalfMistakes && (
               <div className="stat-line">
                 <span className="stat-label">Half Mistakes =</span>
-                <span className="stat-val">{halfErrors}</span>
-                <span className="stat-formula">[counted as {halfMistakeEnabled ? '0.5 each' : '1.0 each (treated as full)'}]</span>
+                <span className="stat-val">{effectiveHalfErrors}</span>
+                <span className="stat-formula">[counted as 0.5 each]</span>
               </div>
             )}
             {showTotalErrors && (
@@ -1089,7 +1124,7 @@ const ResultScreen = () => {
                 <span className="stat-label">Total Mistakes =</span>
                 <span className="stat-val">{totalMistakes}</span>
                 <span className="stat-formula">
-                  [{fullErrors} + ({halfErrors} × {halfMistakeEnabled ? '0.5' : '1.0'})]
+                  [{effectiveFullErrors} + ({effectiveHalfErrors} × 0.5) = {totalMistakes}]
                 </span>
               </div>
             )}
@@ -1157,7 +1192,7 @@ const ResultScreen = () => {
         {/* ── Footer Notes ───────────────────────────────── */}
         <div className="sheet-footer-notes">
           <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} wpm</strong> → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
-          <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>{halfMistakeEnabled ? 'Count as 0.5' : 'Count as Full'}</strong></p>
+          <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>Count as 0.5</strong></p>
           <p>* Punctuation and Capital/Small letter mistakes count as Half Mistakes; spelling mistakes count as Full Mistakes.</p>
         </div>
 
@@ -1224,8 +1259,8 @@ const ResultScreen = () => {
               userInput={userInput}
               referenceWords={referenceWords}
               wordStatuses={wordStatuses}
-              fullErrors={fullErrors}
-              halfErrors={halfErrors}
+              fullErrors={effectiveFullErrors}
+              halfErrors={effectiveHalfErrors}
               totalStrokes={totalStrokes}
               timeElapsed={timeElapsed}
               testDurationMinutes={testDurationMinutes}

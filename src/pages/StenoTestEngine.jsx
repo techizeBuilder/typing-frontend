@@ -129,7 +129,7 @@ const StenoTestEngine = () => {
       const totalWordsTyped = totalStrokes / 5;
       const gwpm            = Math.round(totalWordsTyped / minutes);
       const penaltyFactor   = pattern?.penalty_value || 1;
-      const totalMistakes   = fullErrors + (pattern?.half_mistake_enabled ? halfErrors * 0.5 : halfErrors);
+      const totalMistakes   = fullErrors + halfErrors * 0.5;
       const penaltyWords    = totalMistakes * penaltyFactor;
       const nwpm            = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
       const accuracy        = totalStrokes > 0
@@ -266,10 +266,10 @@ const StenoTestEngine = () => {
     }
 
     // ── Count errors ──────────────────────────────────────────────────────────
-    let full = 0, half = 0;
+    let fullBase = 0, half = 0;
     for (let ri = 0; ri < R; ri++) {
       if (matchedRef[ri] === -1) {
-        full++; // omission (includes words before start anchor) = full error
+        fullBase++; // omission → full error
       } else {
         const rawT = typedWords[matchedRef[ri]];
         const rawR = refWords[ri];
@@ -278,15 +278,17 @@ const StenoTestEngine = () => {
         } else if (typedNorm[matchedRef[ri]] === refNorm[ri]) {
           half++; // case / punctuation only → half error
         } else {
-          full++; // completely wrong word substituted → full error
+          fullBase++; // completely wrong word substituted → full error
         }
       }
     }
-    // Extra typed words (insertions + overflow) → full errors
+    // Extra typed words (insertions + overflow) → full errors (addition)
     const usedTypedIdx = new Set(matchedRef.filter(x => x !== -1));
     for (let ti = 0; ti < T; ti++) {
-      if (!usedTypedIdx.has(ti)) full++;
+      if (!usedTypedIdx.has(ti)) fullBase++;
     }
+    // Full = ALL errors (spelling + omission + addition + formatting/cap+punct)
+    const full = fullBase + half;
 
     return { full, half, typedWords, refWords, matchedRef };
   }, []);
@@ -296,7 +298,7 @@ const StenoTestEngine = () => {
     if (!isStartedRef.current) { navigate('/dashboard'); return; }
 
     const referenceText = chapter?.content_text || '';
-    const { full, half } = compareTexts(typedText, referenceText); // full includes omissions + substitutions + extra words
+    const { full, half } = compareTexts(typedText, referenceText); // full = ALL errors (S+O+A+C+P), half = cap+punct
 
     const finalStrokes = typedText.length;
     const minutes      = Math.max(timeElapsed, 1) / 60;
