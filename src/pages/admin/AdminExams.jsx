@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { examService, resultPatternService } from '../../services/api';
+import Pagination from '../../components/Pagination';
 import './Admin.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3012/api';
@@ -60,6 +61,9 @@ const AdminExams = () => {
   const [currentPattern, setCurrentPattern] = useState(null);
   const [showPatternForm, setShowPatternForm] = useState(false);
   const [patternSearch, setPatternSearch] = useState('');
+  const [patPage, setPatPage] = useState(1);
+  const [patPageSize, setPatPageSize] = useState(10);
+  useEffect(() => { setPatPage(1); }, [patternSearch]);
   const [patternData, setPatternData] = useState({
     name: '',
     speed_count: 'Words',
@@ -89,6 +93,9 @@ const AdminExams = () => {
   const [currentExam, setCurrentExam] = useState(null);
   const [showExamForm, setShowExamForm] = useState(false);
   const [examSearch, setExamSearch] = useState('');
+  const [examPage, setExamPage] = useState(1);
+  const [examPageSize, setExamPageSize] = useState(10);
+  useEffect(() => { setExamPage(1); }, [examSearch]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [examData, setExamData] = useState({
     name: '',
@@ -379,36 +386,49 @@ const AdminExams = () => {
              </div>
            )}
 
-           <table className="admin-table">
-               <thead>
-                   <tr>
-                       <th>Pattern Name</th>
-                       <th>Speed Count</th>
-                       <th>Penalty Factor</th>
-                       <th>Qualifying</th>
-                       <th>Actions</th>
-                   </tr>
-               </thead>
-               <tbody>
-                   {loading ? <tr><td colSpan="5">Loading...</td></tr> : patterns.filter(p => p.name?.toLowerCase().includes(patternSearch.toLowerCase())).map(p => (
-                       <tr key={p.id}>
-                           <td><strong>{p.name}</strong></td>
-                           <td>{p.speed_count}</td>
-                           <td>{p.penalty_value} {p.penalty_type}s</td>
-                           <td>{p.required_speed} {p.qualify_on} / {p.required_accuracy}%</td>
-                           <td>
-                               <button className="btn-action btn-edit" onClick={() => {
-                                   const { id, created_at, updated_at, ...editFields } = p;
-                                   setCurrentPattern(p);
-                                   setPatternData({ ...defaultPatternData, ...editFields });
-                                   setShowPatternForm(true);
-                               }}>Edit</button>
-                               <button className="btn-action btn-delete" onClick={() => handlePatternDelete(p.id)} style={{ marginLeft: '10px' }}>Delete</button>
-                           </td>
+           {(() => {
+             const filteredPatterns = patterns.filter(p => p.name?.toLowerCase().includes(patternSearch.toLowerCase()));
+             const patTotalPages = Math.max(1, Math.ceil(filteredPatterns.length / patPageSize));
+             const pagedPatterns = filteredPatterns.slice((patPage - 1) * patPageSize, patPage * patPageSize);
+             return (
+               <>
+               <table className="admin-table">
+                   <thead>
+                       <tr>
+                           <th>Pattern Name</th>
+                           <th>Speed Count</th>
+                           <th>Penalty Factor</th>
+                           <th>Qualifying</th>
+                           <th>Actions</th>
                        </tr>
-                   ))}
-               </tbody>
-           </table>
+                   </thead>
+                   <tbody>
+                       {loading ? <tr><td colSpan="5">Loading...</td></tr> : filteredPatterns.length === 0 ? <tr><td colSpan="5">No patterns found.</td></tr> : pagedPatterns.map(p => (
+                           <tr key={p.id}>
+                               <td><strong>{p.name}</strong></td>
+                               <td>{p.speed_count}</td>
+                               <td>{p.penalty_value} {p.penalty_type}s</td>
+                               <td>{p.required_speed} {p.qualify_on} / {p.required_accuracy}%</td>
+                               <td>
+                                   <button className="btn-action btn-edit" onClick={() => {
+                                       const { id, created_at, updated_at, ...editFields } = p;
+                                       setCurrentPattern(p);
+                                       setPatternData({ ...defaultPatternData, ...editFields });
+                                       setShowPatternForm(true);
+                                   }}>Edit</button>
+                                   <button className="btn-action btn-delete" onClick={() => handlePatternDelete(p.id)} style={{ marginLeft: '10px' }}>Delete</button>
+                               </td>
+                           </tr>
+                       ))}
+                   </tbody>
+               </table>
+               <Pagination
+                 page={patPage} totalPages={patTotalPages} totalItems={filteredPatterns.length}
+                 pageSize={patPageSize} onPageChange={setPatPage} onPageSizeChange={p => { setPatPageSize(p); setPatPage(1); }}
+               />
+               </>
+             );
+           })()}
         </div>
       )}
 
@@ -683,6 +703,9 @@ const AdminExams = () => {
                                 <option key={v} value={v}>{v}</option>
                             ))}
                         </select>
+                        <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '3px', display: 'block' }}>
+                            Caps how many words/strokes from the uploaded content are shown to the student.
+                        </small>
                     </div>
                     <div className="input-group">
                         <label>NO. OF WORD/STROKES</label>
@@ -692,6 +715,9 @@ const AdminExams = () => {
                                 <option key={v} value={v}>{v}</option>
                             ))}
                         </select>
+                        <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '3px', display: 'block' }}>
+                            Required words/strokes student must type. Each missed word counts as a separate full error.
+                        </small>
                     </div>
 
                     <div className="form-actions-full" style={{ gridColumn: '1 / -1' }}>
@@ -712,7 +738,12 @@ const AdminExams = () => {
                    </tr>
                </thead>
                <tbody>
-                   {loading ? <tr><td colSpan="5">Loading...</td></tr> : exams.filter(e => e.name?.toLowerCase().includes(examSearch.toLowerCase())).map(e => (
+                   {loading ? <tr><td colSpan="5">Loading...</td></tr> : (() => {
+                     const filteredExamList = exams.filter(e => e.name?.toLowerCase().includes(examSearch.toLowerCase()));
+                     const examTotalPages = Math.max(1, Math.ceil(filteredExamList.length / examPageSize));
+                     const pagedExams = filteredExamList.slice((examPage - 1) * examPageSize, examPage * examPageSize);
+                     if (filteredExamList.length === 0) return <tr><td colSpan="5">No exams found.</td></tr>;
+                     return pagedExams.map(e => (
                        <tr key={e.id}>
                            <td>
                                {e.image_url ? <img src={resolveAssetUrl(e.image_url)} alt="" style={{width: '30px', height: '30px', objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: '4px', background: '#fff'}} onError={(ev) => { ev.target.style.display = 'none'; ev.target.parentNode.appendChild(document.createTextNode('-')); }} /> : '-'}
@@ -734,9 +765,15 @@ const AdminExams = () => {
                                <button className="btn-action btn-delete" onClick={() => handleExamDelete(e.id)} style={{ marginLeft: '10px' }}>Delete</button>
                            </td>
                        </tr>
-                   ))}
+                     ));
+                   })()}
                </tbody>
            </table>
+           {(() => {
+             const filteredExamList = exams.filter(e => e.name?.toLowerCase().includes(examSearch.toLowerCase()));
+             const examTotalPages = Math.max(1, Math.ceil(filteredExamList.length / examPageSize));
+             return <Pagination page={examPage} totalPages={examTotalPages} totalItems={filteredExamList.length} pageSize={examPageSize} onPageChange={setExamPage} onPageSizeChange={p => { setExamPageSize(p); setExamPage(1); }} />;
+           })()}
         </div>
       )}
 

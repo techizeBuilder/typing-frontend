@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { userService, resultService } from '../../services/api';
+import Pagination from '../../components/Pagination';
 import './Admin.css';
 
 const AdminStudents = () => {
@@ -36,9 +37,75 @@ const AdminStudents = () => {
 
   const ALL_CATEGORIES = ['Typing English', 'Typing Hindi', 'Steno English', 'Steno Hindi'];
 
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => { setPage(1); }, [searchTerm, categoryFilter]);
+
+  // Bulk Edit State
+  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [bulkFormData, setBulkFormData] = useState({
+    applyStatus: false,
+    status: 'Active',
+    applyCategories: false,
+    selectedCategories: [],
+    applyLoginTime: false,
+    allowed_login_time_start: '',
+    allowed_login_time_end: '',
+    applyValidityEnd: false,
+    validity_end: '',
+  });
+
+  const toggleStudentSelect = (id) => {
+    setSelectedStudentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (visibleStudents) => {
+    if (visibleStudents.every(s => selectedStudentIds.has(s.id))) {
+      setSelectedStudentIds(new Set());
+    } else {
+      setSelectedStudentIds(new Set(visibleStudents.map(s => s.id)));
+    }
+  };
+
+  const handleBulkEditSubmit = async (e) => {
+    e.preventDefault();
+    if (selectedStudentIds.size === 0) {
+      alert('No students selected.');
+      return;
+    }
+    const payload = {};
+    if (bulkFormData.applyStatus) payload.status = bulkFormData.status;
+    if (bulkFormData.applyCategories) payload.category = bulkFormData.selectedCategories.join(', ') || null;
+    if (bulkFormData.applyLoginTime) {
+      payload.allowed_login_time_start = bulkFormData.allowed_login_time_start || null;
+      payload.allowed_login_time_end = bulkFormData.allowed_login_time_end || null;
+    }
+    if (bulkFormData.applyValidityEnd) payload.validity_end = bulkFormData.validity_end || null;
+
+    if (Object.keys(payload).length === 0) {
+      alert('Please enable and fill at least one field to update.');
+      return;
+    }
+    try {
+      await Promise.all(Array.from(selectedStudentIds).map(id => userService.updateUser(id, payload)));
+      setShowBulkEditModal(false);
+      setSelectedStudentIds(new Set());
+      fetchStudents();
+      alert(`Updated ${selectedStudentIds.size} student(s) successfully.`);
+    } catch (error) {
+      alert('Bulk update error: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
   // Add Student Modal State
   const [showAddModal, setShowAddModal] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState('All');
   const [addFormData, setAddFormData] = useState({
     name: '',
     fathers_name: '',
@@ -207,7 +274,7 @@ const AdminStudents = () => {
       <header className="admin-header">
         <h2>Student Management</h2>
         <div className="admin-stats-bar" style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div>Total Found: <strong>{students.length}</strong></div>
+          <div>Total Found: <strong>{students.filter(s => s.role === 'Student').length}</strong></div>
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
@@ -233,12 +300,114 @@ const AdminStudents = () => {
           >
             + Add Student
           </button>
+          <button
+            onClick={() => {
+              if (selectedStudentIds.size === 0) { alert('Please select at least one student first.'); return; }
+              setShowBulkEditModal(true);
+            }}
+            style={{ fontSize: '0.85rem', background: '#7c3aed', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            ✏ Bulk Edit {selectedStudentIds.size > 0 ? `(${selectedStudentIds.size})` : ''}
+          </button>
         </div>
       </header>
       
       {errorMsg && (
         <div style={{ background: '#fee2e2', color: '#dc2626', padding: '10px', marginBottom: '10px', borderRadius: '4px' }}>
           <strong>Error:</strong> {errorMsg}
+        </div>
+      )}
+
+      {showBulkEditModal && (
+        <div className="admin-form-container pattern-setup" style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Bulk Edit — {selectedStudentIds.size} Student(s) Selected</h3>
+            <button className="btn-secondary" onClick={() => setShowBulkEditModal(false)}>Close X</button>
+          </div>
+          <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px' }}>
+            Enable a field to update it for all selected students. Disabled fields are left unchanged.
+          </p>
+          <form onSubmit={handleBulkEditSubmit} className="admin-grid-form" style={{ marginTop: '12px' }}>
+            <div className="form-section">
+              <h4>Status</h4>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={bulkFormData.applyStatus} onChange={e => setBulkFormData(f => ({ ...f, applyStatus: e.target.checked }))} />
+                Update status for selected students
+              </label>
+              <select
+                disabled={!bulkFormData.applyStatus}
+                value={bulkFormData.status}
+                onChange={e => setBulkFormData(f => ({ ...f, status: e.target.value }))}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyStatus ? 1 : 0.5 }}
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Pending">Pending</option>
+              </select>
+            </div>
+
+            <div className="form-section">
+              <h4>Course Categories</h4>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={bulkFormData.applyCategories} onChange={e => setBulkFormData(f => ({ ...f, applyCategories: e.target.checked }))} />
+                Override categories for selected students
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', opacity: bulkFormData.applyCategories ? 1 : 0.5, pointerEvents: bulkFormData.applyCategories ? 'auto' : 'none' }}>
+                {ALL_CATEGORIES.map(cat => (
+                  <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', cursor: 'pointer', background: bulkFormData.selectedCategories.includes(cat) ? '#e0e7ff' : '#f1f5f9', border: bulkFormData.selectedCategories.includes(cat) ? '1.5px solid #6366f1' : '1.5px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontWeight: bulkFormData.selectedCategories.includes(cat) ? 700 : 400 }}>
+                    <input
+                      type="checkbox"
+                      checked={bulkFormData.selectedCategories.includes(cat)}
+                      onChange={() => {
+                        const set = new Set(bulkFormData.selectedCategories);
+                        if (set.has(cat)) set.delete(cat); else set.add(cat);
+                        setBulkFormData(f => ({ ...f, selectedCategories: Array.from(set) }));
+                      }}
+                    />
+                    {cat}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h4>Login Time Window</h4>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={bulkFormData.applyLoginTime} onChange={e => setBulkFormData(f => ({ ...f, applyLoginTime: e.target.checked }))} />
+                Update allowed login times (leave blank to remove restriction)
+              </label>
+              <div className="admin-inline-group" style={{ opacity: bulkFormData.applyLoginTime ? 1 : 0.5, pointerEvents: bulkFormData.applyLoginTime ? 'auto' : 'none' }}>
+                <div className="input-group">
+                  <label>Start Time (e.g. 09:00)</label>
+                  <input type="time" value={bulkFormData.allowed_login_time_start} onChange={e => setBulkFormData(f => ({ ...f, allowed_login_time_start: e.target.value }))} />
+                </div>
+                <div className="input-group">
+                  <label>End Time (e.g. 17:00)</label>
+                  <input type="time" value={bulkFormData.allowed_login_time_end} onChange={e => setBulkFormData(f => ({ ...f, allowed_login_time_end: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h4>Validity End Date</h4>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={bulkFormData.applyValidityEnd} onChange={e => setBulkFormData(f => ({ ...f, applyValidityEnd: e.target.checked }))} />
+                Update validity end date (leave blank to clear it)
+              </label>
+              <input
+                type="date"
+                disabled={!bulkFormData.applyValidityEnd}
+                value={bulkFormData.validity_end}
+                onChange={e => setBulkFormData(f => ({ ...f, validity_end: e.target.value }))}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyValidityEnd ? 1 : 0.5 }}
+              />
+            </div>
+
+            <div className="form-actions-full" style={{ gap: '10px' }}>
+              <button type="submit" className="btn-primary">Apply to {selectedStudentIds.size} Student(s)</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowBulkEditModal(false)}>Cancel</button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -507,9 +676,27 @@ const AdminStudents = () => {
         </div>
       )}
 
+      {(() => {
+        const filteredStudents = students
+          .filter(s => s.role === 'Student')
+          .filter(s => (s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.phone?.includes(searchTerm)))
+          .filter(s => categoryFilter === 'All' || (s.category && s.category.split(',').map(c => c.trim()).includes(categoryFilter)));
+        const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+        const pagedStudents = filteredStudents.slice((page - 1) * pageSize, page * pageSize);
+        const allPageSelected = pagedStudents.length > 0 && pagedStudents.every(s => selectedStudentIds.has(s.id));
+        return (
+      <>
       <table className="admin-table">
         <thead>
           <tr>
+            <th style={{ width: '36px' }}>
+              <input
+                type="checkbox"
+                title="Select all on page"
+                checked={allPageSelected}
+                onChange={() => toggleSelectAll(pagedStudents)}
+              />
+            </th>
             <th>Name</th>
             <th>Username (Login ID)</th>
             <th>Category</th>
@@ -523,14 +710,12 @@ const AdminStudents = () => {
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan="9">Loading...</td></tr>
-          ) : students.length === 0 ? (
-            <tr><td colSpan="9">No Users found in database.</td></tr>
-          ) : students
-              .filter(s => (s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.phone?.includes(searchTerm)))
-              .filter(s => categoryFilter === 'All' || (s.category && s.category.split(',').map(c => c.trim()).includes(categoryFilter)))
-              .map((s) => (
-            <tr key={s.id}>
+            <tr><td colSpan="10">Loading...</td></tr>
+          ) : filteredStudents.length === 0 ? (
+            <tr><td colSpan="10">No students match the current filter.</td></tr>
+          ) : pagedStudents.map((s) => (
+            <tr key={s.id} style={{ background: selectedStudentIds.has(s.id) ? '#ede9fe' : undefined }}>
+              <td><input type="checkbox" checked={selectedStudentIds.has(s.id)} onChange={() => toggleStudentSelect(s.id)} /></td>
               <td><strong>{s.name}</strong></td>
               <td>
                 <span style={{ fontFamily: 'monospace', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', color: '#1e40af', fontWeight: 600 }}>
@@ -574,6 +759,13 @@ const AdminStudents = () => {
           ))}
         </tbody>
       </table>
+      <Pagination
+        page={page} totalPages={totalPages} totalItems={filteredStudents.length}
+        pageSize={pageSize} onPageChange={setPage} onPageSizeChange={p => { setPageSize(p); setPage(1); }}
+      />
+      </>
+        );
+      })()}
     </div>
   );
 };

@@ -5,7 +5,7 @@ import './ResultScreen.css';
 
 // ─── PrintSheet — government exam format (visible only on print) ───────────────
 const PrintSheet = ({
-  examName, examDate, candidateName, rollNo, fathersName, category,
+  examName, chapterNo, patternName, examDate, candidateName, rollNo, fathersName, category,
   userId, phone, city, state, profileImage,
   mode, testDurationMinutes, timeTakenStr,
   fullErrors, halfErrors, totalMistakes, halfMistakeEnabled,
@@ -77,6 +77,8 @@ const PrintSheet = ({
       {/* ── Exam name + date row ───────────────────────────────── */}
       <div className="prt-exam-row">
         <span>EXAM NAME:&nbsp;<strong>{examName || 'Practice Test'}</strong></span>
+        {chapterNo && <span>CHAPTER NO.:&nbsp;<strong>#{chapterNo}</strong></span>}
+        {patternName && <span>RESULT PATTERN:&nbsp;<strong>{patternName}</strong></span>}
         <span>DATE OF EXAM:-&nbsp;<strong>{examDate}</strong></span>
       </div>
 
@@ -339,35 +341,111 @@ function seqAlign(refNorm, typedNorm) {
   return matchedRef;
 }
 
+// ─── Steno error-classification helpers ──────────────────────────────────────
+// Levenshtein edit distance with early-exit for large differences.
+const _lev = (a, b) => {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 3) return 99;
+  const dp = [];
+  for (let i = 0; i <= m; i++) { dp[i] = new Array(n + 1).fill(0); dp[i][0] = i; }
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+};
+// PDF 2a: wrong spelling → half mistake.
+// Threshold: edit distance ≤ 2 AND ≤ 30% of word length. Minimum word length 4.
+const _isSpellingErr = (r, t) => {
+  if (r === t || r.length < 4 || t.length < 4 || Math.abs(r.length - t.length) > 3) return false;
+  const d = _lev(r, t);
+  return d <= 2 && d / Math.max(r.length, t.length) <= 0.30;
+};
+// PDF 1h: typing a word in ALL CAPITALS → full mistake.
+const _isAllCaps = (w) => { const l = w.replace(/[^a-zA-Z]/g, ''); return l.length > 1 && l === l.toUpperCase(); };
+
+// Count exact-match correct words for steno results using bipartite pass-1 only.
+const _stenoCorrectCount = (typedText, referenceText) => {
+  const tw = (typedText || '').trim().split(/\s+/).filter(Boolean);
+  const rw = (referenceText || '').trim().split(/\s+/).filter(Boolean);
+  const tn = tw.map(w => w.toLowerCase().replace(/[^a-z0-9ऀ-ॿ]/gi, ''));
+  const rn = rw.map(w => w.toLowerCase().replace(/[^a-z0-9ऀ-ॿ]/gi, ''));
+  const used = new Set();
+  let cnt = 0;
+  for (let ri = 0; ri < rn.length; ri++) {
+    for (let ti = 0; ti < tn.length; ti++) {
+      if (!used.has(ti) && tn[ti] === rn[ri]) {
+        if (tw[ti] === rw[ri]) cnt++; // only exact raw match counts as "correct"
+        used.add(ti);
+        break;
+      }
+    }
+  }
+  return cnt;
+};
+
+// ─── Bipartite alignment (used for Steno) ────────────────────────────────────
+// Two-pass: pass 1 matches exact normalized forms; pass 2 matches spelling
+// variants (half mistake). Order-independent — a correctly heard word is
+// credited even if written in a different position.
+function bipartiteAlign(refNorm, typedNorm) {
+  const R = refNorm.length;
+  const T = typedNorm.length;
+  const usedTyped  = new Set();
+  const matchedRef = new Array(R).fill(-1);
+  const isSpell    = new Array(R).fill(false);
+
+  // Pass 1: exact normalized match
+  for (let ri = 0; ri < R; ri++) {
+    for (let ti = 0; ti < T; ti++) {
+      if (!usedTyped.has(ti) && typedNorm[ti] === refNorm[ri]) {
+        matchedRef[ri] = ti; usedTyped.add(ti); break;
+      }
+    }
+  }
+  // Pass 2: spelling match for still-unmatched reference words (PDF 2a)
+  for (let ri = 0; ri < R; ri++) {
+    if (matchedRef[ri] !== -1) continue;
+    for (let ti = 0; ti < T; ti++) {
+      if (!usedTyped.has(ti) && _isSpellingErr(refNorm[ri], typedNorm[ti])) {
+        matchedRef[ri] = ti; isSpell[ri] = true; usedTyped.add(ti); break;
+      }
+    }
+  }
+  return { matchedRef, isSpell, usedTyped };
+}
+
 // ─── StenoDiff ────────────────────────────────────────────────────────────────
-const StenoDiff = ({ typed = '', reference = '' }) => {
+const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMinutes = 10 }) => {
   const typedWords = tokenizeResult(typed);
   const refWords   = tokenizeResult(reference);
   const typedNorm  = typedWords.map(normalizeWordResult);
   const refNorm    = refWords.map(normalizeWordResult);
 
-  const matchedRef = seqAlign(refNorm, typedNorm);
-  const usedTyped  = new Set(matchedRef.filter(x => x !== -1));
+  const { matchedRef, isSpell, usedTyped } = bipartiteAlign(refNorm, typedNorm);
 
-  // Token types:
+  // Token types per SSC PDF guidelines:
   //   correct – exact match
-  //   half    – normalized match (only case / punctuation differs)
-  //   sub     – completely different word substituted (full error)
-  //   missed  – reference word not typed at all (omission — full error)
-  //   extra   – typed word with no reference counterpart (insertion — full error)
+  //   half    – case / punctuation difference only (PDF 2c, 2d, 2e) → half mistake
+  //   spell   – close spelling error          (PDF 2a)              → half mistake
+  //   caps    – word typed in ALL CAPITALS    (PDF 1h)              → full mistake
+  //   missed  – omission                      (PDF 1a)              → full mistake
+  //   extra   – addition                      (PDF 1c)              → full mistake
   const tokens = [];
   for (let ri = 0; ri < refWords.length; ri++) {
     const ti = matchedRef[ri];
     if (ti === -1) {
       tokens.push({ type: 'missed', typed: null, ref: refWords[ri] });
+    } else if (isSpell[ri]) {
+      tokens.push({ type: 'spell', typed: typedWords[ti], ref: refWords[ri] });
     } else {
       const rawT = typedWords[ti], rawR = refWords[ri];
       if (rawT === rawR) {
         tokens.push({ type: 'correct', typed: rawT, ref: rawR });
-      } else if (typedNorm[ti] === refNorm[ri]) {
-        tokens.push({ type: 'half', typed: rawT, ref: rawR });   // case/punct only
+      } else if (_isAllCaps(rawT)) {
+        tokens.push({ type: 'caps', typed: rawT, ref: rawR });   // PDF 1h: full
       } else {
-        tokens.push({ type: 'sub',  typed: rawT, ref: rawR });   // wrong word
+        tokens.push({ type: 'half', typed: rawT, ref: rawR });   // PDF 2c/d/e: half
       }
     }
   }
@@ -377,32 +455,88 @@ const StenoDiff = ({ typed = '', reference = '' }) => {
   }
 
   const counts = tokens.reduce((acc, tok) => { acc[tok.type] = (acc[tok.type] || 0) + 1; return acc; }, {});
-  const fullErrCount = (counts.sub || 0) + (counts.missed || 0) + (counts.extra || 0);
+
+  // Per PDF: Full = omissions + additions + all-caps; Half = spelling + case/punct
+  const halfEnabled    = pattern?.half_mistake_enabled ?? true;
+  const rawFull        = (counts.missed || 0) + (counts.extra || 0) + (counts.caps || 0);
+  const rawHalf        = (counts.spell || 0) + (counts.half || 0);
+  const fullErrCount   = halfEnabled ? rawFull : rawFull + rawHalf;
+  const halfErrCount   = halfEnabled ? rawHalf : 0;
+  const totalMistakes  = parseFloat((fullErrCount + halfErrCount * 0.5).toFixed(2));
+
+  // PDF formula: Error % = (Full + Half/2) × 100 / masterPassageWords
+  // masterPassageWords = requiredSpeed × testDurationMinutes (per PDF table)
+  const masterWords   = pattern?.required_speed ? pattern.required_speed * testDurationMinutes : refWords.length;
+  const errorPercent  = masterWords > 0 ? parseFloat((totalMistakes / masterWords * 100).toFixed(2)) : 0;
 
   const styles = {
     wrap:    { fontFamily: "'Courier New', monospace", lineHeight: 2.2, wordSpacing: '4px', flexWrap: 'wrap', display: 'flex', gap: '6px', padding: '16px 0' },
     correct: { color: '#16a34a', display: 'inline-block' },
     half:    { display: 'inline-block', background: '#fef3c7', borderRadius: '4px', padding: '0 4px', color: '#92400e' },
-    sub:     { display: 'inline-block', background: '#fee2e2', borderRadius: '4px', padding: '0 4px', color: '#dc2626', fontWeight: 600 },
+    spell:   { display: 'inline-block', background: '#fde68a', borderRadius: '4px', padding: '0 4px', color: '#92400e', fontStyle: 'italic' },
+    caps:    { display: 'inline-block', background: '#fee2e2', borderRadius: '4px', padding: '0 4px', color: '#b91c1c', fontWeight: 700, letterSpacing: '1px' },
     missed:  { display: 'inline-block', background: '#f1f5f9', borderRadius: '4px', padding: '0 4px', color: '#dc2626', textDecoration: 'line-through', opacity: 0.75 },
     extra:   { display: 'inline-block', background: '#eff6ff', borderRadius: '4px', padding: '0 4px', color: '#1d4ed8' },
   };
 
   return (
     <div>
-      <div className="legend-row" style={{ marginBottom: '8px', flexWrap: 'wrap', gap: '10px' }}>
-        <span style={{ color: '#16a34a', fontWeight: 600 }}>✔ Correct: {counts.correct || 0}</span>
-        <span style={{ color: '#dc2626', fontWeight: 600 }}>✘ Full Errors: {fullErrCount}</span>
-        <span style={{ color: '#d97706', fontWeight: 600 }}>~ Half Error (case/punct): {counts.half || 0}</span>
-        <span style={{ color: '#64748b', fontWeight: 600, fontSize: '0.82rem' }}>
-          (Substitution: {counts.sub || 0} · Omission: {counts.missed || 0} · Extra: {counts.extra || 0})
+      {/* ── Side-by-side passage comparison ─────────────────── */}
+      <div className="pa-compare-layout" style={{ marginBottom: '18px' }}>
+        <div className="pa-compare-cols">
+          <div className="pa-compare-col">
+            <div className="pa-compare-header">Original Passage</div>
+            <div className="pa-compare-body">{reference || <em style={{ color: '#9ca3af' }}>No passage.</em>}</div>
+          </div>
+          <div className="pa-compare-col">
+            <div className="pa-compare-header">Your Typed Passage</div>
+            <div className="pa-compare-body">{typed || <em style={{ color: '#9ca3af' }}>Nothing typed.</em>}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Error summary (PDF formula) ───────────────────────── */}
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '18px', alignItems: 'center' }}>
+        <span style={{ color: '#16a34a', fontWeight: 700 }}>✔ Correct: {counts.correct || 0}</span>
+        <span style={{ color: '#dc2626', fontWeight: 700 }}>Full Mistakes: {fullErrCount}</span>
+        {halfEnabled && <span style={{ color: '#d97706', fontWeight: 700 }}>Half Mistakes: {halfErrCount}</span>}
+        <span style={{ color: '#1e293b', fontWeight: 700 }}>
+          Total = {totalMistakes}
+          <span style={{ fontWeight: 400, color: '#64748b', fontSize: '0.82rem' }}>
+            &nbsp;[{fullErrCount} + {halfErrCount}×0.5]
+          </span>
+        </span>
+        <span style={{ color: errorPercent > 5 ? '#dc2626' : '#16a34a', fontWeight: 700, fontSize: '1rem' }}>
+          Error%: {errorPercent}%
+          <span style={{ fontWeight: 400, color: '#64748b', fontSize: '0.78rem' }}>
+            &nbsp;[{totalMistakes}/{masterWords}×100]
+          </span>
         </span>
       </div>
-      <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '10px', fontStyle: 'italic' }}>
-        Substituted words shown in <span style={{background:'#fee2e2',borderRadius:'3px',padding:'0 3px',color:'#dc2626',fontWeight:600}}>red</span>,
-        omitted in <span style={{textDecoration:'line-through',color:'#dc2626',fontWeight:600}}>strikethrough</span>,
-        extra words in <span style={{background:'#eff6ff',borderRadius:'3px',padding:'0 3px',color:'#1d4ed8',fontWeight:600}}>blue</span>.
+
+      {/* ── Breakdown row ─────────────────────────────────────── */}
+      <div style={{ fontSize: '0.79rem', color: '#64748b', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+        <span>Omissions: <strong style={{color:'#dc2626'}}>{counts.missed || 0}</strong></span>
+        <span>Additions: <strong style={{color:'#1d4ed8'}}>{counts.extra || 0}</strong></span>
+        <span>All-Caps: <strong style={{color:'#b91c1c'}}>{counts.caps || 0}</strong></span>
+        <span>Spelling: <strong style={{color:'#d97706'}}>{counts.spell || 0}</strong></span>
+        <span>Case/Punct: <strong style={{color:'#92400e'}}>{counts.half || 0}</strong></span>
+        <span style={{marginLeft:'auto',fontStyle:'italic'}}>
+          Master passage words: {masterWords}
+          {pattern?.required_speed ? ` (${pattern.required_speed}wpm × ${testDurationMinutes}min)` : ' (ref length)'}
+        </span>
       </div>
+
+      {/* ── Colour legend ─────────────────────────────────────── */}
+      <div style={{ fontSize: '0.77rem', color: '#64748b', marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+        <span style={{background:'#f1f5f9',padding:'1px 5px',borderRadius:'3px',textDecoration:'line-through',color:'#dc2626'}}>omission</span>
+        <span style={{background:'#eff6ff',padding:'1px 5px',borderRadius:'3px',color:'#1d4ed8'}}>+addition</span>
+        <span style={{background:'#fee2e2',padding:'1px 5px',borderRadius:'3px',color:'#b91c1c',fontWeight:700}}>ALL-CAPS</span>
+        <span style={{background:'#fde68a',padding:'1px 5px',borderRadius:'3px',color:'#92400e',fontStyle:'italic'}}>speling</span>
+        <span style={{background:'#fef3c7',padding:'1px 5px',borderRadius:'3px',color:'#92400e'}}>cAse/punct</span>
+      </div>
+
+      {/* ── Word diff tokens ──────────────────────────────────── */}
       <div style={styles.wrap}>
         {tokens.map((tok, idx) => {
           if (tok.type === 'correct') return <span key={idx} style={styles.correct}>{tok.typed}</span>;
@@ -411,8 +545,13 @@ const StenoDiff = ({ typed = '', reference = '' }) => {
               {tok.typed}<span style={{ fontSize: '0.75em', color: '#b45309' }}>({tok.ref})</span>
             </span>
           );
-          if (tok.type === 'sub')     return (
-            <span key={idx} style={styles.sub}>
+          if (tok.type === 'spell')   return (
+            <span key={idx} style={styles.spell}>
+              {tok.typed}<span style={{ fontSize: '0.75em' }}>({tok.ref})</span>
+            </span>
+          );
+          if (tok.type === 'caps')    return (
+            <span key={idx} style={styles.caps}>
               {tok.typed}<span style={{ fontSize: '0.75em', fontWeight: 400 }}>({tok.ref})</span>
             </span>
           );
@@ -431,7 +570,7 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   testDurationMinutes = 10,
   netSpeedCalculated = 0, grossSpeedCalculated = 0, accuracy = 0,
   lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
-  countOmissions = true,
+  countOmissions = true, repeatedRanges = [],
 }) => {
   const [view, setView] = React.useState(null);
   const [showCat, setShowCat] = React.useState(null);
@@ -656,6 +795,13 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
             {typedWords.slice(referenceWords.length).map((w,i)=>(
               <span key={`ex-${i}`}><span className="pa-res-extra">+{w}</span> </span>
             ))}
+            {repeatedRanges.map((r, ri) =>
+              (r.text ? r.text.split(/\s+/) : []).map((w, wi) => (
+                <span key={`rep-${ri}-${wi}`}>
+                  <span style={{ background: '#fed7aa', color: '#9a3412', borderRadius: '3px', padding: '0 4px', fontWeight: 600, fontStyle: 'italic' }}>{w}</span>{' '}
+                </span>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -708,7 +854,7 @@ const ResultScreen = () => {
 
   const {
     gwpm, nwpm, accuracy, fullErrors = 0, halfErrors = 0,
-    totalStrokes = 0, timeElapsed = 600, exam_name, date_taken,
+    totalStrokes = 0, timeElapsed = 600, exam_name, chapter_no, date_taken,
     studentName, rollNo: stateRollNo,
     mode, typedText, referenceText,
     pattern,
@@ -717,6 +863,8 @@ const ResultScreen = () => {
     extraTypedWords = null,
     repeatedRanges: stateRepeatedRanges = null,
   } = location.state || {};
+
+  const patternName = pattern?.name || null;
 
   // Repeated word ranges may arrive directly (fresh test) or live inside
   // pattern_data when viewing a past result loaded from the DB.
@@ -762,7 +910,9 @@ const ResultScreen = () => {
 
   // Actual space-delimited word counts — shown in the display cards
   const actualTypedWordCount   = userInput.trim().split(/\s+/).filter(Boolean).length;
-  const actualCorrectWordCount = wordStatuses.filter(s => s === 'correct').length;
+  const actualCorrectWordCount = isStenoResult
+    ? _stenoCorrectCount(typedText, referenceText)
+    : wordStatuses.filter(s => s === 'correct').length;
 
   // ─── Pattern-driven Calculations ─────────────────────────────────────────────
   // Pattern controls whether speed counts in Words or Strokes.
@@ -820,8 +970,10 @@ const ResultScreen = () => {
       }
     });
   }
-  // For steno fall back to passed-in props; for typing always use wordStatuses-derived values
-  const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + _cap + _pct);
+  // For steno fall back to passed-in props; for typing always use wordStatuses-derived values.
+  // repeatedWordCount is added here because repeated words are stripped before alignment and
+  // therefore not reflected in wordStatuses — they must be counted separately.
+  const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + _cap + _pct + repeatedWordCount);
   const effectiveHalfErrors = isStenoResult ? halfErrors : (_cap + _pct);
 
   const totalMistakes = parseFloat(
@@ -912,6 +1064,8 @@ const ResultScreen = () => {
       <div className="print-only-wrapper" ref={printRef}>
         <PrintSheet
           examName={exam_name}
+          chapterNo={chapter_no}
+          patternName={patternName}
           examDate={formattedDate}
           candidateName={username}
           rollNo={rollNo}
@@ -992,6 +1146,8 @@ const ResultScreen = () => {
                 <tr><td>Candidate Name</td><td>:</td><td>{username}</td></tr>
                 <tr><td>Roll Number</td><td>:</td><td>{rollNo}</td></tr>
                 <tr><td>Exam Name</td><td>:</td><td>{exam_name || 'Practice Test'}</td></tr>
+                {chapter_no && <tr><td>Chapter No.</td><td>:</td><td><strong style={{ color: '#1e40af' }}>#{chapter_no}</strong></td></tr>}
+                {patternName && <tr><td>Result Pattern</td><td>:</td><td><span style={{ background: '#f0fdf4', color: '#166534', padding: '1px 7px', borderRadius: '4px', fontWeight: 600, fontSize: '0.9em' }}>{patternName}</span></td></tr>}
                 <tr><td>Language</td><td>:</td><td>{mode || 'English'}</td></tr>
                 <tr><td>Test Duration</td><td>:</td><td>{location.state?.testDurationMinutes || Math.floor(timeElapsed / 60)} Minutes</td></tr>
                 <tr><td>Test Date &amp; Time</td><td>:</td><td>{formattedDate}</td></tr>
@@ -1253,7 +1409,7 @@ const ResultScreen = () => {
           </div>
 
           {isStenoResult ? (
-            <StenoDiff typed={typedText} reference={referenceText} />
+            <StenoDiff typed={typedText} reference={referenceText} pattern={pattern} testDurationMinutes={testDurationMinutes} />
           ) : (
             <TypingPassageReview
               userInput={userInput}
@@ -1271,6 +1427,7 @@ const ResultScreen = () => {
               alignedTypedWords={alignedTypedWords}
               extraTypedWords={extraTypedWords}
               countOmissions={countOmissions}
+              repeatedRanges={repeatedRanges}
             />
           )}
         </div>

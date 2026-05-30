@@ -12,6 +12,7 @@ const MyResults = () => {
   const [activeTab, setActiveTab] = useState('typing'); // 'typing', 'steno', or 'live'
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [examFilter, setExamFilter] = useState('All');
   const [fetchError, setFetchError] = useState('');
   const [saveErrorBanner, setSaveErrorBanner] = useState('');
 
@@ -69,6 +70,11 @@ const MyResults = () => {
     });
   };
 
+  // Unique exam options derived from all results (regardless of active tab)
+  const examOptions = Array.from(
+    new Set(results.map(r => r.exam?.name || 'Self Practice'))
+  ).sort();
+
   const filteredResults = results.filter(r => {
     const isLive = r.test_type === 'Live Test';
     const isSteno = r.mode?.toLowerCase().includes('steno');
@@ -88,12 +94,17 @@ const MyResults = () => {
       filterStart.setHours(0, 0, 0, 0);
       if (resultDate < filterStart) return false;
     }
-    
+
     if (endDate) {
       const resultDate = new Date(r.date_taken);
       const filterEnd = new Date(endDate);
       filterEnd.setHours(23, 59, 59, 999);
       if (resultDate > filterEnd) return false;
+    }
+
+    if (examFilter !== 'All') {
+      const resultExam = r.exam?.name || 'Self Practice';
+      if (resultExam !== examFilter) return false;
     }
 
     return true;
@@ -163,9 +174,22 @@ const MyResults = () => {
                     style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.85rem', color: '#334155' }}
                   />
                 </div>
-                {(startDate || endDate) && (
-                  <button 
-                    onClick={() => { setStartDate(''); setEndDate(''); }}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>Exam:</label>
+                  <select
+                    value={examFilter}
+                    onChange={(e) => setExamFilter(e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', color: '#334155' }}
+                  >
+                    <option value="All">All Exams</option>
+                    {examOptions.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                {(startDate || endDate || examFilter !== 'All') && (
+                  <button
+                    onClick={() => { setStartDate(''); setEndDate(''); setExamFilter('All'); }}
                     style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
                   >
                     Clear

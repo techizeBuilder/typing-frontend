@@ -404,7 +404,7 @@
 }
 
 .word.current-no-bg {
-  border-bottom: 2px solid #cbd5e1; /* Subtle indicator when highlight is off */
+  border-bottom: 2px solid transparent;
 }
 
 .word.correct {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { userService } from '../../services/api'; // we will add create logic via userService or custom axios call since we added POST /users
 import axios from 'axios';
+import Pagination from '../../components/Pagination';
 import './Admin.css';
 
 const AVAILABLE_MODULES = [
@@ -16,6 +17,9 @@ const AdminStaff = () => {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -41,7 +45,7 @@ const AdminStaff = () => {
     try {
       setLoading(true);
       const data = await userService.getUsers();
-      const staffMembers = data.filter(u => u.role === 'Sub-Admin');
+      const staffMembers = data.filter(u => u.role === 'Sub-Admin' || u.role === 'Admin' || u.role === 'SuperAdmin');
       setStaff(staffMembers);
     } catch (error) {
       console.error('Error fetching staff:', error);
@@ -214,43 +218,61 @@ const AdminStaff = () => {
         </div>
       )}
 
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Designation</th>
-            <th>Username</th>
-            <th>Phone</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <tr><td colSpan="6">Loading staff...</td></tr>
-          ) : staff.length === 0 ? (
-            <tr><td colSpan="6">No sub-admins found.</td></tr>
-          ) : staff.map(s => (
-            <tr key={s.id}>
-              <td><strong>{s.name}</strong></td>
-              <td>{s.designation || 'Staff'}</td>
-              <td>{s.user_id}</td>
-              <td>{s.phone}</td>
-              <td>
-                <span className={`status-badge ${s.status?.toLowerCase() || 'pending'}`}>
-                  {s.status}
-                </span>
-              </td>
-              <td>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <button className="btn-action btn-edit" onClick={() => openEditModal(s)}>Edit & Permissions</button>
-                  <button className="btn-action btn-edit" onClick={() => handleToggleStatus(s)}>{s.status === 'Active' ? 'Deactivate' : 'Activate'}</button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {(() => {
+        const totalPages = Math.max(1, Math.ceil(staff.length / pageSize));
+        const pagedStaff = staff.slice((page - 1) * pageSize, page * pageSize);
+        return (
+          <>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Designation</th>
+                  <th>Username</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan="7">Loading staff...</td></tr>
+                ) : staff.length === 0 ? (
+                  <tr><td colSpan="7">No staff members found.</td></tr>
+                ) : pagedStaff.map(s => (
+                  <tr key={s.id}>
+                    <td><strong>{s.name}</strong></td>
+                    <td>
+                      <span style={{ background: s.role === 'SuperAdmin' ? '#fef3c7' : s.role === 'Admin' ? '#dbeafe' : '#f1f5f9', color: s.role === 'SuperAdmin' ? '#92400e' : s.role === 'Admin' ? '#1e40af' : '#475569', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600 }}>
+                        {s.role}
+                      </span>
+                    </td>
+                    <td>{s.designation || 'Staff'}</td>
+                    <td>{s.user_id}</td>
+                    <td>{s.phone}</td>
+                    <td>
+                      <span className={`status-badge ${s.status?.toLowerCase() || 'pending'}`}>
+                        {s.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '5px' }}>
+                        <button className="btn-action btn-edit" onClick={() => openEditModal(s)}>Edit & Permissions</button>
+                        <button className="btn-action btn-edit" onClick={() => handleToggleStatus(s)}>{s.status === 'Active' ? 'Deactivate' : 'Activate'}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Pagination
+              page={page} totalPages={totalPages} totalItems={staff.length}
+              pageSize={pageSize} onPageChange={setPage} onPageSizeChange={p => { setPageSize(p); setPage(1); }}
+            />
+          </>
+        );
+      })()}
     </div>
   );
 };

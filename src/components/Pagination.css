@@ -1,0 +1,79 @@
+/* ─── Pagination Bar ──────────────────────────────────────────────────────── */
+
+.pg-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px 6px;
+  flex-wrap: wrap;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 2px;
+}
+
+.pg-info {
+  font-size: 0.82rem;
+  color: #64748b;
+  white-space: nowrap;
+  margin-right: auto;
+}
+.pg-info strong {
+  color: #334155;
+}
+
+.pg-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.pg-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  font-weight: 500;
+  line-height: 1;
+}
+.pg-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+.pg-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.pg-btn--active {
+  background: #2563eb !important;
+  color: #fff !important;
+  border-color: #2563eb !important;
+  font-weight: 700;
+}
+
+.pg-ellipsis {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  padding: 0 2px;
+  line-height: 32px;
+}
+
+.pg-size-select {
+  padding: 5px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  color: #374151;
+  background: #fff;
+  cursor: pointer;
+  outline: none;
+  height: 32px;
+}
+.pg-size-select:focus {
+  border-color: #2563eb;
+  outline: none;
+}

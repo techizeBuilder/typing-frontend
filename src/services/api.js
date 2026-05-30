@@ -125,16 +125,55 @@ export const authService = {
           // Fall back to the response body if the JWT decode failed
           if (response.data.user?.id) localStorage.setItem('userId', response.data.user.id);
         }
+
+        // Persist auth to IPC-backed file for reliable offline login in Electron
+        if (window.electronAPI?.saveAuth) {
+          window.electronAPI.saveAuth({
+            username,
+            token:        response.data.access_token,
+            role:         localStorage.getItem('role'),
+            name:         localStorage.getItem('name'),
+            userId:       localStorage.getItem('userId'),
+            validity_end: localStorage.getItem('validity_end'),
+          }).catch(() => {});
+        }
       }
       return response.data;
     } catch (error) {
-      // Offline fallback
+      // Offline fallback — return a synthetic success so Login.jsx navigates normally
       if (!error.response || error.code === 'ERR_NETWORK') {
+        // Prefer IPC-backed auth file (Electron) for reliability across restarts
+        if (window.electronAPI?.getAuth) {
+          try {
+            const stored = await window.electronAPI.getAuth();
+            if (stored && stored.username === username && stored.token) {
+              console.warn('[Offline Mode] Authenticated via IPC-cached token.');
+              // Re-hydrate localStorage so the rest of the app works normally
+              localStorage.setItem('token', stored.token);
+              localStorage.setItem('username', stored.username);
+              if (stored.role)         localStorage.setItem('role',         stored.role);
+              if (stored.name)         localStorage.setItem('name',         stored.name);
+              if (stored.userId)       localStorage.setItem('userId',       stored.userId);
+              if (stored.validity_end) localStorage.setItem('validity_end', stored.validity_end);
+              return {
+                success: true,
+                access_token: stored.token,
+                user: { role: stored.role, name: stored.name },
+              };
+            }
+          } catch (_) { /* fall through to localStorage */ }
+        }
+        // localStorage fallback (web / non-Electron)
         const storedUser = localStorage.getItem('username');
         const storedToken = localStorage.getItem('token');
         if (storedUser === username && storedToken) {
-          console.warn('[Offline Mode] Authenticated via cached token.');
-          return { access_token: storedToken };
+          console.warn('[Offline Mode] Authenticated via localStorage token.');
+          const role = localStorage.getItem('role');
+          return {
+            success: true,
+            access_token: storedToken,
+            user: { role, name: localStorage.getItem('name') },
+          };
         }
       }
       throw error;
@@ -226,6 +265,41 @@ export const chapterService = {
   },
 };
 
+export const offlineTestService = {
+  saveTests: async (tests) => {
+    if (window.electronAPI?.savePreloadedTests) {
+      return await window.electronAPI.savePreloadedTests(tests);
+    }
+    // localStorage fallback (web / non-Electron)
+    localStorage.setItem('preloaded_tests', JSON.stringify({ tests, saved_at: new Date().toISOString() }));
+    return { ok: true, count: tests.length };
+  },
+  getTests: async () => {
+    if (window.electronAPI?.getPreloadedTests) {
+      return await window.electronAPI.getPreloadedTests();
+    }
+    const raw = localStorage.getItem('preloaded_tests');
+    return raw ? JSON.parse(raw) : { tests: [], saved_at: null };
+  },
+};
+
+export const offlineExamService = {
+  saveExams: async (exams) => {
+    if (window.electronAPI?.saveExams) {
+      return await window.electronAPI.saveExams(exams);
+    }
+    localStorage.setItem('offline_exams', JSON.stringify({ exams, saved_at: new Date().toISOString() }));
+    return { ok: true };
+  },
+  getExams: async () => {
+    if (window.electronAPI?.getExams) {
+      return await window.electronAPI.getExams();
+    }
+    const raw = localStorage.getItem('offline_exams');
+    return raw ? JSON.parse(raw).exams : null;
+  },
+};
+
 export const resultService = {
   saveResult: async (resultData) => {
     try {
@@ -233,16 +307,18 @@ export const resultService = {
       return response.data;
     } catch (err) {
       if (!err.response || err.code === 'ERR_NETWORK') {
-        if (resultData.testType === 'Live Test') {
+        if (resultData.test_type === 'Live Test') {
           throw new Error('Network error. Cannot submit Live Test offline.');
         }
         console.warn('[Offline Mode] Saving result locally.');
+        // Prefer IPC-backed persistent storage in Electron
+        if (window.electronAPI?.saveOfflineResult) {
+          const saved = await window.electronAPI.saveOfflineResult(resultData);
+          return { result: { ...resultData, id: saved.id } };
+        }
+        // Fallback: localStorage
         const offlineResults = JSON.parse(localStorage.getItem('offline_results') || '[]');
-        const mockResult = {
-          ...resultData,
-          id: 'offline-' + Date.now(),
-          created_at: new Date().toISOString()
-        };
+        const mockResult = { ...resultData, id: 'offline-' + Date.now(), created_at: new Date().toISOString() };
         offlineResults.push(mockResult);
         localStorage.setItem('offline_results', JSON.stringify(offlineResults));
         return { result: mockResult };
@@ -251,21 +327,44 @@ export const resultService = {
     }
   },
   syncOfflineResults: async () => {
-    const offlineResults = JSON.parse(localStorage.getItem('offline_results') || '[]');
-    if (offlineResults.length === 0) return;
-    
-    const remaining = [];
-    for (const res of offlineResults) {
-      try {
-        const payload = { ...res };
-        delete payload.id;
-        delete payload.created_at;
-        await api.post('/results', payload);
-      } catch (err) {
-        remaining.push(res);
+    let synced = 0;
+    // ── IPC-backed results (Electron) ──
+    if (window.electronAPI?.getOfflineResults) {
+      const ipcResults = await window.electronAPI.getOfflineResults();
+      for (const res of ipcResults) {
+        try {
+          const payload = { ...res };
+          delete payload.id;
+          delete payload.created_at;
+          delete payload.synced;
+          delete payload._hash;
+          await api.post('/results', payload);
+          await window.electronAPI.markResultSynced(res.id);
+          synced++;
+        } catch (err) {
+          console.warn('[Sync] Could not sync offline result:', res.id, err?.message);
+        }
       }
     }
-    localStorage.setItem('offline_results', JSON.stringify(remaining));
+    // ── localStorage results (fallback / web) ──
+    const lsResults = JSON.parse(localStorage.getItem('offline_results') || '[]');
+    if (lsResults.length > 0) {
+      const remaining = [];
+      for (const res of lsResults) {
+        try {
+          const payload = { ...res };
+          delete payload.id;
+          delete payload.created_at;
+          await api.post('/results', payload);
+          synced++;
+        } catch (err) {
+          remaining.push(res);
+        }
+      }
+      localStorage.setItem('offline_results', JSON.stringify(remaining));
+    }
+    if (synced > 0) console.log(`[Sync] Uploaded ${synced} offline result(s).`);
+    return synced;
   },
   getUserResults: async (userId) => {
     const response = await api.get(`/results/user/${userId}`);

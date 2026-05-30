@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { resultService } from '../../services/api';
+import Pagination from '../../components/Pagination';
 import './Admin.css';
 
 const COURSES = [
@@ -21,6 +22,12 @@ const AdminResults = () => {
   const [dateTo, setDateTo] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [testTypeFilter, setTestTypeFilter] = useState('All');
+  const [examFilter, setExamFilter] = useState('All');
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => { setPage(1); }, [usernameSearch, dateFrom, dateTo, courseFilter, testTypeFilter, examFilter]);
 
   useEffect(() => {
     fetchResults();
@@ -44,9 +51,15 @@ const AdminResults = () => {
     setDateTo('');
     setCourseFilter('All');
     setTestTypeFilter('All');
+    setExamFilter('All');
   };
 
-  const hasActiveFilter = usernameSearch || dateFrom || dateTo || courseFilter !== 'All' || testTypeFilter !== 'All';
+  const hasActiveFilter = usernameSearch || dateFrom || dateTo || courseFilter !== 'All' || testTypeFilter !== 'All' || examFilter !== 'All';
+
+  // Unique exam names derived from loaded results for the exam dropdown
+  const examOptions = Array.from(
+    new Set(results.map(r => r.exam?.name || 'Practice'))
+  ).sort();
 
   const handleViewResult = (r) => {
     navigate('/result', {
@@ -59,6 +72,7 @@ const AdminResults = () => {
         totalStrokes: r.total_strokes,
         timeElapsed: r.time_elapsed,
         exam_name: r.exam ? r.exam.name : 'Practice Mode',
+        chapter_no: r.chapter?.chapter_no || null,
         date_taken: r.date_taken,
         studentName: r.user ? (r.user.name || r.user.user_id) : '—',
         rollNo: r.user ? r.user.user_id : '—',
@@ -97,7 +111,11 @@ const AdminResults = () => {
       (testTypeFilter === 'Preloaded' && r.test_type === 'Pre-load Test') ||
       (testTypeFilter === 'Live'      && r.test_type === 'Live Test');
 
-    return matchUsername && matchFrom && matchTo && matchCourse && matchTestType;
+    // Exam
+    const resultExamName = r.exam?.name || 'Practice';
+    const matchExam = examFilter === 'All' || resultExamName === examFilter;
+
+    return matchUsername && matchFrom && matchTo && matchCourse && matchTestType && matchExam;
   });
 
   const inputStyle = {
@@ -205,9 +223,29 @@ const AdminResults = () => {
               <option value="Live">Live</option>
             </select>
           </div>
+
+          {/* Exam */}
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: '180px', flex: '1' }}>
+            <label style={labelStyle}>Exam</label>
+            <select
+              value={examFilter}
+              onChange={(e) => setExamFilter(e.target.value)}
+              style={inputStyle}
+            >
+              <option value="All">All Exams</option>
+              {examOptions.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </header>
 
+      {(() => {
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        const pagedResults = filtered.slice((page - 1) * pageSize, page * pageSize);
+        return (
+      <>
       <div style={{ margin: '10px 0', fontSize: '0.85rem', color: '#475569' }}>
         Showing <strong>{filtered.length}</strong> of <strong>{results.length}</strong> results
         {hasActiveFilter && <span style={{ marginLeft: '10px', color: '#2563eb', fontWeight: 600 }}>(filtered)</span>}
@@ -237,7 +275,7 @@ const AdminResults = () => {
           ) : filtered.length === 0 ? (
             <tr><td colSpan="13" style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>No results found matching the selected filters.</td></tr>
           ) : (
-            filtered.map((r) => (
+            pagedResults.map((r) => (
               <tr key={r.id}>
                 <td>{r.date_taken ? new Date(r.date_taken).toLocaleDateString('en-IN') : '—'}</td>
                 <td><strong>{r.user ? (r.user.name || '—') : '—'}</strong></td>
@@ -285,6 +323,13 @@ const AdminResults = () => {
           )}
         </tbody>
       </table>
+      <Pagination
+        page={page} totalPages={totalPages} totalItems={filtered.length}
+        pageSize={pageSize} onPageChange={setPage} onPageSizeChange={p => { setPageSize(p); setPage(1); }}
+      />
+      </>
+        );
+      })()}
     </div>
   );
 };

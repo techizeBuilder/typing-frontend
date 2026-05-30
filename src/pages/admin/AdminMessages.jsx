@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
+import Pagination from '../../components/Pagination';
 import './Admin.css';
 
 const AdminMessages = () => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({ title: '', content: '' });
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetchMessages();
@@ -80,30 +84,42 @@ const AdminMessages = () => {
       </div>
 
       <h3>Past Broadcasts</h3>
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Title</th>
-            <th>Content Snippet</th>
-            <th>Target</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? <tr><td colSpan="5">Loading...</td></tr> : messages.length === 0 ? <tr><td colSpan="5">No messages sent yet.</td></tr> : messages.map(msg => (
-            <tr key={msg.id}>
-              <td>{new Date(msg.created_at).toLocaleDateString()}</td>
-              <td><strong>{msg.title}</strong></td>
-              <td className="text-preview">{msg.content.substring(0, 50)}...</td>
-              <td><span className="badge-control">{msg.target_audience}</span></td>
-              <td>
-                <button className="btn-action btn-delete" onClick={() => handleDelete(msg.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {(() => {
+        const totalPages = Math.max(1, Math.ceil(messages.length / pageSize));
+        const pagedMessages = messages.slice((page - 1) * pageSize, page * pageSize);
+        return (
+          <>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Title</th>
+                  <th>Content Snippet</th>
+                  <th>Target</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? <tr><td colSpan="5">Loading...</td></tr> : messages.length === 0 ? <tr><td colSpan="5">No messages sent yet.</td></tr> : pagedMessages.map(msg => (
+                  <tr key={msg.id}>
+                    <td>{new Date(msg.created_at).toLocaleDateString()}</td>
+                    <td><strong>{msg.title}</strong></td>
+                    <td className="text-preview">{msg.content.substring(0, 50)}...</td>
+                    <td><span className="badge-control">{msg.target_audience}</span></td>
+                    <td>
+                      <button className="btn-action btn-delete" onClick={() => handleDelete(msg.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Pagination
+              page={page} totalPages={totalPages} totalItems={messages.length}
+              pageSize={pageSize} onPageChange={setPage} onPageSizeChange={p => { setPageSize(p); setPage(1); }}
+            />
+          </>
+        );
+      })()}
     </div>
   );
 };

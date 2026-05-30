@@ -11,7 +11,7 @@
 
 .sa-container {
   width: 100%;
-  max-width: 960px;
+  max-width: 980px;
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.10);
@@ -41,6 +41,11 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* override for the header's back button */
+.sa-back-btn--header {
+  margin-bottom: 16px;
+}
+
 .sa-title {
   margin: 0 0 6px;
   font-size: 1.75rem;
@@ -55,7 +60,76 @@
   line-height: 1.5;
 }
 
-/* ── Body ─────────────────────────────────────────────────────────────────── */
+/* ── Stepper ──────────────────────────────────────────────────────────────── */
+.sa-stepper {
+  display: flex;
+  align-items: center;
+  padding: 20px 32px;
+  border-bottom: 1px solid #eaeaea;
+  background: #fafbfc;
+  overflow-x: auto;
+  gap: 0;
+}
+
+.sa-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sa-step-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #888;
+  font-size: 0.82rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.25s, color 0.25s;
+}
+
+.sa-step-label {
+  font-size: 0.8rem;
+  color: #999;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 0.25s;
+}
+
+.sa-step--active .sa-step-circle {
+  background: #2563eb;
+  color: #fff;
+}
+.sa-step--active .sa-step-label {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.sa-step--done .sa-step-circle {
+  background: #16a34a;
+  color: #fff;
+}
+.sa-step--done .sa-step-label {
+  color: #16a34a;
+}
+
+.sa-step-line {
+  flex: 1;
+  min-width: 24px;
+  height: 2px;
+  background: #e2e8f0;
+  margin: 0 4px;
+  transition: background 0.25s;
+}
+.sa-step-line--done {
+  background: #16a34a;
+}
+
+/* ── Body (Step 1) ────────────────────────────────────────────────────────── */
 .sa-body {
   display: grid;
   grid-template-columns: 1fr 280px;
@@ -86,9 +160,70 @@
   color: #999;
 }
 
+/* ── Upload Zone ──────────────────────────────────────────────────────────── */
+.sa-upload-zone {
+  border: 2px dashed #c8d3e0;
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  background: #f8fafc;
+  transition: border-color 0.2s, background 0.2s;
+  margin-bottom: 0;
+}
+.sa-upload-zone:hover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+.sa-upload-zone--over {
+  border-color: #2563eb;
+  background: #dbeafe;
+}
+.sa-upload-zone--loading {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.sa-upload-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+
+.sa-upload-text {
+  font-size: 0.88rem;
+  color: #555;
+  line-height: 1.5;
+}
+.sa-upload-text strong {
+  color: #2563eb;
+}
+.sa-upload-text span {
+  color: #aaa;
+  font-size: 0.8rem;
+}
+
+/* ── Or divider ───────────────────────────────────────────────────────────── */
+.sa-or-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  color: #bbb;
+  font-size: 0.78rem;
+}
+.sa-or-divider::before,
+.sa-or-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
 .sa-textarea {
   flex: 1;
-  min-height: 380px;
+  min-height: 260px;
   width: 100%;
   padding: 14px 16px;
   border: 2px solid #e0e0e0;
@@ -176,12 +311,12 @@
   font-weight: 600;
 }
 
-/* ── Start button ────────────────────────────────────────────────────────── */
+/* ── Next / Start buttons ────────────────────────────────────────────────── */
+.sa-next-btn,
 .sa-start-btn {
   margin-top: auto;
   width: 100%;
   padding: 14px;
-  background: #2563eb;
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -189,22 +324,32 @@
   font-weight: 700;
   cursor: pointer;
   letter-spacing: 0.4px;
-  text-transform: uppercase;
   transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+}
+
+.sa-next-btn {
+  background: #2563eb;
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
 }
-.sa-start-btn:hover:not(:disabled) {
+.sa-next-btn:hover:not(:disabled) {
   background: #1d4ed8;
   transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
 }
-.sa-start-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-.sa-start-btn:disabled {
+.sa-next-btn:disabled {
   background: #c5c5c5;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.sa-start-btn {
+  background: #16a34a;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3);
+}
+.sa-start-btn:hover {
+  background: #15803d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.4);
 }
 
 .sa-start-hint {
@@ -212,6 +357,161 @@
   font-size: 0.78rem;
   color: #aaa;
   margin: 0;
+}
+
+/* ── Step 2: Pattern Selection ────────────────────────────────────────────── */
+.sa-pattern-step {
+  padding: 28px 32px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sa-pattern-header {
+  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 16px;
+}
+
+.sa-pattern-title {
+  margin: 0 0 6px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.sa-pattern-subtitle {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #777;
+}
+
+.sa-pattern-loading,
+.sa-pattern-empty {
+  text-align: center;
+  color: #888;
+  padding: 32px 0;
+  font-size: 0.9rem;
+}
+
+/* ── Pattern cards grid ──────────────────────────────────────────────────── */
+.sa-pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.sa-pattern-card {
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  position: relative;
+  background: #fff;
+}
+.sa-pattern-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.1);
+}
+.sa-pattern-card--selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.sa-pattern-card-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 10px;
+}
+
+.sa-pattern-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sa-pattern-detail {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #777;
+}
+.sa-pattern-detail strong {
+  color: #333;
+  font-weight: 600;
+}
+
+.sa-pattern-selected-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+/* ── Pattern preview (below grid) ────────────────────────────────────────── */
+.sa-pattern-preview {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.sa-pattern-preview-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.sa-pattern-preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 20px;
+  font-size: 0.82rem;
+  color: #777;
+}
+.sa-pattern-preview-grid strong {
+  color: #333;
+  font-weight: 600;
+}
+
+/* ── Pattern step actions ─────────────────────────────────────────────────── */
+.sa-pattern-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  gap: 12px;
+}
+
+/* override back button for light bg context (step 2) */
+.sa-pattern-actions .sa-back-btn {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.sa-pattern-actions .sa-back-btn:hover {
+  background: #e2e8f0;
+}
+
+.sa-pattern-actions .sa-start-btn {
+  width: auto;
+  min-width: 200px;
+  margin-top: 0;
+  padding: 13px 32px;
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
@@ -224,12 +524,33 @@
     border-bottom: 1px solid #eaeaea;
   }
   .sa-textarea {
-    min-height: 220px;
+    min-height: 180px;
   }
   .sa-header {
     padding: 20px 20px 18px;
   }
   .sa-title {
     font-size: 1.4rem;
+  }
+  .sa-stepper {
+    padding: 16px 16px;
+  }
+  .sa-step-label {
+    display: none;
+  }
+  .sa-pattern-step {
+    padding: 20px 16px 28px;
+  }
+  .sa-pattern-preview-grid {
+    grid-template-columns: 1fr;
+  }
+  .sa-pattern-actions {
+    flex-direction: column-reverse;
+  }
+  .sa-pattern-actions .sa-start-btn,
+  .sa-pattern-actions .sa-back-btn {
+    width: 100%;
+    min-width: unset;
+    text-align: center;
   }
 }
