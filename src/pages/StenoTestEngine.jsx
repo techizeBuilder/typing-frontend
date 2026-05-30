@@ -4,6 +4,27 @@ import { resultService } from '../services/api';
 import { API_BASE_URL } from '../config';
 import './StenoTestEngine.css';
 
+// ─── Steno error-classification helpers (module-level, pure functions) ────────
+const _lev = (a, b) => {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 3) return 99;
+  const dp = [];
+  for (let i = 0; i <= m; i++) { dp[i] = new Array(n + 1).fill(0); dp[i][0] = i; }
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+};
+// PDF 2a: wrong spelling → half mistake
+const _isSpellingErr = (r, t) => {
+  if (r === t || r.length < 4 || t.length < 4 || Math.abs(r.length - t.length) > 3) return false;
+  const d = _lev(r, t);
+  return d <= 2 && d / Math.max(r.length, t.length) <= 0.30;
+};
+// PDF 1h: all-caps word → full mistake
+const _isAllCaps = (w) => { const l = w.replace(/[^a-zA-Z]/g, ''); return l.length > 1 && l === l.toUpperCase(); };
+
 // ─── Steno Test Engine ───────────────────────────────────────────────────────
 // Rules:
 //  1. On mount → show Audio Player Modal (Play / Pause / Skip / Close)
@@ -47,10 +68,76 @@ const StenoTestEngine = () => {
 
   const textareaRef = useRef(null);
 
-  // ─── Audio URL resolution ────────────────────────────────────────────────────
-  // Stream through the NestJS controller endpoint so CORS, routing and nginx
-  // proxy all work automatically — no dependency on static file serving config.
-  const audioUrl = chapter?.id ? `${API_BASE_URL}/chapters/${chapter.id}/audio` : null;
+  // ─── Audio URL resolution (with offline caching) ─────────────────────────────
+  const [resolvedAudioUrl, setResolvedAudioUrl] = useState(null);
+  const blobUrlRef = useRef(null); // track for cleanup
+
+  const base64ToBlob = (base64, mime) => {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  };
+
+  const downloadAndCacheAudio = async (chapterId, serverUrl) => {
+    if (!window.electronAPI?.saveAudio) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(serverUrl, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64 = reader.result.split(',')[1];
+          await window.electronAPI.saveAudio(chapterId, base64);
+          resolve();
+        };
+        reader.readAsDataURL(blob);
+      });
+      console.log('[Audio Cache] Downloaded and saved for chapter', chapterId);
+    } catch (err) {
+      console.warn('[Audio Cache] Download failed:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    if (!chapter?.id) return;
+    const serverUrl = `${API_BASE_URL}/chapters/${chapter.id}/audio`;
+
+    const resolveAudio = async () => {
+      if (window.electronAPI?.hasAudio) {
+        // Electron path — check local cache first
+        const { exists } = await window.electronAPI.hasAudio(chapter.id);
+        if (exists) {
+          const { base64 } = await window.electronAPI.getAudio(chapter.id);
+          const blob = base64ToBlob(base64, 'audio/mpeg');
+          const url = URL.createObjectURL(blob);
+          blobUrlRef.current = url;
+          setResolvedAudioUrl(url);
+          if (navigator.onLine) downloadAndCacheAudio(chapter.id, serverUrl); // refresh cache in bg
+          return;
+        }
+        // Not cached yet
+        if (navigator.onLine) {
+          setResolvedAudioUrl(serverUrl);
+          downloadAndCacheAudio(chapter.id, serverUrl); // cache in background
+        } else {
+          setResolvedAudioUrl(null); // no audio available offline
+        }
+      } else {
+        // Browser / non-Electron fallback
+        setResolvedAudioUrl(navigator.onLine ? serverUrl : null);
+      }
+    };
+
+    resolveAudio();
+    return () => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    };
+  }, [chapter?.id]);
+
+  const audioUrl = resolvedAudioUrl;
 
   // ─── Audio event handlers ────────────────────────────────────────────────────
   useEffect(() => {
@@ -70,13 +157,17 @@ const StenoTestEngine = () => {
   }, []);
 
   const handlePlay = () => {
+    if (!audioUrl) {
+      alert('Audio is not available offline. Please connect to the internet and open this test again to download the audio.');
+      return;
+    }
     if (!audioRef.current) return;
     audioRef.current.playbackRate = audioSpeed / 100;
     audioRef.current.play().then(() => {
       setAudioPlaying(true);
     }).catch((err) => {
       console.error('Audio play failed:', audioUrl, err);
-      alert('Audio could not be played. The file may still be loading or the URL is unreachable:\n' + audioUrl);
+      alert('Audio could not be played. The file may still be loading.');
     });
   };
 
@@ -158,18 +249,14 @@ const StenoTestEngine = () => {
   // We keep the raw words list; normalization handles case/punctuation.
   const tokenize = (text) => text.trim().split(/\s+/).filter(Boolean);
 
-  // ─── Sequential comparison ───────────────────────────────────────────────────
-  // Replaces the old LCS approach. Detects where the student started writing
-  // (anchor), then matches strictly in the FORWARD direction with a limited
-  // look-ahead window — never jumps to a far-later paragraph.
+  // ─── Bipartite word matching for Steno ──────────────────────────────────────
+  // Two-pass bipartite alignment per SSC PDF evaluation rules:
+  //   Pass 1 – exact normalized match (case/punct stripped)
+  //   Pass 2 – spelling match via Levenshtein (PDF 2a: wrong spelling = half)
   //
   // Error classification:
-  //   full  – omission (untyped ref word), substitution (wrong word), or extra
-  //           typed word that has no ref counterpart
-  //   half  – ref word matched but only after ignoring case / punctuation
-  //
-  // "Left" words before the detected start and within skipped omission runs
-  // are ALL counted as full errors per the exam rule.
+  //   fullErrors – omission (PDF 1a) · addition (PDF 1c) · all-caps (PDF 1h)
+  //   halfErrors – spelling (PDF 2a) · case/punct (PDF 2c/d/e)
   const compareTexts = useCallback((typed, reference) => {
     const typedWords = tokenize(typed);
     const refWords   = tokenize(reference);
@@ -178,119 +265,56 @@ const StenoTestEngine = () => {
     const R = refWords.length;
     const T = typedWords.length;
 
-    if (T === 0) return { full: R, half: 0, typedWords, refWords, matchedRef: new Array(R).fill(-1) };
-    if (R === 0) return { full: T, half: 0, typedWords, refWords, matchedRef: [] };
+    if (T === 0) return { fullErrors: R, halfErrors: 0 };
+    if (R === 0) return { fullErrors: T, halfErrors: 0 };
 
-    // ── Anchor detection: find nearest forward start position ────────────────
-    const ANCHOR_LEN = Math.min(5, T);
-    let startRefPos  = 0;
-    let bestScore    = 0;
+    const usedTyped  = new Set();
+    const matchedRef = new Array(R).fill(-1);
+    const isSpell    = new Array(R).fill(false);
 
-    for (let ri = 0; ri <= R - 1; ri++) {
-      let score = 0;
-      for (let k = 0; k < ANCHOR_LEN && ri + k < R; k++) {
-        if (refNorm[ri + k] === typedNorm[k]) score++;
-        else break; // require consecutive run
-      }
-      if (score > bestScore) {
-        bestScore   = score;
-        startRefPos = ri;
-        if (score === ANCHOR_LEN) break; // perfect match — stop searching
-      }
-    }
-    if (bestScore < 2) startRefPos = 0; // not enough confidence — start from top
-
-    // ── Two-level sequential greedy matching ─────────────────────────────────
-    // SMALL_WIN: single-word omissions in the same sentence (no cluster needed)
-    // LARGE_WIN: paragraph jumps — require MIN_CLUSTER consecutive typed words
-    //            matching at a forward ref position before jumping there
-    const SMALL_WIN   = 10;
-    const LARGE_WIN   = 150;
-    const MIN_CLUSTER = 2;
-
-    const matchedRef  = new Array(R).fill(-1);
-    let refPos = startRefPos;
-
-    for (let tp = 0; tp < T; tp++) {
-      if (refPos >= R) break;
-      const tw = typedNorm[tp];
-
-      // 1. Direct match
-      if (tw === refNorm[refPos]) {
-        matchedRef[refPos] = tp; refPos++; continue;
-      }
-
-      // 2. Small window: single-word omission within same sentence
-      const smallEnd = Math.min(refPos + SMALL_WIN + 1, R);
-      let matchPos = -1;
-      for (let look = refPos + 1; look < smallEnd; look++) {
-        if (tw === refNorm[look]) { matchPos = look; break; }
-      }
-
-      if (matchPos >= 0) {
-        matchedRef[matchPos] = tp;
-        refPos = matchPos + 1;
-        continue;
-      }
-
-      // 3. Large window: paragraph jump — require MIN_CLUSTER consecutive matches
-      const largeEnd = Math.min(refPos + LARGE_WIN + 1, R);
-      let clusterRef = -1;
-      for (let lookRef = refPos + SMALL_WIN + 1; lookRef < largeEnd; lookRef++) {
-        let consec = 0;
-        for (let k = 0; k < MIN_CLUSTER; k++) {
-          if (tp + k < T && lookRef + k < R && typedNorm[tp + k] === refNorm[lookRef + k]) {
-            consec++;
-          } else {
-            break;
-          }
-        }
-        if (consec >= MIN_CLUSTER) { clusterRef = lookRef; break; }
-      }
-
-      if (clusterRef >= 0) {
-        // Ref words refPos … clusterRef-1 are omissions (stay -1)
-        refPos = clusterRef;
-        tp--; // re-process this typed word at the new refPos (for-loop will tp++)
-        continue;
-      }
-
-      // 4. Insertion check: next typed word matches current ref → this is extra
-      const nextT = tp + 1 < T ? typedNorm[tp + 1] : null;
-      if (nextT !== null && nextT === refNorm[refPos]) {
-        // insertion — refPos stays, extra word counted below
-      } else {
-        matchedRef[refPos] = tp; // substitution
-        refPos++;
-      }
-    }
-
-    // ── Count errors ──────────────────────────────────────────────────────────
-    let fullBase = 0, half = 0;
+    // Pass 1: exact normalized match
     for (let ri = 0; ri < R; ri++) {
-      if (matchedRef[ri] === -1) {
-        fullBase++; // omission → full error
-      } else {
-        const rawT = typedWords[matchedRef[ri]];
-        const rawR = refWords[ri];
-        if (rawT === rawR) {
-          // exact match → correct
-        } else if (typedNorm[matchedRef[ri]] === refNorm[ri]) {
-          half++; // case / punctuation only → half error
-        } else {
-          fullBase++; // completely wrong word substituted → full error
+      for (let ti = 0; ti < T; ti++) {
+        if (!usedTyped.has(ti) && typedNorm[ti] === refNorm[ri]) {
+          matchedRef[ri] = ti; usedTyped.add(ti); break;
         }
       }
     }
-    // Extra typed words (insertions + overflow) → full errors (addition)
-    const usedTypedIdx = new Set(matchedRef.filter(x => x !== -1));
-    for (let ti = 0; ti < T; ti++) {
-      if (!usedTypedIdx.has(ti)) fullBase++;
-    }
-    // Full = ALL errors (spelling + omission + addition + formatting/cap+punct)
-    const full = fullBase + half;
 
-    return { full, half, typedWords, refWords, matchedRef };
+    // Pass 2: spelling match for unmatched reference words (PDF 2a)
+    for (let ri = 0; ri < R; ri++) {
+      if (matchedRef[ri] !== -1) continue;
+      for (let ti = 0; ti < T; ti++) {
+        if (!usedTyped.has(ti) && _isSpellingErr(refNorm[ri], typedNorm[ti])) {
+          matchedRef[ri] = ti; isSpell[ri] = true; usedTyped.add(ti); break;
+        }
+      }
+    }
+
+    let fullErrors = 0, halfErrors = 0;
+
+    for (let ri = 0; ri < R; ri++) {
+      const ti = matchedRef[ri];
+      if (ti === -1) {
+        fullErrors++; // omission (PDF 1a)
+      } else if (isSpell[ri]) {
+        halfErrors++; // spelling error (PDF 2a)
+      } else {
+        const rawT = typedWords[ti], rawR = refWords[ri];
+        if (rawT !== rawR) {
+          if (_isAllCaps(rawT)) fullErrors++; // all-caps (PDF 1h)
+          else halfErrors++;                  // case/punct (PDF 2c/d/e)
+        }
+        // rawT === rawR → correct
+      }
+    }
+
+    // Unmatched typed words → additions (PDF 1c: full error)
+    for (let ti = 0; ti < T; ti++) {
+      if (!usedTyped.has(ti)) fullErrors++;
+    }
+
+    return { fullErrors, halfErrors };
   }, []);
 
   // ─── Finish / Submit ─────────────────────────────────────────────────────
@@ -298,55 +322,100 @@ const StenoTestEngine = () => {
     if (!isStartedRef.current) { navigate('/dashboard'); return; }
 
     const referenceText = chapter?.content_text || '';
-    const { full, half } = compareTexts(typedText, referenceText); // full = ALL errors (S+O+A+C+P), half = cap+punct
+    const { fullErrors: full, halfErrors: half } = compareTexts(typedText, referenceText);
 
-    const finalStrokes = typedText.length;
-    const minutes      = Math.max(timeElapsed, 1) / 60;
-    const totalWords   = finalStrokes / 5;
-    const gwpm         = Math.round(totalWords / minutes);
-    const totalMistakes= full + half * 0.5;
-    const nwpm         = Math.max(0, Math.round((totalWords - totalMistakes) / minutes));
-    const accuracy     = finalStrokes > 0
-      ? Math.max(0, Math.min(100, Math.round(((totalWords - totalMistakes) / totalWords) * 100)))
+    const finalStrokes    = typedText.length;
+    const elapsed         = Math.max(timeElapsed, 1);
+    const minutes         = elapsed / 60;
+
+    // ── Pattern-driven speed calculation ──────────────────────────────────────
+    const speedCount      = pattern?.speed_count ?? 'Strokes';
+    const typedWordCount  = typedText.trim() ? typedText.trim().split(/\s+/).filter(Boolean).length : 0;
+    const totalWords      = speedCount === 'Words' ? typedWordCount : finalStrokes / 5;
+
+    // ── Pattern-driven penalty ─────────────────────────────────────────────────
+    const penaltyFactor   = pattern?.penalty_value ?? 1;
+    const penaltyType     = pattern?.penalty_type  ?? 'Word';
+    const totalMistakes   = full + half * 0.5;
+    const penaltyWords    = penaltyType === 'Stroke'
+      ? (totalMistakes * 5 / 5) * penaltyFactor
+      : totalMistakes * penaltyFactor;
+
+    const gwpm     = Math.round(totalWords / minutes);
+    const nwpm     = Math.max(0, Math.round((totalWords - penaltyWords) / minutes));
+    // Accuracy = NWPM / GWPM × 100  (standard formula)
+    const accuracy = gwpm > 0
+      ? Math.max(0, Math.min(100, Math.round((nwpm / gwpm) * 100)))
       : 100;
 
-    const userId = localStorage.getItem('userId');
+    // ── Build pattern snapshot to pass to ResultScreen ────────────────────────
+    const patternData = pattern ? {
+      name:                     pattern.name || null,
+      half_mistake_enabled:     pattern.half_mistake_enabled,
+      penalty_type:             pattern.penalty_type,
+      penalty_value:            pattern.penalty_value,
+      speed_count:              pattern.speed_count,
+      qualify_on:               pattern.qualify_on,
+      required_speed:           pattern.required_speed,
+      required_accuracy:        pattern.required_accuracy,
+      show_half_mistakes:       pattern.show_half_mistakes,
+      show_full_mistakes:       pattern.show_full_mistakes,
+      show_total_strokes:       pattern.show_total_strokes,
+      show_total_words:         pattern.show_total_words,
+      show_total_errors:        pattern.show_total_errors,
+      show_correct_words:       pattern.show_correct_words,
+      show_gross_speed:         pattern.show_gross_speed,
+      show_net_speed:           pattern.show_net_speed,
+      show_accuracy:            pattern.show_accuracy,
+      show_penalty_words:       pattern.show_penalty_words,
+      show_ignorable_mistakes:  pattern.show_ignorable_mistakes,
+      count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
+    } : null;
+
+    const userId   = localStorage.getItem('userId');
     const finalData = {
       gwpm, nwpm, accuracy,
-      fullErrors: full, halfErrors: half,
+      fullErrors:  full,
+      halfErrors:  half,
       totalStrokes: finalStrokes,
       timeElapsed,
-      testDurationMinutes: exam?.test_time_minutes || (chapter?.time_minutes) || Math.floor(timeElapsed / 60) || 10,
-      exam_name:  exam?.name || 'Steno Practice',
-      date_taken: new Date().toISOString(),
+      testDurationMinutes: exam?.test_time_minutes || chapter?.time_minutes || Math.floor(elapsed / 60) || 10,
+      exam_name:   exam?.name || 'Steno Practice',
+      chapter_no:  chapter?.chapter_no || null,
+      date_taken:  new Date().toISOString(),
       mode,
       testType,
       typedText,
       referenceText,
+      userInput:   typedText,   // needed by ResultScreen for Words speed-count mode
+      pattern:     patternData,
     };
 
     try {
-      if (userId) {
+      if (userId && navigator.onLine) {
         await resultService.saveResult({
-          student_id:   userId,
-          chapter_id:   chapter?.id,
-          exam_id:      exam?.id,
+          student_id:    userId,
+          chapter_id:    chapter?.id,
+          exam_id:       exam?.id,
           gwpm, nwpm, accuracy,
-          total_errors: full + half * 0.5,
-          full_errors:  full,
-          half_errors:  half,
+          total_errors:  Math.round(totalMistakes),
+          full_errors:   full,
+          half_errors:   half,
           total_strokes: finalStrokes,
-          time_elapsed: timeElapsed,
-          user_input: typedText,
+          time_elapsed:  elapsed,
+          user_input:    typedText,
           reference_words: referenceText ? referenceText.split(/\s+/) : [],
-          mode: mode,
-          test_type: testType || chapter?.test_type || null,
+          mode,
+          test_type:     testType || chapter?.test_type || null,
+          pattern_data:  patternData,
         });
+      } else if (!navigator.onLine) {
+        console.log('[Result Save] Offline — skipping DB save for preloaded steno test.');
       }
     } catch (err) { console.error('Save Error:', err); }
 
     navigate('/result', { state: finalData });
-  }, [typedText, chapter, timeElapsed, exam, mode, testType, compareTexts, navigate]);
+  }, [typedText, chapter, timeElapsed, exam, mode, testType, pattern, compareTexts, navigate]);
 
   // Keep ref in sync with latest handleFinish
   useEffect(() => { handleFinishRef.current = handleFinish; }, [handleFinish]);

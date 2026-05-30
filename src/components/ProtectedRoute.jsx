@@ -22,16 +22,18 @@ const ProtectedRoute = () => {
         // Decode JWT to check if it's expired
         const payload = JSON.parse(atob(token.split('.')[1]));
         const currentTime = Date.now() / 1000;
-        
-        console.log('ProtectedRoute: Token payload:', payload);
-        console.log('ProtectedRoute: Token expires at:', new Date(payload.exp * 1000));
-        console.log('ProtectedRoute: Current time:', new Date());
-        
+
         if (payload.exp && payload.exp < currentTime) {
-          // Token is expired
-          console.log('ProtectedRoute: Token expired');
-          localStorage.clear();
-          setIsAuthenticated(false);
+          if (!navigator.onLine) {
+            // Offline: allow expired token so student can still use preloaded tests.
+            // Never clear localStorage — it holds the offline exam/chapter cache.
+            console.warn('ProtectedRoute: Token expired but offline — allowing access.');
+            setIsAuthenticated(true);
+          } else {
+            console.log('ProtectedRoute: Token expired');
+            localStorage.clear();
+            setIsAuthenticated(false);
+          }
         } else {
           console.log('ProtectedRoute: Token valid');
           setIsAuthenticated(true);
@@ -39,8 +41,13 @@ const ProtectedRoute = () => {
       } catch (error) {
         // Invalid token format
         console.error('ProtectedRoute: Invalid token format:', error);
-        localStorage.clear();
-        setIsAuthenticated(false);
+        if (!navigator.onLine) {
+          // Don't wipe offline cache for a malformed token when offline
+          setIsAuthenticated(false);
+        } else {
+          localStorage.clear();
+          setIsAuthenticated(false);
+        }
       }
       
       setIsValidating(false);

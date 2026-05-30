@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { chapterService, examService } from '../../services/api';
 import { API_BASE_URL } from '../../config';
 import mammoth from 'mammoth';
+import Pagination from '../../components/Pagination';
 import './Admin.css';
 
 const AdminChapters = () => {
@@ -13,6 +14,11 @@ const AdminChapters = () => {
   const [testTypeFilter, setTestTypeFilter] = useState('All');
   const [fontGroupFilter, setFontGroupFilter] = useState('All');
   const [filterDate, setFilterDate] = useState('');
+
+  const [chapPage, setChapPage] = useState(1);
+  const [chapPageSize, setChapPageSize] = useState(20);
+
+  useEffect(() => { setChapPage(1); }, [searchTerm, testTypeFilter, fontGroupFilter, filterDate]);
   const [currentChapter, setCurrentChapter] = useState(null);
   const [audioFile, setAudioFile] = useState(null);   // raw File object for steno
   const [uploading, setUploading] = useState(false);
@@ -444,7 +450,9 @@ const AdminChapters = () => {
             c.font_group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(c.chapter_no).includes(searchTerm)
           );
-        const visibleIds = visibleChapters.map(c => c.id);
+        const chapTotalPages = Math.max(1, Math.ceil(visibleChapters.length / chapPageSize));
+        const pagedChapters = visibleChapters.slice((chapPage - 1) * chapPageSize, chapPage * chapPageSize);
+        const visibleIds = pagedChapters.map(c => c.id);
         const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id));
         const toggleAll = () => {
           if (allSelected) {
@@ -454,6 +462,7 @@ const AdminChapters = () => {
           }
         };
         return (
+          <>
           <table className="admin-table">
             <thead>
               <tr>
@@ -462,7 +471,7 @@ const AdminChapters = () => {
                     type="checkbox"
                     checked={allSelected}
                     onChange={toggleAll}
-                    title="Select all visible"
+                    title="Select all on page"
                   />
                 </th>
                 <th>ID</th>
@@ -478,7 +487,7 @@ const AdminChapters = () => {
             <tbody>
               {loading ? (
                 <tr><td colSpan="9">Loading...</td></tr>
-              ) : visibleChapters.map((c) => (
+              ) : pagedChapters.map((c) => (
                 <tr key={c.id} style={selectedIds.includes(c.id) ? { background: '#fef3c7' } : {}}>
                   <td>
                     <input
@@ -522,6 +531,11 @@ const AdminChapters = () => {
               ))}
             </tbody>
           </table>
+          <Pagination
+            page={chapPage} totalPages={chapTotalPages} totalItems={visibleChapters.length}
+            pageSize={chapPageSize} onPageChange={setChapPage} onPageSizeChange={p => { setChapPageSize(p); setChapPage(1); }}
+          />
+          </>
         );
       })()}
     </div>

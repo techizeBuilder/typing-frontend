@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import { flashBannerService } from '../../services/api';
+import Pagination from '../../components/Pagination';
 import './Admin.css';
 
 const AdminFlashBanner = () => {
   const [banners, setBanners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({ content: '', is_active: true });
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetchBanners();
@@ -88,33 +92,45 @@ const AdminFlashBanner = () => {
       </div>
 
       <h3>Manage Banners</h3>
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>Date Added</th>
-            <th>Ticker Content</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? <tr><td colSpan="4">Loading...</td></tr> : banners.length === 0 ? <tr><td colSpan="4">No banners created.</td></tr> : banners.map(b => (
-            <tr key={b.id}>
-              <td>{new Date(b.created_at).toLocaleDateString()}</td>
-              <td style={{ maxWidth: '400px' }}><strong>{b.content}</strong></td>
-              <td>
-                <span className={`status-badge ${b.is_active ? 'active' : 'inactive'}`}>
-                  {b.is_active ? 'SCROLLING' : 'HIDDEN'}
-                </span>
-              </td>
-              <td>
-                <button className="btn-action btn-edit" onClick={() => toggleStatus(b)}>Toggle</button>
-                <button className="btn-action btn-delete" onClick={() => handleDelete(b.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {(() => {
+        const totalPages = Math.max(1, Math.ceil(banners.length / pageSize));
+        const pagedBanners = banners.slice((page - 1) * pageSize, page * pageSize);
+        return (
+          <>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Date Added</th>
+                  <th>Ticker Content</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? <tr><td colSpan="4">Loading...</td></tr> : banners.length === 0 ? <tr><td colSpan="4">No banners created.</td></tr> : pagedBanners.map(b => (
+                  <tr key={b.id}>
+                    <td>{new Date(b.created_at).toLocaleDateString()}</td>
+                    <td style={{ maxWidth: '400px' }}><strong>{b.content}</strong></td>
+                    <td>
+                      <span className={`status-badge ${b.is_active ? 'active' : 'inactive'}`}>
+                        {b.is_active ? 'SCROLLING' : 'HIDDEN'}
+                      </span>
+                    </td>
+                    <td>
+                      <button className="btn-action btn-edit" onClick={() => toggleStatus(b)}>Toggle</button>
+                      <button className="btn-action btn-delete" onClick={() => handleDelete(b.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Pagination
+              page={page} totalPages={totalPages} totalItems={banners.length}
+              pageSize={pageSize} onPageChange={setPage} onPageSizeChange={p => { setPageSize(p); setPage(1); }}
+            />
+          </>
+        );
+      })()}
     </div>
   );
 };

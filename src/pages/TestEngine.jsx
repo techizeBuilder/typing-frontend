@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { chapterService, resultService, getCurrentUserUuid } from '../services/api';
+import { chapterService, resultService, getCurrentUserUuid, userService } from '../services/api';
+import { API_BASE_URL } from '../config';
 import './TestEngine.css';
 
 
@@ -11,7 +12,7 @@ const TestEngine = () => {
   const { exam, chapter: passedChapter, mode, testType, isSelfAssessment } = location.state || {};
 
   const isStrictMode = !!exam;
-  const pattern = exam?.result_pattern || null;
+  const pattern = exam?.result_pattern || location.state?.resultPattern || null;
   const screenType = exam?.screen_type?.replace(' ', '-') || 'Screen-1';
 
   // TCS Screen 5: cycling interface state (1, 2, or 3)
@@ -66,12 +67,30 @@ const TestEngine = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [s6ShowText, setS6ShowText] = useState(false);
+  const [profileImageUrl, setProfileImageUrl] = useState(null);
+
+  // Fetch profile image once on mount — used in screens that have a photo provision
+  useEffect(() => {
+    userService.getProfile()
+      .then(data => {
+        if (data?.profile_image) {
+          const url = data.profile_image.startsWith('http')
+            ? data.profile_image
+            : `${API_BASE_URL}${data.profile_image}`;
+          setProfileImageUrl(url);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Mangal IME: track composition state to avoid double-firing on IME confirm
   const isComposingRef = useRef(false);
   const scrollRef = useRef([]);
   const maxLockedIndexRef = useRef(0);
   const s4InputRef = useRef(null);
+  // Stores the original (pre-re-type-extension) passage word count so repeat
+  // detection in handleFinish is limited to within the original passage only.
+  const baseWordCountRef = useRef(0);
 
   useEffect(() => {
     maxLockedIndexRef.current = 0;
@@ -95,18 +114,47 @@ const TestEngine = () => {
     setChapter(c);
     const text = c.content_text || '';
     let splitWords = text.trim() ? text.trim().split(/\s+/) : [];
+    const speedCount = pattern?.speed_count ?? 'Words';
 
-    const targetWords = exam?.no_of_words_strokes || 0;
-    if (targetWords > 0 && splitWords.length > 0) {
-      if (splitWords.length < targetWords) {
-        // Test is small — auto-repeat until we reach the target
+    // Industry-standard: 5 keystrokes = 1 word.
+    // When the exam is configured in Strokes mode, both max and required counts
+    // are in strokes; convert to words for the reference word list.
+    const toWords = (count) => speedCount === 'Strokes' ? Math.ceil(count / 5) : count;
+
+    // ── Step 1: max_words_strokes — cap the SOURCE content ─────────────────────
+    // "Maximum word will show in result from the uploaded texts"
+    // Applied FIRST so repetition in step 2 uses the already-capped base.
+    const maxCap = exam?.max_words_strokes || 0;
+    if (maxCap > 0) {
+      const maxWords = toWords(maxCap);
+      if (splitWords.length > maxWords) splitWords = splitWords.slice(0, maxWords);
+    }
+
+    // ── Step 2: no_of_words_strokes — required count ────────────────────────────
+    // "Required words student must type; if missed, each counts as full error"
+    // Extend the reference via repetition if content is shorter; trim if longer.
+    const requiredCount = exam?.no_of_words_strokes || 0;
+    if (requiredCount > 0 && splitWords.length > 0) {
+      const requiredWords = toWords(requiredCount);
+      if (splitWords.length < requiredWords) {
         const base = [...splitWords];
-        while (splitWords.length < targetWords) splitWords = splitWords.concat(base);
-        splitWords = splitWords.slice(0, targetWords);
+        while (splitWords.length < requiredWords) splitWords = splitWords.concat(base);
+        splitWords = splitWords.slice(0, requiredWords);
       } else {
-        // Test is big — trim to target
-        splitWords = splitWords.slice(0, targetWords);
+        splitWords = splitWords.slice(0, requiredWords);
       }
+    }
+
+    // ── Step 3: TEST RE-TYPE — extend words by looping content to fill the full test time ──
+    // When enabled the passage repeats continuously so the student keeps typing until
+    // time runs out. Extend to 200 WPM × test_time_minutes so even the fastest typist
+    // never runs out of words mid-test.
+    baseWordCountRef.current = splitWords.length; // save pre-extension length for repeat detection
+    if (exam?.test_re_type && splitWords.length > 0) {
+      const testMinutes = exam.test_time_minutes || 10;
+      const targetWords = Math.ceil(200 * testMinutes);
+      const base = [...splitWords];
+      while (splitWords.length < targetWords) splitWords = splitWords.concat(base);
     }
 
     setWords(splitWords);
@@ -413,7 +461,39 @@ const TestEngine = () => {
 
   // ─── Word commit logic (shared by all modes) ────────────────────────────────
   const commitWord = useCallback((fullValue) => {
-    const typedWords = fullValue.trim().split(/\s+/).filter(Boolean);
+    const rawTypedWords = fullValue.trim().split(/\s+/).filter(Boolean);
+
+    // ── Pre-process: merge accidentally split words ────────────────────────────
+    // If the user presses space in the middle of a reference word (e.g. types
+    // "hel lo" instead of "hello"), merge those two typed words back into one
+    // and flag the merged slot as a spacing half-error so subsequent words still
+    // align correctly to the reference.
+    const processedWords = [];  // merged words used for comparison
+    const splitFlags = [];      // true if the word was created by merging two typed words
+    let rawIdx = 0;
+    while (rawIdx < rawTypedWords.length) {
+      const rIdx = processedWords.length;
+      const tw = rawTypedWords[rawIdx];
+      const nextTw = rawTypedWords[rawIdx + 1];
+      if (
+        rIdx < words.length &&
+        nextTw !== undefined &&
+        compareWords(tw, words[rIdx]) === 'error'
+      ) {
+        const merged = tw + nextTw;
+        if (compareWords(merged, words[rIdx]) !== 'error') {
+          processedWords.push(merged);
+          splitFlags.push(true);
+          rawIdx += 2;
+          continue;
+        }
+      }
+      processedWords.push(tw);
+      splitFlags.push(false);
+      rawIdx++;
+    }
+
+    const typedWords = processedWords;
     const currentIndex = fullValue.endsWith(' ') ? typedWords.length : typedWords.length - 1;
 
     const newStatuses = [...wordStatuses];
@@ -422,8 +502,13 @@ const TestEngine = () => {
     for (let i = 0; i < typedWords.length; i++) {
       const isWordFinished = i < currentIndex;
       if (isWordFinished) {
-        const status = compareWords(typedWords[i], words[i] || '');
-        newStatuses[i] = status;
+        // Use 'half-error' for words that were accidentally split (spacing error)
+        if (splitFlags[i]) {
+          newStatuses[i] = 'half-error';
+        } else {
+          const status = compareWords(typedWords[i], words[i] || '');
+          newStatuses[i] = status;
+        }
       } else {
         newStatuses[i] = 'pending';
       }
@@ -477,6 +562,8 @@ const TestEngine = () => {
     // Count all strokes including spaces and punctuation
     const totalCurrentStrokes = fullValue.length;
     setTotalStrokes(totalCurrentStrokes);
+    // currentIndex is based on merged (aligned) typed words, so it correctly
+    // maps to the reference word position even when split words are detected.
     setCurrentWordIndex(currentIndex);
 
     if (currentIndex >= words.length && fullValue.endsWith(' ')) {
@@ -646,7 +733,23 @@ const TestEngine = () => {
     // insertions/deletions/substitutions stay LOCAL and don't cascade into
     // every following word being marked wrong.
     const typedFinalWords = finalInput.trim().split(/\s+/).filter(Boolean);
-    const lineDetect = detectLineChanges(typedFinalWords, words);
+
+    // Detect repeated sequences FIRST, strip them before alignment so that
+    // words typed correctly after a repeated segment are not wrongly flagged as errors.
+    // In re-type mode, only check within the original passage boundary — words typed
+    // in subsequent loop iterations are intentional repeats and must NOT be penalised.
+    const wordsForRepeatCheck = exam?.test_re_type && baseWordCountRef.current > 0
+      ? typedFinalWords.slice(0, baseWordCountRef.current)
+      : typedFinalWords;
+    const repeatedRanges = detectRepeatedSequences(wordsForRepeatCheck);
+    const repeatedWordCount = repeatedRanges.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
+    const coveredByRepeat = new Set();
+    for (const r of repeatedRanges) {
+      for (let k = r.start; k <= r.end; k++) coveredByRepeat.add(k);
+    }
+    const wordsForAlignment = typedFinalWords.filter((_, idx) => !coveredByRepeat.has(idx));
+
+    const lineDetect = detectLineChanges(wordsForAlignment, words);
     const lineChangeCount   = lineDetect.lineChangeCount;
     const extraTypedWords   = lineDetect.extraTypedWords || [];
     let   alignedTypedWords = lineDetect.typedAtRef;
@@ -655,22 +758,34 @@ const TestEngine = () => {
     // Re-derive error counts respecting the admin's omission setting
     const countOmissions = pattern?.count_omissions_as_errors ?? true;
     let derivedBase = extraTypedWords.length; // A.iii addition errors
+    derivedBase += repeatedWordCount;          // A.v repetition (each repeated word = full error)
     let derivedHalf = 0;
     for (const s of finalStatuses) {
       if (s === 'error')           derivedBase++;              // spelling/substitution
       else if (s === 'half-error') derivedHalf++;             // cap/punct
       else if (s === 'pending' && countOmissions) derivedBase++; // A.i omission
     }
-    // Full mistakes = ALL error types (spelling + omission + addition + formatting/cap+punct)
+    // Full mistakes = ALL error types (spelling + omission + addition + repetition + formatting/cap+punct)
     // Half mistakes = cap/punct subset (gets a 0.5 discount in the formula)
     finalFull = derivedBase + derivedHalf;
     finalHalf = derivedHalf;
 
-    // Detect repeated word sequences (user typed the same line twice).
-    // Each word inside a repeat counts as a full error.
-    const repeatedRanges = detectRepeatedSequences(typedFinalWords);
-    const repeatedWordCount = repeatedRanges.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
-    finalFull += repeatedWordCount;
+    // ── RE-TYPE mode: trim reference to only the words the student reached ───
+    // The extended word list may have thousands of trailing entries the student
+    // never got to. Slice them away so they don't appear as omissions in the result.
+    let resultReferenceWords = words;
+    if (exam?.test_re_type) {
+      let lastActive = -1;
+      for (let i = finalStatuses.length - 1; i >= 0; i--) {
+        if (finalStatuses[i] !== 'pending') { lastActive = i; break; }
+      }
+      const trimTo = lastActive + 1;
+      if (trimTo > 0 && trimTo < finalStatuses.length) {
+        finalStatuses        = finalStatuses.slice(0, trimTo);
+        resultReferenceWords = words.slice(0, trimTo);
+        if (alignedTypedWords) alignedTypedWords = alignedTypedWords.slice(0, trimTo);
+      }
+    }
 
     // Re-derive stats from final values so GWPM/NWPM are accurate
     const elapsed     = timeElapsed > 0 ? timeElapsed : 1;
@@ -707,12 +822,14 @@ const TestEngine = () => {
       repeatedRanges,
       testDurationMinutes: exam?.test_time_minutes || (chapter?.time_minutes) || Math.floor(timeElapsed / 60) || 10,
       exam_name: exam?.name || 'Self Practice',
+      chapter_no: chapter?.chapter_no || null,
       date_taken: new Date().toISOString(),
       mode,
       userInput: finalInput,
-      referenceWords: words,
+      referenceWords: resultReferenceWords,
       wordStatuses: finalStatuses,   // fresh — not stale React state
       pattern: pattern ? {
+        name: pattern.name || null,
         half_mistake_enabled: pattern.half_mistake_enabled,
         penalty_type: pattern.penalty_type,
         penalty_value: pattern.penalty_value,
@@ -753,9 +870,10 @@ const TestEngine = () => {
         full_errors: finalFull, half_errors: finalHalf,
         total_strokes: finalStrokes, time_elapsed: elapsed,
         user_input: finalInput,
-        reference_words: words,
+        reference_words: resultReferenceWords,
         word_statuses: finalStatuses,
         pattern_data: pattern ? {
+          name: pattern.name || null,
           half_mistake_enabled: pattern.half_mistake_enabled,
           penalty_type: pattern.penalty_type,
           penalty_value: pattern.penalty_value,
@@ -780,14 +898,18 @@ const TestEngine = () => {
         mode: mode || null,
         test_type: testType || chapter?.test_type || null,
       };
-      console.log('[Result Save] Sending payload:', { student_id: userId, chapter_id: payload.chapter_id, exam_id: payload.exam_id, gwpm: payload.gwpm, nwpm: payload.nwpm, test_type: payload.test_type });
-      resultService.saveResult(payload)
-        .then(res => { console.log('[Result Save] Saved successfully:', res?.id || res); })
-        .catch(e => {
-          const msg = e?.response?.data?.message || e?.message || 'Unknown error';
-          console.error('[Result Save] FAILED:', msg, e?.response?.data);
-          sessionStorage.setItem('lastSaveError', `Your test result could not be saved: ${Array.isArray(msg) ? msg.join(', ') : msg}`);
-        });
+      if (!navigator.onLine) {
+        console.log('[Result Save] Offline — skipping DB save for preloaded test.');
+      } else {
+        console.log('[Result Save] Sending payload:', { student_id: userId, chapter_id: payload.chapter_id, exam_id: payload.exam_id, gwpm: payload.gwpm, nwpm: payload.nwpm, test_type: payload.test_type });
+        resultService.saveResult(payload)
+          .then(res => { console.log('[Result Save] Saved successfully:', res?.id || res); })
+          .catch(e => {
+            const msg = e?.response?.data?.message || e?.message || 'Unknown error';
+            console.error('[Result Save] FAILED:', msg, e?.response?.data);
+            sessionStorage.setItem('lastSaveError', `Your test result could not be saved: ${Array.isArray(msg) ? msg.join(', ') : msg}`);
+          });
+      }
     }
   };
 
@@ -955,7 +1077,11 @@ const TestEngine = () => {
       <div className="tcs-second-header">
         <button className="tcs-blue-btn">{exam?.name || 'English Typing Test'}</button>
         <div className="tcs-user-block">
-          <div className="tcs-user-photo"></div>
+          <div className="tcs-user-photo">
+            {profileImageUrl && (
+              <img src={profileImageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} onError={(e) => { e.target.style.display = 'none'; }} />
+            )}
+          </div>
           <div className="tcs-user-name">{localStorage.getItem('name') || localStorage.getItem('username') || 'Student'}</div>
         </div>
       </div>
@@ -1107,7 +1233,11 @@ const TestEngine = () => {
           </div>
 
           <div className="s2new-topbar-center">
-            <div className="s2new-avatar"></div>
+            <div className="s2new-avatar">
+              {profileImageUrl && (
+                <img src={profileImageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} onError={(e) => { e.target.style.display = 'none'; }} />
+              )}
+            </div>
             <div className="s2new-user-info">
               <div><strong>NAME:</strong> {userName}</div>
               <div><strong>ROLL NUMBER:</strong> {rollNumber}</div>
@@ -1742,7 +1872,11 @@ const TestEngine = () => {
         </div>
         <div className="topbar-right">
           <div className="student-badge">
-            <div className="student-photo-placeholder">👤</div>
+            <div className="student-photo-placeholder">
+              {profileImageUrl
+                ? <img src={profileImageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                : '👤'}
+            </div>
             <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '2px' }}>{localStorage.getItem('name') || localStorage.getItem('username') || 'Student'}</div>
           </div>
         </div>
