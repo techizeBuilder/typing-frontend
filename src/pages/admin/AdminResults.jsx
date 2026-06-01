@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { resultService } from '../../services/api';
 import Pagination from '../../components/Pagination';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import './Admin.css';
 
 const COURSES = [
@@ -118,6 +121,49 @@ const AdminResults = () => {
     return matchUsername && matchFrom && matchTo && matchCourse && matchTestType && matchExam;
   });
 
+  const getExportRows = () =>
+    filtered.map((r) => ({
+      Date: r.date_taken ? new Date(r.date_taken).toLocaleDateString('en-IN') : '—',
+      'Student Name': r.user?.name || '—',
+      Username: r.user?.user_id || '—',
+      Course: r.user?.category || '—',
+      Mode: r.mode || 'Typing',
+      'Test Type': r.test_type === 'Live Test' ? 'Live' : r.test_type === 'Pre-load Test' ? 'Preloaded' : '—',
+      Exam: r.exam?.name || 'Practice',
+      'Chapter No.': r.chapter?.chapter_no ? `#${r.chapter.chapter_no}` : '—',
+      NWPM: r.nwpm,
+      GWPM: r.gwpm,
+      'Accuracy (%)': r.accuracy,
+      'Full Errors': r.full_errors || 0,
+      'Half Errors': r.half_errors || 0,
+    }));
+
+  const exportExcel = () => {
+    const rows = getExportRows();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Results');
+    XLSX.writeFile(wb, `results_export_${Date.now()}.xlsx`);
+  };
+
+  const exportPDF = () => {
+    const rows = getExportRows();
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    doc.setFontSize(13);
+    doc.text('Typing & Steno Results', 40, 36);
+    doc.setFontSize(9);
+    doc.text(`Exported: ${new Date().toLocaleString('en-IN')}  |  Total: ${rows.length} records`, 40, 52);
+    autoTable(doc, {
+      startY: 65,
+      head: [Object.keys(rows[0] || {})],
+      body: rows.map(Object.values),
+      styles: { fontSize: 7.5, cellPadding: 3 },
+      headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [241, 245, 249] },
+    });
+    doc.save(`results_export_${Date.now()}.pdf`);
+  };
+
   const inputStyle = {
     padding: '7px 10px',
     borderRadius: '4px',
@@ -151,6 +197,20 @@ const AdminResults = () => {
                 ✕ Clear Filters
               </button>
             )}
+            <button
+              onClick={exportExcel}
+              disabled={filtered.length === 0}
+              style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 600, opacity: filtered.length === 0 ? 0.5 : 1 }}
+            >
+              ⬇ Excel
+            </button>
+            <button
+              onClick={exportPDF}
+              disabled={filtered.length === 0}
+              style={{ padding: '6px 12px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 600, opacity: filtered.length === 0 ? 0.5 : 1 }}
+            >
+              ⬇ PDF
+            </button>
             <button
               onClick={fetchResults}
               style={{ padding: '6px 12px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
