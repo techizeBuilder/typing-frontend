@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { chapterService, resultService, getCurrentUserUuid, userService } from '../services/api';
 import { API_BASE_URL } from '../config';
+import { detectRepeatedSequences } from '../utils/repeatDetection';
 import './TestEngine.css';
 
 
@@ -411,53 +412,8 @@ const TestEngine = () => {
     };
   }, [compareWords]);
 
-  // ─── Repeated-sequence detector ─────────────────────────────────────────────
-  // Finds runs of >= MIN_REPEAT_LEN consecutive words in `typedWords` that exactly
-  // duplicate an earlier (non-overlapping) run. Returns an array of ranges:
-  //   { start, end, sourceStart, sourceEnd, text }
-  // where indices are 0-based positions inside `typedWords`. Each word inside a
-  // detected range counts as a separate full error per the user's rule
-  // ("repeated word will be counted by each word as full error").
-  const detectRepeatedSequences = useCallback((typedWords, minLen = 4) => {
-    const N = typedWords.length;
-    if (N < minLen * 2) return [];
-    const norm = typedWords.map(w => (w || '').toLowerCase());
-    const covered = new Array(N).fill(false);
-    const ranges = [];
-
-    for (let i = 0; i < N; i++) {
-      if (covered[i]) continue;
-      let bestLen = 0;
-      let bestSrcStart = -1;
-      for (let j = 0; j < i; j++) {
-        let len = 0;
-        while (
-          j + len < i &&
-          i + len < N &&
-          norm[j + len] === norm[i + len]
-        ) {
-          len++;
-        }
-        if (len > bestLen) {
-          bestLen = len;
-          bestSrcStart = j;
-        }
-      }
-      if (bestLen >= minLen) {
-        const end = i + bestLen - 1;
-        ranges.push({
-          start: i,
-          end,
-          sourceStart: bestSrcStart,
-          sourceEnd: bestSrcStart + bestLen - 1,
-          text: typedWords.slice(i, end + 1).join(' '),
-        });
-        for (let k = i; k <= end; k++) covered[k] = true;
-        i = end; // advance past the run
-      }
-    }
-    return ranges;
-  }, []);
+  // Repeated-word detection lives in ../utils/repeatDetection (passage-anchored,
+  // catches misspelled repeats, counts every repeated word as a full error).
 
   // ─── Word commit logic (shared by all modes) ────────────────────────────────
   const commitWord = useCallback((fullValue) => {
@@ -736,12 +692,18 @@ const TestEngine = () => {
 
     // Detect repeated sequences FIRST, strip them before alignment so that
     // words typed correctly after a repeated segment are not wrongly flagged as errors.
+    // Detection is anchored to the original passage, so a re-typed section is caught
+    // even when spelled wrong (each repeated word = one full error / extra word).
     // In re-type mode, only check within the original passage boundary — words typed
     // in subsequent loop iterations are intentional repeats and must NOT be penalised.
-    const wordsForRepeatCheck = exam?.test_re_type && baseWordCountRef.current > 0
+    const inReType = exam?.test_re_type && baseWordCountRef.current > 0;
+    const wordsForRepeatCheck = inReType
       ? typedFinalWords.slice(0, baseWordCountRef.current)
       : typedFinalWords;
-    const repeatedRanges = detectRepeatedSequences(wordsForRepeatCheck);
+    const refForRepeatCheck = inReType
+      ? words.slice(0, baseWordCountRef.current)
+      : words;
+    const repeatedRanges = detectRepeatedSequences(wordsForRepeatCheck, refForRepeatCheck, { minLen: 1 });
     const repeatedWordCount = repeatedRanges.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
     const coveredByRepeat = new Set();
     for (const r of repeatedRanges) {
@@ -894,7 +856,8 @@ const TestEngine = () => {
           show_ignorable_mistakes: pattern.show_ignorable_mistakes,
           count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
           repeated_ranges: repeatedRanges,
-        } : { repeated_ranges: repeatedRanges },
+          extra_typed_words: extraTypedWords,
+        } : { repeated_ranges: repeatedRanges, extra_typed_words: extraTypedWords },
         mode: mode || null,
         test_type: testType || chapter?.test_type || null,
       };
