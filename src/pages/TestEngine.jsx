@@ -789,6 +789,9 @@ const TestEngine = () => {
       mode,
       userInput: finalInput,
       referenceWords: resultReferenceWords,
+      // Full uploaded passage for the result's "Original Passage" column. resultReferenceWords
+      // can be trimmed (re-type tests), so keep the complete chapter text for display.
+      originalPassage: chapter?.content_text || resultReferenceWords.join(' '),
       wordStatuses: finalStatuses,   // fresh — not stale React state
       pattern: pattern ? {
         name: pattern.name || null,

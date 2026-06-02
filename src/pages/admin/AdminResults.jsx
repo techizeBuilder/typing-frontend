@@ -65,6 +65,14 @@ const AdminResults = () => {
   ).sort();
 
   const handleViewResult = (r) => {
+    // Only steno results use the StenoDiff view (driven by typedText + referenceText).
+    // For typing results these must stay unset so ResultScreen renders the full
+    // TypingPassageReview with its Test Analysis / Mistake / Compare tabs — matching
+    // what the student sees on their own result screen.
+    const isSteno = (r.mode || '').toLowerCase().includes('steno');
+    // Full uploaded passage so the "Original Passage" column shows the complete text,
+    // not just the (possibly trimmed) reference_words the student reached.
+    const fullPassage = r.chapter?.content_text || (r.reference_words ? r.reference_words.join(' ') : '');
     navigate('/result', {
       state: {
         gwpm: r.gwpm,
@@ -74,6 +82,7 @@ const AdminResults = () => {
         halfErrors: r.half_errors,
         totalStrokes: r.total_strokes,
         timeElapsed: r.time_elapsed,
+        testDurationMinutes: r.exam?.test_time_minutes || undefined,
         exam_name: r.exam ? r.exam.name : 'Practice Mode',
         chapter_no: r.chapter?.chapter_no || null,
         date_taken: r.date_taken,
@@ -81,11 +90,11 @@ const AdminResults = () => {
         rollNo: r.user ? r.user.user_id : '—',
         mode: r.mode,
         userInput: r.user_input,
-        typedText: r.user_input,
         referenceWords: r.reference_words || [],
-        referenceText: r.reference_words ? r.reference_words.join(' ') : '',
         wordStatuses: r.word_statuses || [],
         pattern: r.pattern_data,
+        originalPassage: fullPassage,
+        ...(isSteno ? { typedText: r.user_input, referenceText: fullPassage } : {}),
       },
     });
   };

@@ -387,6 +387,7 @@ const StenoTestEngine = () => {
       testType,
       typedText,
       referenceText,
+      originalPassage: referenceText,   // full passage for the "Original Passage" column
       userInput:   typedText,   // needed by ResultScreen for Words speed-count mode
       pattern:     patternData,
     };

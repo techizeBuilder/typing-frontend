@@ -245,6 +245,13 @@ const AdminStudents = () => {
   };
 
   const handleViewResult = (test) => {
+    // Only steno results use the StenoDiff view (driven by typedText + referenceText).
+    // Typing results must leave these unset so ResultScreen renders the full
+    // TypingPassageReview with its Test Analysis / Mistake / Compare tabs.
+    const isSteno = (test.mode || '').toLowerCase().includes('steno');
+    // Full uploaded passage so the "Original Passage" column shows the complete text,
+    // not just the (possibly trimmed) reference_words the student reached.
+    const fullPassage = test.chapter?.content_text || (test.reference_words ? test.reference_words.join(' ') : '');
     navigate('/result', {
       state: {
         gwpm: test.gwpm,
@@ -254,17 +261,19 @@ const AdminStudents = () => {
         halfErrors: test.half_errors,
         totalStrokes: test.total_strokes,
         timeElapsed: test.time_elapsed,
+        testDurationMinutes: test.exam?.test_time_minutes || test.chapter?.time_minutes || undefined,
         exam_name: test.exam ? test.exam.name : 'Practice Mode',
+        chapter_no: test.chapter?.chapter_no || null,
         date_taken: test.date_taken,
         studentName: selectedStudentForTests.name,
         rollNo: selectedStudentForTests.user_id,
         mode: test.mode,
         userInput: test.user_input,
-        typedText: test.user_input, // for steno compatibility
         referenceWords: test.reference_words || [],
-        referenceText: test.reference_words ? test.reference_words.join(' ') : '', // for steno compatibility
         wordStatuses: test.word_statuses || [],
         pattern: test.pattern_data,
+        originalPassage: fullPassage,
+        ...(isSteno ? { typedText: test.user_input, referenceText: fullPassage } : {}),
       }
     });
   };
