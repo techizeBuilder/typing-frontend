@@ -19,7 +19,7 @@ const PrintSheet = ({
   showAccuracy, showPenaltyWords, showIgnorableMistakes,
   userInput, referenceWords, wordStatuses, typedText, referenceText, isStenoResult,
   lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
-  countOmissions = true,
+  countOmissions = true, repeatedRanges = [],
 }) => {
   const typedWordsPrt = userInput ? userInput.trim().split(/\s+/).filter(Boolean) : [];
   const totalTypedWords = typedWordsPrt.length;
@@ -53,9 +53,15 @@ const PrintSheet = ({
     });
   };
 
-  const extraWords = extraTypedWords && extraTypedWords.length > 0
+  // Repeated words are stripped before alignment, so fold them into the Extra /
+  // Addition words shown on the passage — each repeated word is an extra word.
+  const repeatedWordsPrt = (repeatedRanges || []).flatMap((r) =>
+    r && r.text ? r.text.split(/\s+/).filter(Boolean) : []
+  );
+  const baseExtraWords = Array.isArray(extraTypedWords)
     ? extraTypedWords.slice()
     : typedWordsPrt.slice(referenceWords ? referenceWords.length : 0);
+  const extraWords = [...baseExtraWords, ...repeatedWordsPrt];
 
   const totalMistakesFormula = `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`;
   const penaltyFormula = penaltyType === 'Stroke'
@@ -588,10 +594,15 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   })();
 
   // Addition errors: prefer alignment-derived extras (insertions anywhere in the typed stream),
-  // fall back to the simple "extra at end" heuristic.
-  const additionWords = extraTypedWords && extraTypedWords.length > 0
+  // fall back to the simple "extra at end" heuristic. Repeated words are stripped before
+  // alignment, so fold them in here — each repeated word is an extra word + full error.
+  const repeatedWords = (repeatedRanges || []).flatMap((r) =>
+    r && r.text ? r.text.split(/\s+/).filter(Boolean) : []
+  );
+  const baseAdditionWords = Array.isArray(extraTypedWords)
     ? extraTypedWords.slice()
     : typedWords.slice(referenceWords.length);
+  const additionWords = [...baseAdditionWords, ...repeatedWords];
 
   const spellingWords = [], omissionWords = [], capWords = [], punctWords = [];
   referenceWords.forEach((refWord, i) => {
@@ -792,16 +803,12 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
                 return <span key={i} style={{color:'#94a3b8'}}>{refWord} </span>;
               return <span key={i}><span className="pa-res-omit">-{refWord}</span> </span>;
             })}
-            {typedWords.slice(referenceWords.length).map((w,i)=>(
+            {/* Extra words — includes repeated words, which are counted as extra
+                words. Shown once here in blue with a + sign (no separate brown
+                highlight, which would duplicate them). */}
+            {additionWords.map((w,i)=>(
               <span key={`ex-${i}`}><span className="pa-res-extra">+{w}</span> </span>
             ))}
-            {repeatedRanges.map((r, ri) =>
-              (r.text ? r.text.split(/\s+/) : []).map((w, wi) => (
-                <span key={`rep-${ri}-${wi}`}>
-                  <span style={{ background: '#fed7aa', color: '#9a3412', borderRadius: '3px', padding: '0 4px', fontWeight: 600, fontStyle: 'italic' }}>{w}</span>{' '}
-                </span>
-              ))
-            )}
           </div>
         </div>
       </div>
@@ -860,11 +867,19 @@ const ResultScreen = () => {
     pattern,
     userInput = '', referenceWords = [], wordStatuses = [],
     lineChangeCount = 0, alignedTypedWords = null,
-    extraTypedWords = null,
+    extraTypedWords: stateExtraTypedWords = null,
     repeatedRanges: stateRepeatedRanges = null,
   } = location.state || {};
 
   const patternName = pattern?.name || null;
+
+  // Alignment-derived extra (addition) words arrive directly on a fresh test, or
+  // live inside pattern_data when viewing a past result loaded from the DB.
+  // Keeping the array authoritative (even when empty) avoids the trailing-slice
+  // fallback double-counting repeated words.
+  const extraTypedWords = Array.isArray(stateExtraTypedWords)
+    ? stateExtraTypedWords
+    : (Array.isArray(location.state?.pattern?.extra_typed_words) ? location.state.pattern.extra_typed_words : null);
 
   // Repeated word ranges may arrive directly (fresh test) or live inside
   // pattern_data when viewing a past result loaded from the DB.
@@ -950,7 +965,11 @@ const ResultScreen = () => {
     }
     return -1;
   })();
-  const _addCount = extraTypedWords && extraTypedWords.length > 0
+  // An empty-but-present array means alignment found zero insertions (authoritative);
+  // only fall back to the trailing-slice heuristic for legacy results that lack the field.
+  // Repeated words are counted separately via repeatedWordCount (below), so they must
+  // NOT also leak in through the trailing slice.
+  const _addCount = Array.isArray(extraTypedWords)
     ? extraTypedWords.length
     : _typedWds.slice(referenceWords.length).length;
 
@@ -1119,6 +1138,7 @@ const ResultScreen = () => {
           alignedTypedWords={alignedTypedWords}
           extraTypedWords={extraTypedWords}
           countOmissions={countOmissions}
+          repeatedRanges={repeatedRanges}
         />
       </div>
 
@@ -1356,10 +1376,10 @@ const ResultScreen = () => {
         {repeatedRanges.length > 0 && (
           <div className="repeated-lines-section">
             <h3 className="repeated-lines-title">
-              ⚠ Repeated Lines Detected ({repeatedWordCount} word{repeatedWordCount !== 1 ? 's' : ''} counted as full errors)
+              ⚠ Repeated Lines Detected ({repeatedWordCount} word{repeatedWordCount !== 1 ? 's' : ''} counted as extra words / full errors)
             </h3>
             <p className="repeated-lines-note">
-              The following typed segments duplicate an earlier portion of your typing. Each repeated word is counted as one full error.
+              The following typed segments duplicate an earlier portion of the passage. Every repeated word — correct or not — is counted as an extra word and one full error.
             </p>
             <table className="repeated-lines-table">
               <thead>
