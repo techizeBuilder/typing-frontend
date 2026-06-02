@@ -576,7 +576,7 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   testDurationMinutes = 10,
   netSpeedCalculated = 0, grossSpeedCalculated = 0, accuracy = 0,
   lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
-  countOmissions = true, repeatedRanges = [],
+  countOmissions = true, repeatedRanges = [], originalPassage = '',
 }) => {
   const [view, setView] = React.useState(null);
   const [showCat, setShowCat] = React.useState(null);
@@ -782,7 +782,9 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
         <div className="pa-compare-cols">
           <div className="pa-compare-col">
             <div className="pa-compare-header">Original Passage</div>
-            <div className="pa-compare-body">{referenceWords.join(' ')}</div>
+            {/* Show the complete uploaded passage. referenceWords may be trimmed to the
+                portion the student reached (re-type tests), so prefer the full text. */}
+            <div className="pa-compare-body">{originalPassage || referenceWords.join(' ')}</div>
           </div>
           <div className="pa-compare-col">
             <div className="pa-compare-header">Your Typed Passage</div>
@@ -869,9 +871,15 @@ const ResultScreen = () => {
     lineChangeCount = 0, alignedTypedWords = null,
     extraTypedWords: stateExtraTypedWords = null,
     repeatedRanges: stateRepeatedRanges = null,
+    originalPassage = '',
   } = location.state || {};
 
   const patternName = pattern?.name || null;
+
+  // Full uploaded passage for the "Original Passage" reading column. reference_words
+  // may be trimmed to the portion the student actually reached (re-type tests cap the
+  // stored words), so prefer the complete passage when supplied; fall back to the words.
+  const fullOriginalPassage = originalPassage || referenceWords.join(' ');
 
   // Alignment-derived extra (addition) words arrive directly on a fresh test, or
   // live inside pattern_data when viewing a past result loaded from the DB.
@@ -1448,6 +1456,7 @@ const ResultScreen = () => {
               extraTypedWords={extraTypedWords}
               countOmissions={countOmissions}
               repeatedRanges={repeatedRanges}
+              originalPassage={fullOriginalPassage}
             />
           )}
         </div>

@@ -48,8 +48,15 @@ const MyResults = () => {
   }, []);
 
   const handleViewResult = (result) => {
-    navigate('/result', { 
-      state: { 
+    // Only steno results use the StenoDiff view (driven by typedText + referenceText).
+    // Typing results must leave these unset so ResultScreen renders the full
+    // TypingPassageReview with its Test Analysis / Mistake / Compare tabs.
+    const isSteno = (result.mode || '').toLowerCase().includes('steno');
+    // Full uploaded passage so the "Original Passage" column shows the complete text,
+    // not just the (possibly trimmed) reference_words the student reached.
+    const fullPassage = result.chapter?.content_text || (result.reference_words ? result.reference_words.join(' ') : '');
+    navigate('/result', {
+      state: {
         gwpm: result.gwpm,
         nwpm: result.nwpm,
         accuracy: result.accuracy,
@@ -57,16 +64,18 @@ const MyResults = () => {
         halfErrors: result.half_errors,
         totalStrokes: result.total_strokes,
         timeElapsed: result.time_elapsed,
+        testDurationMinutes: result.exam?.test_time_minutes || undefined,
         exam_name: result.exam?.name || 'Practice Test',
+        chapter_no: result.chapter?.chapter_no || null,
         date_taken: result.date_taken,
         mode: result.mode,
         userInput: result.user_input,
-        typedText: result.user_input, // for steno compatibility
         referenceWords: result.reference_words || [],
-        referenceText: result.reference_words ? result.reference_words.join(' ') : '', // for steno compatibility
         wordStatuses: result.word_statuses || [],
         pattern: result.pattern_data,
-      } 
+        originalPassage: fullPassage,
+        ...(isSteno ? { typedText: result.user_input, referenceText: fullPassage } : {}),
+      }
     });
   };
 
