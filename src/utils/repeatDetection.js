@@ -126,6 +126,10 @@ export function detectRepeatedSequences(typedWords, refWords, opts = {}) {
         end: i - 1,
         sourceStart: bestBackStart,
         sourceEnd: b - 1,
+        // Passage frontier where the student inserted this repeat (next word still
+        // owed). Used to place the repeated words inline at the exact spot in the
+        // passage where they were typed, rather than at the end of the result.
+        anchor: refPos,
         text: typedWords.slice(runStart, i).join(' '),
       });
       // A repeat does not advance passage progress — the student still owes the
