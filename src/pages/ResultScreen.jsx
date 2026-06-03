@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
+import { fontFamilyForFontGroup, fontGroupForHindiType } from '../utils/hindiFonts';
 import './ResultScreen.css';
 
 // ─── PrintSheet — government exam format (visible only on print) ───────────────
@@ -19,7 +20,8 @@ const PrintSheet = ({
   showAccuracy, showPenaltyWords, showIgnorableMistakes,
   userInput, referenceWords, wordStatuses, typedText, referenceText, isStenoResult,
   lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
-  countOmissions = true, repeatedRanges = [],
+  extraTypedWordRefs = null,
+  countOmissions = true, repeatedRanges = [], passageFontFamily = undefined,
 }) => {
   const typedWordsPrt = userInput ? userInput.trim().split(/\s+/).filter(Boolean) : [];
   const totalTypedWords = typedWordsPrt.length;
@@ -34,34 +36,41 @@ const PrintSheet = ({
     return -1;
   })();
 
-  // Colour-coded passage tokens
+  // Extra / addition words (alignment insertions). Repeated words are stripped
+  // before alignment, so they ride in via repeatedRanges below — each repeated
+  // word is an extra word. Both are placed inline at their exact passage spot.
+  const baseExtraWords = Array.isArray(extraTypedWords)
+    ? extraTypedWords.slice()
+    : typedWordsPrt.slice(referenceWords ? referenceWords.length : 0);
+  const { byRef: extrasByRefPrt, trailing: trailingExtrasPrt } = buildExtraWordPlacement(
+    referenceWords ? referenceWords.length : 0, baseExtraWords, extraTypedWordRefs, repeatedRanges
+  );
+  const renderExtraPrt = (w, key) => (
+    <span key={key} className="prt-word prt-extra">+{w} </span>
+  );
+
+  // Colour-coded passage tokens with extra/repeated words interleaved at position
   const buildPassageTokens = () => {
     if (isStenoResult) return null;
     if (!referenceWords || referenceWords.length === 0)
       return <em style={{color:'#888'}}>No passage data.</em>;
-    return referenceWords.map((refWord, i) => {
+    const out = [];
+    referenceWords.forEach((refWord, i) => {
+      const extras = extrasByRefPrt.get(i);
+      if (extras) extras.forEach((w, k) => out.push(renderExtraPrt(w, `ex-${i}-${k}`)));
       const status = wordStatuses[i] || 'pending';
       // Use re-aligned word when available (line-change case), else positional typed word
       const typed  = alignedTypedWords ? (alignedTypedWords[i] || '') : (typedWordsPrt[i] || '');
-      if (status === 'correct')    return <span key={i} className="prt-word prt-correct">{typed} </span>;
-      if (status === 'error')      return <span key={i} className="prt-word prt-full-err">{typed || `–${refWord}`} </span>;
-      if (status === 'half-error') return <span key={i} className="prt-word prt-half-err">{typed} </span>;
+      if (status === 'correct')         out.push(<span key={i} className="prt-word prt-correct">{typed} </span>);
+      else if (status === 'error')      out.push(<span key={i} className="prt-word prt-full-err">{typed || `–${refWord}`} </span>);
+      else if (status === 'half-error') out.push(<span key={i} className="prt-word prt-half-err">{typed} </span>);
       // pending — trailing (after last typed word) vs mid-text skip
-      if (i > lastTypedRefIdxPrt && !countOmissions)
-        return <span key={i} className="prt-word prt-trailing">{refWord} </span>;
-      return <span key={i} className="prt-word prt-omit">–{refWord} </span>;
+      else if (i > lastTypedRefIdxPrt && !countOmissions)
+        out.push(<span key={i} className="prt-word prt-trailing">{refWord} </span>);
+      else out.push(<span key={i} className="prt-word prt-omit">–{refWord} </span>);
     });
+    return out;
   };
-
-  // Repeated words are stripped before alignment, so fold them into the Extra /
-  // Addition words shown on the passage — each repeated word is an extra word.
-  const repeatedWordsPrt = (repeatedRanges || []).flatMap((r) =>
-    r && r.text ? r.text.split(/\s+/).filter(Boolean) : []
-  );
-  const baseExtraWords = Array.isArray(extraTypedWords)
-    ? extraTypedWords.slice()
-    : typedWordsPrt.slice(referenceWords ? referenceWords.length : 0);
-  const extraWords = [...baseExtraWords, ...repeatedWordsPrt];
 
   const totalMistakesFormula = `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`;
   const penaltyFormula = penaltyType === 'Stroke'
@@ -194,15 +203,13 @@ const PrintSheet = ({
       {/* ── Typed passage with colour coding ───────────────────── */}
       <div className="prt-passage-area">
         {isStenoResult ? (
-          <p style={{ fontFamily: 'monospace', fontSize: '0.9rem', lineHeight: 1.9 }}>
+          <p style={{ fontFamily: passageFontFamily || 'monospace', fontSize: '0.9rem', lineHeight: 1.9 }}>
             {typedText}
           </p>
         ) : (
-          <p className="prt-passage-text">
+          <p className="prt-passage-text" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>
             {buildPassageTokens()}
-            {extraWords.map((w, i) => (
-              <span key={`ex-${i}`} className="prt-word prt-extra">+{w} </span>
-            ))}
+            {trailingExtrasPrt.map((w, i) => renderExtraPrt(w, `ex-tail-${i}`))}
           </p>
         )}
       </div>
@@ -234,6 +241,41 @@ const PrintSheet = ({
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const normalizeWordResult = (w) => w.toLowerCase().replace(/[^a-z0-9\u0900-\u097f]/gi, '');
 const tokenizeResult      = (text) => text.trim().split(/\s+/).filter(Boolean);
+
+// ─── Inline extra/repeated-word placement ────────────────────────────────────
+// Builds a map of { refIndex -> [extra/repeated words to show *before* that ref
+// word] } plus a `trailing` list (anchored at/after the passage end). Lets the
+// passage renderers drop each addition/repeat at the exact spot it was typed
+// instead of dumping them all after the passage.
+//
+//   extraWords / extraRefs - parallel arrays from alignment (extraRefs[i] is the
+//                            ref index the word was inserted before). When refs
+//                            are missing (legacy stored results) every extra is
+//                            treated as trailing - the old end-of-passage layout.
+//   repeatedRanges         - each range's words are anchored at range.anchor
+//                            (the typing frontier), falling back to sourceEnd+1
+//                            then the passage end for older data.
+const buildExtraWordPlacement = (refLength, extraWords, extraRefs, repeatedRanges) => {
+  const byRef = new Map();
+  const trailing = [];
+  const place = (word, ref) => {
+    const r = (typeof ref === 'number' && ref >= 0) ? ref : refLength;
+    if (r >= refLength) { trailing.push(word); return; }
+    if (!byRef.has(r)) byRef.set(r, []);
+    byRef.get(r).push(word);
+  };
+  (extraWords || []).forEach((w, i) => {
+    place(w, Array.isArray(extraRefs) ? extraRefs[i] : undefined);
+  });
+  (repeatedRanges || []).forEach((rng) => {
+    if (!rng || !rng.text) return;
+    const anchor = (typeof rng.anchor === 'number') ? rng.anchor
+      : (typeof rng.sourceEnd === 'number') ? rng.sourceEnd + 1
+      : refLength;
+    rng.text.split(/\s+/).filter(Boolean).forEach((w) => place(w, anchor));
+  });
+  return { byRef, trailing };
+};
 
 // ─── Sequential alignment ────────────────────────────────────────────────────
 // Replaces LCS. Detects where the student started (anchor), then matches
@@ -422,7 +464,7 @@ function bipartiteAlign(refNorm, typedNorm) {
 }
 
 // ─── StenoDiff ────────────────────────────────────────────────────────────────
-const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMinutes = 10 }) => {
+const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMinutes = 10, passageFontFamily = undefined }) => {
   const typedWords = tokenizeResult(typed);
   const refWords   = tokenizeResult(reference);
   const typedNorm  = typedWords.map(normalizeWordResult);
@@ -492,11 +534,11 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
         <div className="pa-compare-cols">
           <div className="pa-compare-col">
             <div className="pa-compare-header">Original Passage</div>
-            <div className="pa-compare-body">{reference || <em style={{ color: '#9ca3af' }}>No passage.</em>}</div>
+            <div className="pa-compare-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>{reference || <em style={{ color: '#9ca3af' }}>No passage.</em>}</div>
           </div>
           <div className="pa-compare-col">
             <div className="pa-compare-header">Your Typed Passage</div>
-            <div className="pa-compare-body">{typed || <em style={{ color: '#9ca3af' }}>Nothing typed.</em>}</div>
+            <div className="pa-compare-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>{typed || <em style={{ color: '#9ca3af' }}>Nothing typed.</em>}</div>
           </div>
         </div>
       </div>
@@ -543,7 +585,7 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
       </div>
 
       {/* ── Word diff tokens ──────────────────────────────────── */}
-      <div style={styles.wrap}>
+      <div style={passageFontFamily ? { ...styles.wrap, fontFamily: passageFontFamily } : styles.wrap}>
         {tokens.map((tok, idx) => {
           if (tok.type === 'correct') return <span key={idx} style={styles.correct}>{tok.typed}</span>;
           if (tok.type === 'half')    return (
@@ -576,7 +618,9 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   testDurationMinutes = 10,
   netSpeedCalculated = 0, grossSpeedCalculated = 0, accuracy = 0,
   lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
+  extraTypedWordRefs = null,
   countOmissions = true, repeatedRanges = [], originalPassage = '',
+  passageFontFamily = undefined,
 }) => {
   const [view, setView] = React.useState(null);
   const [showCat, setShowCat] = React.useState(null);
@@ -604,15 +648,26 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
     : typedWords.slice(referenceWords.length);
   const additionWords = [...baseAdditionWords, ...repeatedWords];
 
+  // Ref positions a repeat duplicated. A word that is both skipped (omission) and
+  // re-supplied by a repeat is counted once — under the repeat — so it is excluded
+  // from the omission tally here to avoid double counting (the passage still shows
+  // it struck through, which only indicates the nature of the mistake).
+  const repeatSourceRefs = new Set();
+  (repeatedRanges || []).forEach((r) => {
+    if (r && typeof r.sourceStart === 'number' && typeof r.sourceEnd === 'number')
+      for (let k = r.sourceStart; k <= r.sourceEnd; k++) repeatSourceRefs.add(k);
+  });
+
   const spellingWords = [], omissionWords = [], capWords = [], punctWords = [];
   referenceWords.forEach((refWord, i) => {
     const status = wordStatuses[i] || 'pending';
     const typed = wordAt(i);
     if (status === 'error')   spellingWords.push({ refWord, typed });
     if (status === 'pending') {
-      // Exclude trailing omissions (after last typed word) when admin disabled omission counting
+      // Exclude trailing omissions (after last typed word) when admin disabled omission counting,
+      // and words re-supplied by a repeat (counted once under repeat/addition instead).
       const isTrailing = i > lastTypedRefIdx;
-      if (!isTrailing || countOmissions) omissionWords.push({ refWord, typed: '' });
+      if ((!isTrailing || countOmissions) && !repeatSourceRefs.has(i)) omissionWords.push({ refWord, typed: '' });
     }
     if (status === 'half-error') {
       if (typed.toLowerCase() === refWord.toLowerCase()) capWords.push({ refWord, typed });
@@ -706,7 +761,7 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
               }
             </div>
             {key!=='linechg' && showCat===key && words.length>0 && (
-              <div className="pa-show-words">
+              <div className="pa-show-words" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>
                 {words.map((w,i)=>(
                   <span key={i} className="pa-word-chip">
                     <span className="pa-typed">{w.typed||'–'}</span>
@@ -776,41 +831,79 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   );
 
   const renderComparePanel = () => {
-    const tokens=referenceWords.map((refWord,i)=>({refWord,typed:wordAt(i),status:wordStatuses[i]||'pending'}));
+    // Two-column compare (no separate "Result" section). The Original Passage column
+    // carries omissions (strikethrough) and half mistakes (orange); the Your Typed
+    // Passage column carries wrong words (yellow) and extra/repeated words (blue +).
+    // This only re-locates the old single "Result" stream across the two columns —
+    // the error counting, scoring and detection logic are unchanged.
+    const { byRef: extrasByRef, trailing: trailingExtras } = buildExtraWordPlacement(
+      referenceWords.length, baseAdditionWords, extraTypedWordRefs, repeatedRanges
+    );
+
+    // ── Original Passage: the complete uploaded text, with omitted (missed) words
+    //    struck through and half mistakes highlighted. referenceWords may be trimmed
+    //    (re-type tests); words beyond it come from the full passage and render plain.
+    const origWords = tokenizeResult(originalPassage || referenceWords.join(' '));
+    const renderOriginal = () => {
+      const out = [];
+      const n = Math.max(referenceWords.length, origWords.length);
+      for (let i = 0; i < n; i++) {
+        const inRef   = i < referenceWords.length;
+        const refWord = inRef ? referenceWords[i] : origWords[i];
+        const status  = inRef ? (wordStatuses[i] || 'pending') : 'beyond';
+        if (status === 'half-error')
+          out.push(<span key={i}><span className="pa-res-half">{refWord}</span> </span>);
+        else if (status === 'pending') {
+          // Mid-text skip → strikethrough. Trailing skips stay plain when the admin
+          // disabled omission counting (keeps scoring behaviour identical).
+          if (i > lastTypedRefIdx && !countOmissions)
+            out.push(<span key={i} style={{color:'#94a3b8'}}>{refWord} </span>);
+          else
+            out.push(<span key={i}><span className="pa-res-omit">{refWord}</span> </span>);
+        } else {
+          // correct, substitution, or beyond-trim → plain. A substitution's wrong
+          // word is shown in the typed column, not here.
+          out.push(<span key={i}>{refWord} </span>);
+        }
+      }
+      return out;
+    };
+
+    // ── Your Typed Passage: reconstruct what the student typed, in order. Substituted
+    //    words are highlighted as wrong; extra/repeated words appear as blue +word at
+    //    their position. Omitted ref words contribute nothing (never typed).
+    const renderExtra = (w, key) => (
+      <span key={key}><span className="pa-res-extra">+{w}</span> </span>
+    );
+    const renderTyped = () => {
+      const out = [];
+      referenceWords.forEach((refWord, i) => {
+        const extras = extrasByRef.get(i);
+        if (extras) extras.forEach((w, k) => out.push(renderExtra(w, `tx-${i}-${k}`)));
+        const status = wordStatuses[i] || 'pending';
+        const typed  = wordAt(i);
+        if (status === 'correct')         out.push(<span key={i}>{typed} </span>);
+        else if (status === 'error')      out.push(<span key={i}><span className="pa-res-wrong">{typed}</span> </span>);
+        else if (status === 'half-error') out.push(<span key={i}>{typed} </span>);
+        // pending (omission) → nothing typed at this position
+      });
+      trailingExtras.forEach((w, i) => out.push(renderExtra(w, `tx-tail-${i}`)));
+      return out;
+    };
+
+    const hasTyped = userInput.trim().length > 0;
     return (
       <div className="pa-compare-layout">
         <div className="pa-compare-cols">
           <div className="pa-compare-col">
             <div className="pa-compare-header">Original Passage</div>
-            {/* Show the complete uploaded passage. referenceWords may be trimmed to the
-                portion the student reached (re-type tests), so prefer the full text. */}
-            <div className="pa-compare-body">{originalPassage || referenceWords.join(' ')}</div>
+            <div className="pa-compare-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>{renderOriginal()}</div>
           </div>
           <div className="pa-compare-col">
             <div className="pa-compare-header">Your Typed Passage</div>
-            <div className="pa-compare-body">{userInput||<em style={{color:'#9ca3af'}}>Nothing typed.</em>}</div>
-          </div>
-        </div>
-        <div className="pa-result-bar">
-          <div className="pa-result-bar-label">Result</div>
-          <div className="pa-result-text">
-            {tokens.map(({refWord,typed,status},i)=>{
-              if(status==='correct')    return <span key={i}>{typed} </span>;
-              if(status==='error')      return <span key={i}><span className="pa-res-wrong">{typed}({refWord})</span> </span>;
-              if(status==='half-error') return <span key={i}><span className="pa-res-half">{typed}({refWord})</span> </span>;
-              // pending — show trailing omissions (after last typed word) without strikethrough
-              // when admin has disabled omission error counting
-              const isTrailing = i > lastTypedRefIdx;
-              if(isTrailing && !countOmissions)
-                return <span key={i} style={{color:'#94a3b8'}}>{refWord} </span>;
-              return <span key={i}><span className="pa-res-omit">-{refWord}</span> </span>;
-            })}
-            {/* Extra words — includes repeated words, which are counted as extra
-                words. Shown once here in blue with a + sign (no separate brown
-                highlight, which would duplicate them). */}
-            {additionWords.map((w,i)=>(
-              <span key={`ex-${i}`}><span className="pa-res-extra">+{w}</span> </span>
-            ))}
+            <div className="pa-compare-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>
+              {hasTyped ? renderTyped() : <em style={{color:'#9ca3af'}}>Nothing typed.</em>}
+            </div>
           </div>
         </div>
       </div>
@@ -870,6 +963,7 @@ const ResultScreen = () => {
     userInput = '', referenceWords = [], wordStatuses = [],
     lineChangeCount = 0, alignedTypedWords = null,
     extraTypedWords: stateExtraTypedWords = null,
+    extraTypedWordRefs: stateExtraTypedWordRefs = null,
     repeatedRanges: stateRepeatedRanges = null,
     originalPassage = '',
   } = location.state || {};
@@ -889,14 +983,45 @@ const ResultScreen = () => {
     ? stateExtraTypedWords
     : (Array.isArray(location.state?.pattern?.extra_typed_words) ? location.state.pattern.extra_typed_words : null);
 
+  // Parallel ref-index anchors for the extra words above — used to place each
+  // addition word inline at its exact passage position. Legacy results lack this
+  // (null), in which case extras fall back to the end of the passage.
+  const extraTypedWordRefs = Array.isArray(stateExtraTypedWordRefs)
+    ? stateExtraTypedWordRefs
+    : (Array.isArray(location.state?.pattern?.extra_typed_word_refs) ? location.state.pattern.extra_typed_word_refs : null);
+
   // Repeated word ranges may arrive directly (fresh test) or live inside
   // pattern_data when viewing a past result loaded from the DB.
   const repeatedRanges = Array.isArray(stateRepeatedRanges) && stateRepeatedRanges.length > 0
     ? stateRepeatedRanges
     : (Array.isArray(location.state?.pattern?.repeated_ranges) ? location.state.pattern.repeated_ranges : []);
   const repeatedWordCount = repeatedRanges.reduce((sum, r) => sum + ((r.end ?? 0) - (r.start ?? 0) + 1), 0);
+  // Ref positions a repeat duplicated. When the same word is both skipped at its
+  // original position (omission) and re-supplied by a repeat, it must count as ONE
+  // full error — so the omission tally below skips any pending position covered
+  // here (it is already counted once via repeatedWordCount).
+  const repeatSourceRefs = new Set();
+  for (const r of repeatedRanges) {
+    if (typeof r?.sourceStart === 'number' && typeof r?.sourceEnd === 'number')
+      for (let k = r.sourceStart; k <= r.sourceEnd; k++) repeatSourceRefs.add(k);
+  }
 
   const isStenoResult = !!(typedText && referenceText);
+
+  // Font group of this result — used to render the passage in the correct Hindi font.
+  // Kruti Dev / Remington are legacy glyph fonts (Hindi glyphs at ASCII positions), so
+  // their stored text MUST render in the Kruti Dev font or it shows as raw English
+  // characters (e.g. "mik/;{k"). Mangal is true Unicode Devanagari. Resolution order:
+  //   1. explicit fontGroup (fresh typing/steno test, incl. self-assessment)
+  //   2. Steno Hindi font type (fresh, or persisted in pattern_data for saved results)
+  //   3. mode (saved typing results store the font group as the mode)
+  const resultFontGroup =
+    location.state?.fontGroup
+    || fontGroupForHindiType(location.state?.hindiFontType)
+    || fontGroupForHindiType(location.state?.pattern?.hindi_font_type)
+    || mode
+    || '';
+  const passageFontFamily = fontFamilyForFontGroup(resultFontGroup);
 
   const handleReturn = () => {
     const role = localStorage.getItem('role');
@@ -989,7 +1114,8 @@ const ResultScreen = () => {
       if (s === 'error') _sp++;
       if (s === 'pending') {
         const isTrailing = i > _lastTyped;
-        if (!isTrailing || countOmissions) _om++;
+        // Skip if this word was re-supplied by a repeat — already counted once there.
+        if ((!isTrailing || countOmissions) && !repeatSourceRefs.has(i)) _om++;
       }
       if (s === 'half-error') {
         if (t.toLowerCase() === refWord.toLowerCase()) _cap++;
@@ -1145,8 +1271,10 @@ const ResultScreen = () => {
           lineChangeCount={lineChangeCount}
           alignedTypedWords={alignedTypedWords}
           extraTypedWords={extraTypedWords}
+          extraTypedWordRefs={extraTypedWordRefs}
           countOmissions={countOmissions}
           repeatedRanges={repeatedRanges}
+          passageFontFamily={passageFontFamily}
         />
       </div>
 
@@ -1437,7 +1565,7 @@ const ResultScreen = () => {
           </div>
 
           {isStenoResult ? (
-            <StenoDiff typed={typedText} reference={referenceText} pattern={pattern} testDurationMinutes={testDurationMinutes} />
+            <StenoDiff typed={typedText} reference={referenceText} pattern={pattern} testDurationMinutes={testDurationMinutes} passageFontFamily={passageFontFamily} />
           ) : (
             <TypingPassageReview
               userInput={userInput}
@@ -1454,9 +1582,11 @@ const ResultScreen = () => {
               lineChangeCount={lineChangeCount}
               alignedTypedWords={alignedTypedWords}
               extraTypedWords={extraTypedWords}
+              extraTypedWordRefs={extraTypedWordRefs}
               countOmissions={countOmissions}
               repeatedRanges={repeatedRanges}
               originalPassage={fullOriginalPassage}
+              passageFontFamily={passageFontFamily}
             />
           )}
         </div>

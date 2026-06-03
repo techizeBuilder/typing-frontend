@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { chapterService, examService } from '../../services/api';
 import { API_BASE_URL } from '../../config';
+import { fontFamilyForFontGroup, fontFamilyForHindiType } from '../../utils/hindiFonts';
 import mammoth from 'mammoth';
 import Pagination from '../../components/Pagination';
 import './Admin.css';
@@ -113,6 +114,19 @@ const AdminChapters = () => {
       cleanData.exam_ids = ids;
       cleanData.exam_id = ids.length > 0 ? ids[0] : null;
 
+      // The Hindi-Steno font columns are opt-in: only Steno chapters send them, so
+      // existing English/Hindi typing chapters still save on databases where the
+      // language_type / hindi_font_type migration has not been applied yet.
+      if ((cleanData.font_group || '').includes('Steno')) {
+        cleanData.language_type   = cleanData.font_group === 'Steno Hindi' ? 'Hindi' : 'English';
+        cleanData.hindi_font_type = cleanData.font_group === 'Steno Hindi'
+          ? (cleanData.hindi_font_type || 'Mangal')
+          : null;
+      } else {
+        delete cleanData.language_type;
+        delete cleanData.hindi_font_type;
+      }
+
       let savedId = currentChapter?.id;
 
       if (currentChapter) {
@@ -168,6 +182,13 @@ const AdminChapters = () => {
   };
 
   const isSteno = formData.font_group.includes('Steno');
+
+  // Editor font so pasted Hindi renders correctly. Steno Hindi uses the per-chapter
+  // hindi_font_type; everything else is keyed off font_group.
+  const contentFontFamily = formData.font_group === 'Steno Hindi'
+    ? (fontFamilyForHindiType(formData.hindi_font_type) || 'inherit')
+    : (fontFamilyForFontGroup(formData.font_group) || 'inherit');
+  const useHindiFont = contentFontFamily !== 'inherit';
 
   // Only show exams that support the selected font group
   const filteredExams = exams.filter(exam => {
@@ -252,7 +273,20 @@ const AdminChapters = () => {
               </div>
               <div className="input-group">
                 <label>Font Group</label>
-                <select value={formData.font_group} onChange={(e) => setFormData({...formData, font_group: e.target.value, exam_ids: []})}>
+                <select
+                  value={formData.font_group}
+                  onChange={(e) => {
+                    const fg = e.target.value;
+                    setFormData(prev => ({
+                      ...prev,
+                      font_group: fg,
+                      exam_ids: [],
+                      // Default the Steno Hindi font picker; language_type + final value
+                      // are derived on submit (and only sent for Steno chapters).
+                      hindi_font_type: fg === 'Steno Hindi' ? (prev.hindi_font_type || 'Mangal') : null,
+                    }));
+                  }}
+                >
                   <option value="English Typing">English Typing</option>
                   <option value="Hindi Mangal">Hindi Mangal</option>
                   <option value="Hindi Kruti Dev">Hindi Kruti Dev</option>
@@ -261,6 +295,21 @@ const AdminChapters = () => {
                   <option value="Steno Hindi">Steno Hindi</option>
                 </select>
               </div>
+
+              {/* Steno Hindi → choose the Hindi font standard the student types/views in */}
+              {formData.font_group === 'Steno Hindi' && (
+                <div className="input-group">
+                  <label>Hindi Font Type</label>
+                  <select
+                    value={formData.hindi_font_type || 'Mangal'}
+                    onChange={(e) => setFormData({ ...formData, hindi_font_type: e.target.value })}
+                  >
+                    <option value="Mangal">Hindi Mangal (Unicode)</option>
+                    <option value="KrutiDev">Kruti Dev</option>
+                    <option value="RemingtonGail">Remington Gail</option>
+                  </select>
+                </div>
+              )}
               <div className="input-group">
                 <label>Assign to Exam</label>
                 <div style={{ position: 'relative' }}>
@@ -374,6 +423,7 @@ const AdminChapters = () => {
                     {formData.font_group === 'Hindi Mangal' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#eff6ff', color: '#1e3a8a', padding: '2px 6px', borderRadius: '4px' }}>🌐 Use Windows Hindi IME</span>}
                     {formData.font_group === 'Hindi Remington (GAIL)' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#f0fff4', color: '#14532d', padding: '2px 6px', borderRadius: '4px' }}>⌨ Remington GAIL layout active</span>}
                     {isSteno && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#f0fdf4', color: '#166534', padding: '2px 6px', borderRadius: '4px' }}>🎙 Steno: text hidden from student, used for scoring only</span>}
+                    {formData.font_group === 'Steno Hindi' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#fef9c3', color: '#713f12', padding: '2px 6px', borderRadius: '4px' }}>⌨ Hindi font: {formData.hindi_font_type || 'Mangal'}</span>}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Or Upload File (.txt, .docx):</span>
@@ -388,10 +438,12 @@ const AdminChapters = () => {
                   spellCheck={false}
                   lang={formData.font_group === 'Hindi Mangal' ? 'hi' : 'en'}
                   style={{
-                    fontFamily: ['Hindi Kruti Dev','Hindi Mangal','Hindi Remington (GAIL)'].includes(formData.font_group)
-                      ? "'Noto Sans Devanagari', 'Mangal', sans-serif"
-                      : 'inherit',
-                    fontSize: ['Hindi Kruti Dev','Hindi Mangal','Hindi Remington (GAIL)'].includes(formData.font_group) ? '18px' : undefined,
+                    // Kruti Dev / Remington are legacy glyph fonts (Hindi glyphs at ASCII
+                    // positions) and MUST render in the Kruti Dev font or pasted text shows
+                    // as raw English (e.g. "mik/;{k"). Mangal is true Unicode Devanagari.
+                    // The stored value is never transformed — this only controls display.
+                    fontFamily: contentFontFamily,
+                    fontSize: useHindiFont ? '18px' : undefined,
                     lineHeight: 1.8,
                   }}
                   required

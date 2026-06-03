@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { resultService } from '../services/api';
 import { API_BASE_URL } from '../config';
+import { fontFamilyForHindiType, fontGroupForHindiType } from '../utils/hindiFonts';
 import './StenoTestEngine.css';
 
 // ─── Steno error-classification helpers (module-level, pure functions) ────────
@@ -41,6 +42,14 @@ const StenoTestEngine = () => {
 
   const isStrictMode = !!exam;
   const pattern      = exam?.result_pattern || null;
+
+  // ─── Font for Hindi Steno chapters ────────────────────────────────────────────
+  // Admin-selected Hindi font (Mangal / Kruti Dev / Remington). The student types
+  // and the result renders in this exact font. English steno → undefined (default).
+  const hindiFontType    = chapter?.hindi_font_type || null;
+  const stenoFontFamily  = fontFamilyForHindiType(hindiFontType);
+  // Resolved font_group string so the result screen's existing font logic applies.
+  const resolvedFontGroup = fontGroupForHindiType(hindiFontType);
 
   // ─── Audio state ────────────────────────────────────────────────────────────
   const audioRef           = useRef(null);
@@ -370,7 +379,8 @@ const StenoTestEngine = () => {
       show_penalty_words:       pattern.show_penalty_words,
       show_ignorable_mistakes:  pattern.show_ignorable_mistakes,
       count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
-    } : null;
+      hindi_font_type:          hindiFontType,
+    } : { hindi_font_type: hindiFontType };
 
     const userId   = localStorage.getItem('userId');
     const finalData = {
@@ -384,6 +394,9 @@ const StenoTestEngine = () => {
       chapter_no:  chapter?.chapter_no || null,
       date_taken:  new Date().toISOString(),
       mode,
+      // Resolved font group + raw type so the result renders in the selected Hindi font.
+      fontGroup:   resolvedFontGroup || mode,
+      hindiFontType,
       testType,
       typedText,
       referenceText,
@@ -600,6 +613,7 @@ const StenoTestEngine = () => {
               autoCorrect="off"
               autoCapitalize="off"
               disabled={timeLeft === 0 || showAudioModal}
+              style={stenoFontFamily ? { fontFamily: stenoFontFamily } : undefined}
             />
           </div>
 

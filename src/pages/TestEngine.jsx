@@ -301,6 +301,7 @@ const TestEngine = () => {
     if (R === 0) {
       return {
         statuses: [], typedAtRef: [], extraTypedWords: typedWords.slice(),
+        extraTypedWordRefs: typedWords.map(() => 0),
         lineChangeCount: 0, fullErrors: 0, halfErrors: 0,
       };
     }
@@ -315,6 +316,10 @@ const TestEngine = () => {
     const statuses   = new Array(R).fill('pending');
     const typedAtRef = new Array(R).fill('');
     const extraTypedWords = [];
+    // Parallel to extraTypedWords: the ref index each extra word should appear
+    // *before* in the passage (its insertion point). Lets the result screen place
+    // each addition word inline at its exact position instead of at the end.
+    const extraTypedWordRefs = [];
     let omissionRunLen = 0;
     let lineChangeCount = 0;
     let refPos = 0;
@@ -322,6 +327,7 @@ const TestEngine = () => {
     for (let tp = 0; tp < T; tp++) {
       if (refPos >= R) {
         extraTypedWords.push(typedWords[tp]);
+        extraTypedWordRefs.push(R); // typed past the passage end → trailing extra
         continue;
       }
 
@@ -386,6 +392,7 @@ const TestEngine = () => {
 
         if (isInsertion) {
           extraTypedWords.push(tw); // extra word typed — refPos does NOT advance
+          extraTypedWordRefs.push(refPos); // appears just before the current ref word
         } else {
           // Substitution: wrong word typed for current ref word
           statuses[refPos]   = 'error';
@@ -406,7 +413,7 @@ const TestEngine = () => {
     }
 
     return {
-      statuses, typedAtRef, extraTypedWords,
+      statuses, typedAtRef, extraTypedWords, extraTypedWordRefs,
       lineChangeCount,
       fullErrors: full, halfErrors: half,
     };
@@ -714,19 +721,28 @@ const TestEngine = () => {
     const lineDetect = detectLineChanges(wordsForAlignment, words);
     const lineChangeCount   = lineDetect.lineChangeCount;
     const extraTypedWords   = lineDetect.extraTypedWords || [];
+    const extraTypedWordRefs = lineDetect.extraTypedWordRefs || [];
     let   alignedTypedWords = lineDetect.typedAtRef;
 
     finalStatuses = lineDetect.statuses;
+    // Ref positions a repeat duplicated. A word that was skipped at its original
+    // position (pending) AND re-supplied by a repeat must count as ONE full error,
+    // not two — so the omission pass below skips any pending position covered here
+    // (it is already counted once via repeatedWordCount).
+    const repeatSourceRefs = new Set();
+    for (const r of repeatedRanges) {
+      for (let k = r.sourceStart; k <= r.sourceEnd; k++) repeatSourceRefs.add(k);
+    }
     // Re-derive error counts respecting the admin's omission setting
     const countOmissions = pattern?.count_omissions_as_errors ?? true;
     let derivedBase = extraTypedWords.length; // A.iii addition errors
     derivedBase += repeatedWordCount;          // A.v repetition (each repeated word = full error)
     let derivedHalf = 0;
-    for (const s of finalStatuses) {
+    finalStatuses.forEach((s, idx) => {
       if (s === 'error')           derivedBase++;              // spelling/substitution
       else if (s === 'half-error') derivedHalf++;             // cap/punct
-      else if (s === 'pending' && countOmissions) derivedBase++; // A.i omission
-    }
+      else if (s === 'pending' && countOmissions && !repeatSourceRefs.has(idx)) derivedBase++; // A.i omission (skip if already counted as a repeat)
+    });
     // Full mistakes = ALL error types (spelling + omission + addition + repetition + formatting/cap+punct)
     // Half mistakes = cap/punct subset (gets a 0.5 discount in the formula)
     finalFull = derivedBase + derivedHalf;
@@ -781,12 +797,16 @@ const TestEngine = () => {
       lineChangeCount,
       alignedTypedWords,
       extraTypedWords,
+      extraTypedWordRefs,
       repeatedRanges,
       testDurationMinutes: exam?.test_time_minutes || (chapter?.time_minutes) || Math.floor(timeElapsed / 60) || 10,
       exam_name: exam?.name || 'Self Practice',
       chapter_no: chapter?.chapter_no || null,
       date_taken: new Date().toISOString(),
       mode,
+      // Actual font group used (resolves self-assessment to the chosen font) so the
+      // result screen renders the passage in the correct Hindi font (Kruti Dev / Mangal).
+      fontGroup: activeMode,
       userInput: finalInput,
       referenceWords: resultReferenceWords,
       // Full uploaded passage for the result's "Original Passage" column. resultReferenceWords
@@ -860,7 +880,8 @@ const TestEngine = () => {
           count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
           repeated_ranges: repeatedRanges,
           extra_typed_words: extraTypedWords,
-        } : { repeated_ranges: repeatedRanges, extra_typed_words: extraTypedWords },
+          extra_typed_word_refs: extraTypedWordRefs,
+        } : { repeated_ranges: repeatedRanges, extra_typed_words: extraTypedWords, extra_typed_word_refs: extraTypedWordRefs },
         mode: mode || null,
         test_type: testType || chapter?.test_type || null,
       };
