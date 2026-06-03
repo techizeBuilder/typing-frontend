@@ -22,6 +22,53 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// ── Best-effort offline cache ────────────────────────────────────────────────
+// localStorage has a ~5MB per-origin quota. Some responses (e.g. a user's full
+// results history) are unbounded and will eventually overflow it. Caching is a
+// non-critical optimization, so a write failure must NEVER break an otherwise
+// successful request — we swallow quota errors and free space when we can.
+const MAX_CACHE_ENTRY_CHARS = 2_000_000; // ~4MB UTF-16; don't let one response hog the quota
+
+const isQuotaError = (err) =>
+  !!err && (
+    err.name === 'QuotaExceededError' ||
+    err.name === 'NS_ERROR_DOM_QUOTA_REACHED' || // Firefox
+    err.code === 22 || err.code === 1014
+  );
+
+// Drop other offline_cache_* entries (keeping `keepKey`) to make room on a
+// quota error. Returns true if anything was removed.
+const pruneOfflineCache = (keepKey) => {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('offline_cache_') && k !== keepKey) keys.push(k);
+  }
+  keys.forEach((k) => localStorage.removeItem(k));
+  return keys.length > 0;
+};
+
+const safeCacheSet = (key, value) => {
+  // A single oversized entry would evict everything else just to store itself.
+  if (value.length > MAX_CACHE_ENTRY_CHARS) return;
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    if (!isQuotaError(err)) {
+      console.warn('[Offline Cache] write skipped:', err);
+      return;
+    }
+    // Storage full: evict older cached responses and retry once.
+    if (pruneOfflineCache(key)) {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        // Still no room — caching is best-effort, so skip silently.
+      }
+    }
+  }
+};
+
 // Handle offline caching and 401 Unauthorized globally
 api.interceptors.response.use(
   (response) => {
@@ -30,7 +77,7 @@ api.interceptors.response.use(
       const params = response.config.params || {};
       if (params.testType !== 'Live Test') {
         const cacheKey = `offline_cache_${url}_${JSON.stringify(params)}`;
-        localStorage.setItem(cacheKey, JSON.stringify(response.data));
+        safeCacheSet(cacheKey, JSON.stringify(response.data));
       }
     }
     return response;
