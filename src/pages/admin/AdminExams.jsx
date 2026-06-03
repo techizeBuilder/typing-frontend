@@ -204,6 +204,13 @@ const AdminExams = () => {
 
   const handleExamSubmit = async (e) => {
     e.preventDefault();
+
+    // MAXIMUM WORD/STROKE must be greater than MINIMUM WORD/STROKE.
+    if (wordStrokeRangeInvalid) {
+      alert(`MAXIMUM WORD/STROKE (${maxWordStroke}) must be greater than MINIMUM WORD/STROKE (${minWordStroke}).`);
+      return;
+    }
+
     try {
       const data = new FormData();
       Object.keys(examData).forEach(key => {
@@ -253,6 +260,19 @@ const AdminExams = () => {
       }
     }
   };
+
+  // The MAX/MIN fields are counted in Words or Strokes depending on the
+  // selected result pattern's speed_count. The unit follows the exam type
+  // automatically instead of being chosen separately.
+  const selectedExamPattern = patterns.find(p => String(p.id) === String(examData.result_pattern_id));
+  const wordStrokeUnit = selectedExamPattern?.speed_count === 'Strokes' ? 'Strokes' : 'Words';
+
+  // MAXIMUM must always be greater than MINIMUM. A maximum of 0 means "No Limit"
+  // (effectively unbounded) and a minimum of 0 means "No Minimum", so the rule
+  // only applies when both fields hold a real (> 0) value.
+  const maxWordStroke = Number(examData.max_words_strokes) || 0;
+  const minWordStroke = Number(examData.no_of_words_strokes) || 0;
+  const wordStrokeRangeInvalid = maxWordStroke > 0 && minWordStroke > 0 && maxWordStroke <= minWordStroke;
 
   return (
     <div className="admin-card">
@@ -696,32 +716,42 @@ const AdminExams = () => {
                     </div>
 
                     <div className="input-group">
-                        <label>MAXIMUM WORD/ STROKES</label>
-                        <select value={examData.max_words_strokes || 0} onChange={(e) => setExamData({...examData, max_words_strokes: parseInt(e.target.value)})}>
-                            <option value={0}>No Limit</option>
-                            {[100,150,200,250,300,350,400,450,500,600,700,800,900,1000,1200,1500,2000].map(v => (
-                                <option key={v} value={v}>{v}</option>
-                            ))}
-                        </select>
+                        <label>MAXIMUM WORD/ STROKES ({wordStrokeUnit})</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={examData.max_words_strokes ?? 0}
+                            onChange={(e) => setExamData({...examData, max_words_strokes: e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0)})}
+                            placeholder="0 = No Limit"
+                        />
                         <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '3px', display: 'block' }}>
-                            Caps how many words/strokes from the uploaded content are shown to the student.
+                            Maximum {wordStrokeUnit.toLowerCase()} from the uploaded content shown to the student (0 = No Limit).
                         </small>
                     </div>
                     <div className="input-group">
-                        <label>NO. OF WORD/STROKES</label>
-                        <select value={examData.no_of_words_strokes || 0} onChange={(e) => setExamData({...examData, no_of_words_strokes: parseInt(e.target.value)})}>
-                            <option value={0}>No Limit</option>
-                            {[50,75,100,125,150,175,200,225,250,275,300,350,400,450,500,600,700,800,1000].map(v => (
-                                <option key={v} value={v}>{v}</option>
-                            ))}
-                        </select>
+                        <label>MINIMUM WORD/STROKE ({wordStrokeUnit})</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={examData.no_of_words_strokes ?? 0}
+                            onChange={(e) => setExamData({...examData, no_of_words_strokes: e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0)})}
+                            placeholder="0 = No Minimum"
+                            style={wordStrokeRangeInvalid ? { borderColor: '#dc2626' } : undefined}
+                        />
                         <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '3px', display: 'block' }}>
-                            Required words/strokes student must type. Each missed word counts as a separate full error.
+                            Minimum {wordStrokeUnit.toLowerCase()} the student must type. The exam cannot be submitted until this many are typed (0 = No Minimum).
                         </small>
+                        {wordStrokeRangeInvalid && (
+                            <small style={{ color: '#dc2626', fontSize: '0.72rem', marginTop: '3px', display: 'block', fontWeight: 600 }}>
+                                Maximum ({maxWordStroke}) must be greater than Minimum ({minWordStroke}).
+                            </small>
+                        )}
                     </div>
 
                     <div className="form-actions-full" style={{ gridColumn: '1 / -1' }}>
-                        <button type="submit" className="btn-primary" style={{backgroundColor: '#800080'}}>SUBMIT</button>
+                        <button type="submit" className="btn-primary" style={{backgroundColor: '#800080'}} disabled={wordStrokeRangeInvalid}>SUBMIT</button>
                     </div>
                 </form>
              </div>

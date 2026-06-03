@@ -131,18 +131,18 @@ const TestEngine = () => {
       if (splitWords.length > maxWords) splitWords = splitWords.slice(0, maxWords);
     }
 
-    // ── Step 2: no_of_words_strokes — required count ────────────────────────────
-    // "Required words student must type; if missed, each counts as full error"
-    // Extend the reference via repetition if content is shorter; trim if longer.
-    const requiredCount = exam?.no_of_words_strokes || 0;
-    if (requiredCount > 0 && splitWords.length > 0) {
-      const requiredWords = toWords(requiredCount);
-      if (splitWords.length < requiredWords) {
+    // ── Step 2: no_of_words_strokes — MINIMUM the student must type ─────────────
+    // This is a floor, not an exact count: the student must type at least this
+    // many words/strokes before they can submit (enforced in handleFinish).
+    // Ensure the reference holds at least this many words by repeating the
+    // content when it is shorter; never trim longer content, so the student is
+    // free to keep typing beyond the minimum.
+    const minCount = exam?.no_of_words_strokes || 0;
+    if (minCount > 0 && splitWords.length > 0) {
+      const minWords = toWords(minCount);
+      if (splitWords.length < minWords) {
         const base = [...splitWords];
-        while (splitWords.length < requiredWords) splitWords = splitWords.concat(base);
-        splitWords = splitWords.slice(0, requiredWords);
-      } else {
-        splitWords = splitWords.slice(0, requiredWords);
+        while (splitWords.length < minWords) splitWords = splitWords.concat(base);
       }
     }
 
@@ -674,6 +674,25 @@ const TestEngine = () => {
     let finalHalf     = overrideHalf     ?? halfErrors;
     let finalStrokes  = overrideStrokes  ?? totalStrokes;
     let finalInput    = overrideInput    ?? userInput;
+
+    // ── MINIMUM WORD/STROKE gate ────────────────────────────────────────────
+    // The student must type at least exam.no_of_words_strokes (counted in the
+    // unit of the result pattern) before a *manual* submit is allowed. We never
+    // block the timer-driven auto-submit (timeLeft === 0) nor the auto-finish
+    // that fires once the whole passage is typed (overrideStatuses !== null),
+    // otherwise a slow typist could be trapped on the test screen.
+    const minRequired = exam?.no_of_words_strokes || 0;
+    if (minRequired > 0 && timeLeft > 0 && overrideStatuses === null) {
+      const speedCount = pattern?.speed_count ?? 'Words';
+      const typedCount = speedCount === 'Strokes'
+        ? finalInput.length                                    // strokes = keystrokes typed
+        : finalInput.trim().split(/\s+/).filter(Boolean).length; // words typed
+      if (typedCount < minRequired) {
+        const unit = speedCount === 'Strokes' ? 'strokes' : 'words';
+        alert(`You must type at least ${minRequired} ${unit} before submitting.\nYou have typed ${typedCount} ${unit}. Please continue typing.`);
+        return;
+      }
+    }
 
     // When called from timer: evaluate the partially-typed current word too
     if (overrideStatuses === null && finalInput && !finalInput.endsWith(' ')) {
