@@ -313,6 +313,7 @@ const TestEngine = () => {
     const MIN_CLUSTER   = 2;   // consecutive typed+ref matches required for large jumps
     const INSERT_LOOK   = 5;   // how many typed words ahead to check for extra-word detection
     const SUBST_CONFIRM = 2;   // consecutive matches after a mismatch that confirm a substitution (realignment)
+    const SUBST_RUN_MAX = 4;   // max consecutive wrong words tolerated before a realignment counts as a substitution run
 
     const statuses   = new Array(R).fill('pending');
     const typedAtRef = new Array(R).fill('');
@@ -337,27 +338,6 @@ const TestEngine = () => {
 
       if (cmp !== 'error') {
         statuses[refPos]   = cmp;
-        typedAtRef[refPos] = tw;
-        omissionRunLen = 0;
-        refPos++;
-        continue;
-      }
-
-      // Substitution check (realign on a single wrong word). Before treating a
-      // mismatch as an omission jump, see whether the text has simply realigned: if
-      // the NEXT few typed words match the NEXT few reference words (both streams
-      // advancing together), the current typed word is a one-off substitution — not
-      // the start of a skipped span. Without this, a wrong word that happens to equal
-      // some later passage word (e.g. typing "with" for "we") jumps ahead to that
-      // word and marks every correct word in between as an omission. Require
-      // SUBST_CONFIRM consecutive matches to confirm the realignment.
-      let subConsec = 0;
-      for (let k = 1; k <= SUBST_CONFIRM; k++) {
-        if (tp + k < T && refPos + k < R && compareWords(typedWords[tp + k], refWords[refPos + k]) !== 'error') subConsec++;
-        else break;
-      }
-      if (subConsec >= SUBST_CONFIRM) {
-        statuses[refPos]   = 'error'; // substitution = full mistake (Rule A.ii)
         typedAtRef[refPos] = tw;
         omissionRunLen = 0;
         refPos++;
@@ -389,8 +369,60 @@ const TestEngine = () => {
         }
       }
 
-      if (jumpRefPos >= 0) {
-        // Mark omitted ref words as pending
+      // Substitution vs omission. Before committing to the omission jump found
+      // above, check whether the streams have simply realigned after a short run
+      // of wrong words: for some run length s, do the NEXT SUBST_CONFIRM typed and
+      // reference words match once BOTH pointers advance past the run (refPos+s /
+      // tp+s)? The student kept typing the passage in order, just got s words
+      // wrong. Prefer this whenever it realigns no later than the omission jump
+      // (subResyncDist <= omitDist), so e.g. typing "of thought" for "values that"
+      // and then continuing correctly is scored as two substitutions — not a long
+      // omission span plus a pile of extra words. (A wrong word that happens to
+      // equal a far-ahead passage word, like "of", is exactly what triggers the
+      // spurious jump without this guard.) s=1 is the original single-word case.
+      let subResyncDist = -1;
+      for (let s = 1; s <= SUBST_RUN_MAX; s++) {
+        let consec = 0;
+        for (let k = 0; k < SUBST_CONFIRM; k++) {
+          if (tp + s + k < T && refPos + s + k < R &&
+              compareWords(typedWords[tp + s + k], refWords[refPos + s + k]) !== 'error') consec++;
+          else break;
+        }
+        if (consec >= SUBST_CONFIRM) { subResyncDist = s; break; }
+      }
+      const omitDist = jumpRefPos >= 0 ? jumpRefPos - refPos : Infinity;
+
+      // Insertion distance: how many typed words ahead the CURRENT ref word reappears.
+      // If the student inserted an extra word (or a few), refWords[refPos] is still
+      // owed and shows up shortly in the typed stream. Treating those typed words as
+      // insertions (refPos holds) is cheaper than skipping ref words as omissions, and
+      // it stops an inserted word that coincides with a far-ahead passage word (e.g. an
+      // extra "are" matching a later "standout are") from triggering a bogus jump.
+      let insDist = Infinity;
+      for (let look = tp + 1; look <= tp + INSERT_LOOK && look < T; look++) {
+        if (compareWords(typedWords[look], refWords[refPos]) !== 'error') { insDist = look - tp; break; }
+      }
+
+      // Pick the cheapest realignment: substitution run, insertion, or omission jump.
+      // All three are "the student is still typing the passage in order"; we just owe
+      // the fewest skipped words. Substitution wins ties (1:1, least disruptive), then
+      // insertion, then the omission jump; if nothing realigns ahead, fall back to a
+      // substitution for the current ref word.
+      if (subResyncDist >= 0 && subResyncDist <= omitDist && subResyncDist <= insDist) {
+        // Substitution: kept going forward, just got subResyncDist word(s) wrong.
+        statuses[refPos]   = 'error'; // substitution = full mistake (Rule A.ii)
+        typedAtRef[refPos] = tw;
+        omissionRunLen = 0;
+        refPos++;
+      } else if (insDist !== Infinity && insDist < omitDist) {
+        // Insertion: the current typed word is extra — refPos does NOT advance.
+        // Strictly cheaper than the omission jump (ties go to omission: an omitted
+        // word that merely recurs soon after should stay an omission, not flip to
+        // an insertion that re-consumes the recurrence).
+        extraTypedWords.push(tw);
+        extraTypedWordRefs.push(refPos); // appears just before the current ref word
+      } else if (jumpRefPos >= 0) {
+        // Omission jump: ref words refPos…jumpRefPos-1 were skipped (not typed).
         for (let skip = refPos; skip < jumpRefPos; skip++) {
           statuses[skip]   = 'pending'; // omission
           typedAtRef[skip] = '';
@@ -402,26 +434,11 @@ const TestEngine = () => {
         omissionRunLen = 0;
         refPos = jumpRefPos + 1;
       } else {
-        // No anchor found. Check if this is an extra (inserted) typed word:
-        // look ahead INSERT_LOOK typed words for a match with current ref word.
-        let isInsertion = false;
-        for (let look = tp + 1; look <= tp + INSERT_LOOK && look < T; look++) {
-          if (compareWords(typedWords[look], refWords[refPos]) !== 'error') {
-            isInsertion = true;
-            break;
-          }
-        }
-
-        if (isInsertion) {
-          extraTypedWords.push(tw); // extra word typed — refPos does NOT advance
-          extraTypedWordRefs.push(refPos); // appears just before the current ref word
-        } else {
-          // Substitution: wrong word typed for current ref word
-          statuses[refPos]   = 'error';
-          typedAtRef[refPos] = tw;
-          omissionRunLen = 0;
-          refPos++;
-        }
+        // Nothing realigns ahead → treat as a substitution for the current ref word.
+        statuses[refPos]   = 'error';
+        typedAtRef[refPos] = tw;
+        omissionRunLen = 0;
+        refPos++;
       }
     }
 
