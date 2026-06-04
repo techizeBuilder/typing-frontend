@@ -88,11 +88,38 @@ export function detectRepeatedSequences(typedWords, refWords, opts = {}) {
       }
     }
 
+    // Substitution/realignment distance: the smallest run length s (≥1) after which
+    // the typed and reference streams march together again — SUB_CONFIRM consecutive
+    // matches at refPos+s / i+s. When the student just mistypes a word or two that
+    // happen to coincide with another passage word, the streams realign within a few
+    // words; a genuine re-type or line-jump does not. Used to keep both the backward
+    // repeat AND the forward jump below from firing on such coincidences. Mirrors the
+    // substitution/realignment guard in the main alignment pass (detectLineChanges).
+    const SUB_CONFIRM = 2;
+    let subResyncDist = -1;
+    for (let s = 1; s <= FWD_WIN && subResyncDist < 0; s++) {
+      let c = 0;
+      for (let k = 0; k < SUB_CONFIRM; k++) {
+        if (i + s + k < T && refPos + s + k < R && eq(typedWords[i + s + k], refWords[refPos + s + k])) c++;
+        else break;
+      }
+      if (c >= SUB_CONFIRM) subResyncDist = s;
+    }
+
     // Forward progress always wins ties: a naturally recurring word (which
     // matches both ahead and behind) keeps advancing normally. A backward run
     // is only taken when it is strictly longer than any forward continuation,
-    // or when there is no forward match at all.
-    const takeBackward = bestBackLen >= minLen && bestBackLen > fwdLen;
+    // there is no forward match at all, and it is not better explained as a
+    // forward substitution. The discriminator: a genuine re-type reproduces text
+    // that matches BEHIND the frontier, so it never realigns FORWARD with the owed
+    // passage — whereas an ordinary substitution always does (the student keeps
+    // going). So a SHORT backward match (≤ MAX_COINCIDENTAL_BACK words, the range
+    // where common phrases like "of", "of you", "in the" coincide by chance) that
+    // also has a forward realignment is a substitution, not a repeat — don't strip
+    // it. Longer exact backward matches are trusted as real re-types regardless.
+    const MAX_COINCIDENTAL_BACK = 4;
+    const subBeatsBackward = subResyncDist >= 0 && bestBackLen <= MAX_COINCIDENTAL_BACK;
+    const takeBackward = bestBackLen >= minLen && bestBackLen > fwdLen && !subBeatsBackward;
 
     if (takeBackward) {
       const runStart = i;
@@ -138,22 +165,55 @@ export function detectRepeatedSequences(typedWords, refWords, opts = {}) {
     }
 
     // A forward match that SKIPS passage words (fJump > 0) is only trusted when the
-    // matched run actually continues (fwdLen >= 2). A lone word that merely happens
-    // to equal some later passage word is a substitution, not a real jump: advancing
-    // the frontier to it would leave the genuinely-correct words that follow sitting
-    // "behind" the frontier, where they get mis-flagged as a backward repeat. (e.g.
-    // typing "with" for "we" must not skip ahead to a later "with".) Direct matches
-    // (fJump === 0) always commit.
-    if (fJump === 0 || (fJump > 0 && fwdLen >= 2)) {
+    // matched run actually continues (fwdLen >= 2) AND the skip is not better explained
+    // as a short substitution (subResyncDist <= fJump) or an insertion (insBeatsJump). A
+    // lone word — or even a 2-word common phrase like "of you" / "in the" — that merely
+    // happens to equal some later passage word is a substitution, not a real jump:
+    // advancing the frontier to it would leave the genuinely-correct words that follow
+    // sitting "behind" the frontier, where they get mis-flagged as a backward repeat.
+    // (e.g. typing "with" for "we", or "of you" for "and its", must not skip ahead.)
+    //
+    // insBeatsJump: if the first owed/skipped ref word reappears in the typed stream
+    // sooner than the jump would skip, the student is about to type the skipped content
+    // — so the matched run is a duplicated/early phrase (e.g. typing "these are values
+    // that" before the owed "that you espouse…"), not a real jump. Skipping here would
+    // strand that owed-but-typed content as a bogus backward repeat. A genuine line skip
+    // never types its skipped words, so this stays false for real jumps. Mirrors the
+    // insertion-vs-omission choice in the main alignment pass (detectLineChanges).
+    const subBeatsJump = fJump > 0 && subResyncDist >= 0 && subResyncDist <= fJump;
+    let insBeatsJump = false;
+    if (fJump > 0) {
+      for (let look = i + 1; look < i + fJump && look < T; look++) {
+        if (eq(typedWords[look], refWords[refPos])) { insBeatsJump = true; break; }
+      }
+    }
+    if (fJump === 0 || (fJump > 0 && fwdLen >= 2 && !subBeatsJump && !insBeatsJump)) {
       // Commit forward progress; the run continues naturally on the next iterations.
       refPos = refPos + fJump + 1;
       if (refPos - 1 > progress) progress = refPos - 1;
       i++;
     } else {
-      // No forward match, or only a lone coincidental one → a substitution/insertion
-      // that the main alignment pass will categorise. Advance both pointers by one so
-      // we stay roughly in sync; do NOT flag it as a repeat or leap the frontier.
-      if (refPos < R) {
+      // No forward match, or only a lone coincidental one → a substitution or an
+      // inserted (extra) word that the main alignment pass will categorise. Decide
+      // which so the frontier stays accurate:
+      //   • If a substitution realigns the streams (subResyncDist >= 0), the student
+      //     is moving forward through wrong word(s): advance BOTH pointers. (Don't be
+      //     fooled into "insertion" just because the owed word recurs later — e.g.
+      //     "of you" for "and its" where "and" reappears downstream.)
+      //   • Else, if the owed ref word reappears in the typed stream shortly, this is
+      //     an inserted (extra) word: advance ONLY the typed pointer, so the frontier
+      //     doesn't consume the owed word — otherwise that word, once typed correctly,
+      //     would sit "behind" the frontier and be mis-flagged as a backward repeat.
+      //   • Else, treat as a substitution: advance both to stay in sync.
+      // Either way, never flag a repeat or leap the frontier here.
+      const INSERT_LOOK = 5;
+      let isInsertion = false;
+      if (subResyncDist < 0) {
+        for (let look = i + 1; look <= i + INSERT_LOOK && look < T; look++) {
+          if (eq(typedWords[look], refWords[refPos])) { isInsertion = true; break; }
+        }
+      }
+      if (!isInsertion && refPos < R) {
         if (refPos > progress) progress = refPos;
         refPos++;
       }
