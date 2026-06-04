@@ -21,7 +21,14 @@ const TestEngine = () => {
   const cycleTcsInterface = () => setTcsInterface(prev => (prev % 3) + 1);
 
   // ─── Hindi Mode Detection ────────────────────────────────────────────────────
-  const [selfAssessmentFont, setSelfAssessmentFont] = useState('English Typing');
+  // Self-assessment carries the chosen font in `mode` (set on the SelfAssessmentSetup
+  // screen, e.g. 'Hindi Kruti Dev'). Seed the in-engine font from it so Hindi
+  // self-assessment grades and renders as Hindi — otherwise activeMode would stay the
+  // default 'English Typing' (the in-engine dropdown is hidden once a passage is loaded),
+  // making compareWords skip NFC/no-case-fold rules and the passage render in the wrong font.
+  const [selfAssessmentFont, setSelfAssessmentFont] = useState(
+    isSelfAssessment && mode ? mode : 'English Typing'
+  );
   const activeMode = isSelfAssessment ? selfAssessmentFont : mode;
 
   const isKrutiDev  = activeMode === 'Hindi Kruti Dev';
