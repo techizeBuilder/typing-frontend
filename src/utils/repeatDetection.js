@@ -137,16 +137,22 @@ export function detectRepeatedSequences(typedWords, refWords, opts = {}) {
       continue;
     }
 
-    if (fJump >= 0) {
-      // Commit forward progress for this single word; the run continues naturally
-      // on the next iterations.
+    // A forward match that SKIPS passage words (fJump > 0) is only trusted when the
+    // matched run actually continues (fwdLen >= 2). A lone word that merely happens
+    // to equal some later passage word is a substitution, not a real jump: advancing
+    // the frontier to it would leave the genuinely-correct words that follow sitting
+    // "behind" the frontier, where they get mis-flagged as a backward repeat. (e.g.
+    // typing "with" for "we" must not skip ahead to a later "with".) Direct matches
+    // (fJump === 0) always commit.
+    if (fJump === 0 || (fJump > 0 && fwdLen >= 2)) {
+      // Commit forward progress; the run continues naturally on the next iterations.
       refPos = refPos + fJump + 1;
       if (refPos - 1 > progress) progress = refPos - 1;
       i++;
     } else {
-      // No forward match and no backward repeat → a substitution/insertion that
-      // the main alignment pass will categorise. Advance both pointers so we stay
-      // roughly in sync; do NOT flag it as a repeat.
+      // No forward match, or only a lone coincidental one → a substitution/insertion
+      // that the main alignment pass will categorise. Advance both pointers by one so
+      // we stay roughly in sync; do NOT flag it as a repeat or leap the frontier.
       if (refPos < R) {
         if (refPos > progress) progress = refPos;
         refPos++;
