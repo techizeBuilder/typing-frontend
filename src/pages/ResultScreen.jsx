@@ -49,21 +49,45 @@ const PrintSheet = ({
     <span key={key} className="prt-word prt-extra">+{w} </span>
   );
 
-  // Colour-coded passage tokens with extra/repeated words interleaved at position
+  // Typed-word ordinals that follow a 2+ space gap — used to drop an inline
+  // extra-space marker at the exact spot it was typed (each = a half mistake).
+  const extraSpaceBeforePrt = (() => {
+    const set = new Set();
+    if (!userInput) return set;
+    let wordIdx = -1, spaceRun = 0, inWord = false;
+    for (let c = 0; c < userInput.length; c++) {
+      const ch = userInput[c];
+      if (ch === ' ') { spaceRun++; inWord = false; }
+      else if (/\s/.test(ch)) { spaceRun = 0; inWord = false; }
+      else {
+        if (!inWord) { if (spaceRun >= 2) set.add(wordIdx + 1); wordIdx++; inWord = true; }
+        spaceRun = 0;
+      }
+    }
+    return set;
+  })();
+
+  // Colour-coded passage tokens with extra/repeated words and extra-space markers
+  // interleaved at position. All markings live in this single (typed) passage.
   const buildPassageTokens = () => {
     if (isStenoResult) return null;
     if (!referenceWords || referenceWords.length === 0)
       return <em style={{color:'#888'}}>No passage data.</em>;
     const out = [];
+    let typedOrd = 0;
+    const emitSpacePrt = () => {
+      if (extraSpaceBeforePrt.has(typedOrd))
+        out.push(<span key={`sp-${typedOrd}`} className="prt-word prt-space" title="Extra space (½ mistake)">␣ </span>);
+    };
     referenceWords.forEach((refWord, i) => {
       const extras = extrasByRefPrt.get(i);
-      if (extras) extras.forEach((w, k) => out.push(renderExtraPrt(w, `ex-${i}-${k}`)));
+      if (extras) extras.forEach((w, k) => { emitSpacePrt(); out.push(renderExtraPrt(w, `ex-${i}-${k}`)); typedOrd++; });
       const status = wordStatuses[i] || 'pending';
       // Use re-aligned word when available (line-change case), else positional typed word
       const typed  = alignedTypedWords ? (alignedTypedWords[i] || '') : (typedWordsPrt[i] || '');
-      if (status === 'correct')         out.push(<span key={i} className="prt-word prt-correct">{typed} </span>);
-      else if (status === 'error')      out.push(<span key={i} className="prt-word prt-full-err">{typed || `–${refWord}`} </span>);
-      else if (status === 'half-error') out.push(<span key={i} className="prt-word prt-half-err">{typed} </span>);
+      if (status === 'correct')         { emitSpacePrt(); out.push(<span key={i} className="prt-word prt-correct">{typed} </span>); typedOrd++; }
+      else if (status === 'error')      { emitSpacePrt(); out.push(<span key={i} className="prt-word prt-full-err">{typed || `–${refWord}`} </span>); typedOrd++; }
+      else if (status === 'half-error') { emitSpacePrt(); out.push(<span key={i} className="prt-word prt-half-err">{typed} </span>); typedOrd++; }
       // pending — trailing (after last typed word) vs mid-text skip
       else if (i > lastTypedRefIdxPrt && !countOmissions)
         out.push(<span key={i} className="prt-word prt-trailing">{refWord} </span>);
@@ -197,6 +221,7 @@ const PrintSheet = ({
         {showHalfMistakes && <span>Half Mistake:– <span className="prt-leg-orange">In orange color</span></span>}
         <span><strong>–</strong> sign:– for Omission Word</span>
         <span><strong>+</strong> Sign:– for Addition word</span>
+        <span><span className="prt-space">␣</span> mark:– for Extra Space (½ mistake)</span>
         {lineChangeCount > 0 && <span style={{color:'#6d28d9'}}><strong>↕ Line/Para Changed:–</strong> {lineChangeCount} time{lineChangeCount > 1 ? 's' : ''}</span>}
       </div>
 
@@ -652,11 +677,25 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   // re-supplied by a repeat is counted once — under the repeat — so it is excluded
   // from the omission tally here to avoid double counting (the passage still shows
   // it struck through, which only indicates the nature of the mistake).
-  const repeatSourceRefs = new Set();
-  (repeatedRanges || []).forEach((r) => {
-    if (r && typeof r.sourceStart === 'number' && typeof r.sourceEnd === 'number')
-      for (let k = r.sourceStart; k <= r.sourceEnd; k++) repeatSourceRefs.add(k);
-  });
+  // Extra spaces (2+ consecutive) → half mistakes. `extraSpaceCount` feeds the
+  // tallies; `extraSpaceBefore` holds the typed-word ordinal that follows each
+  // extra-space gap, used to drop an inline marker at that exact spot in the
+  // Student Typed column.
+  const extraSpaceCount = (userInput.match(/ {2,}/g) || []).length;
+  const extraSpaceBefore = React.useMemo(() => {
+    const set = new Set();
+    let wordIdx = -1, spaceRun = 0, inWord = false;
+    for (let c = 0; c < userInput.length; c++) {
+      const ch = userInput[c];
+      if (ch === ' ') { spaceRun++; inWord = false; }
+      else if (/\s/.test(ch)) { spaceRun = 0; inWord = false; }
+      else {
+        if (!inWord) { if (spaceRun >= 2) set.add(wordIdx + 1); wordIdx++; inWord = true; }
+        spaceRun = 0;
+      }
+    }
+    return set;
+  }, [userInput]);
 
   const spellingWords = [], omissionWords = [], capWords = [], punctWords = [];
   referenceWords.forEach((refWord, i) => {
@@ -664,17 +703,18 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
     const typed = wordAt(i);
     if (status === 'error')   spellingWords.push({ refWord, typed });
     if (status === 'pending') {
-      // Exclude trailing omissions (after last typed word) when admin disabled omission counting,
-      // and words re-supplied by a repeat (counted once under repeat/addition instead).
+      // Exclude only trailing omissions (after the last typed word) when the admin
+      // disabled omission counting. A word that was omitted AND later repeated is
+      // intentionally counted in BOTH tallies (two separate full mistakes).
       const isTrailing = i > lastTypedRefIdx;
-      if ((!isTrailing || countOmissions) && !repeatSourceRefs.has(i)) omissionWords.push({ refWord, typed: '' });
+      if (!isTrailing || countOmissions) omissionWords.push({ refWord, typed: '' });
     }
     if (status === 'half-error') {
       if (typed.toLowerCase() === refWord.toLowerCase()) capWords.push({ refWord, typed });
       else punctWords.push({ refWord, typed });
     }
   });
-  const totalErrors = spellingWords.length + omissionWords.length + additionWords.length + capWords.length + punctWords.length;
+  const totalErrors = spellingWords.length + omissionWords.length + additionWords.length + capWords.length + punctWords.length + extraSpaceCount;
   const timeMin = timeElapsed > 0 ? timeElapsed / 60 : 1;
   const totalWords = parseFloat((totalStrokes / 5).toFixed(1));
   // Deduct 5 strokes only for pure full errors (spelling/omission/addition), not half-errors (cap/punct)
@@ -724,6 +764,7 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
         {icon:'🔴',label:'Omission Errors',    count:omissionWords.length,             color:'#ea580c'},
         {icon:'🟠',label:'Addition Errors',    count:additionWords.length,             color:'#d97706'},
         {icon:'🔵',label:'Formatting Errors',  count:capWords.length+punctWords.length,color:'#1d4ed8'},
+        {icon:'␣', label:'Extra Spaces (½)',   count:extraSpaceCount,                  color:'#ea580c'},
         {icon:'↕', label:'Line / Para Changed',count:lineChangeCount,                  color:'#7c3aed'},
       ].map(({icon,label,count,color})=>(
         <div className="pa-error-row" key={label}>
@@ -749,18 +790,21 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
           {key:'addition', label:'Addition Errors',       count:additionWords.length,  words:additionWords.map(w=>({typed:w,refWord:''}))},
           {key:'cap',      label:'Capitalization Errors', count:capWords.length,       words:capWords},
           {key:'punct',    label:'Punctuation Errors',    count:punctWords.length,     words:punctWords},
+          {key:'space',    label:'Extra Spaces (½ Mistake)', count:extraSpaceCount,    words:[]},
           {key:'linechg',  label:'Line / Para Changed',   count:lineChangeCount,       words:[]},
         ].map(({key,label,count,words})=>(
           <div key={key}>
             <div className="pa-show-row">
               <span className="pa-show-label">{label}–</span>
-              <span className="pa-show-count" style={key==='linechg'&&count>0?{color:'#7c3aed',fontWeight:700}:{}}>{count}</span>
+              <span className="pa-show-count" style={(key==='linechg'||key==='space')&&count>0?{color:key==='space'?'#ea580c':'#7c3aed',fontWeight:700}:{}}>{count}</span>
               {key==='linechg'
                 ? count>0 && <span className="pa-show-btn" style={{background:'#ede9fe',color:'#6d28d9',cursor:'default',fontSize:'0.72rem'}}>Student skipped a line/paragraph {count} time{count>1?'s':''}</span>
+                : key==='space'
+                ? count>0 && <span className="pa-show-btn" style={{background:'#fff7ed',color:'#ea580c',cursor:'default',fontSize:'0.72rem'}}>{count} extra-space group{count>1?'s':''} · counted as half mistakes</span>
                 : <button className="pa-show-btn" onClick={()=>setShowCat(showCat===key?null:key)}>{showCat===key?'Hide':'Show'}</button>
               }
             </div>
-            {key!=='linechg' && showCat===key && words.length>0 && (
+            {key!=='linechg' && key!=='space' && showCat===key && words.length>0 && (
               <div className="pa-show-words" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>
                 {words.map((w,i)=>(
                   <span key={i} className="pa-word-chip">
@@ -831,63 +875,62 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   );
 
   const renderComparePanel = () => {
-    // Two-column compare (no separate "Result" section). The Original Passage column
-    // carries omissions (strikethrough) and half mistakes (orange); the Your Typed
-    // Passage column carries wrong words (yellow) and extra/repeated words (blue +).
-    // This only re-locates the old single "Result" stream across the two columns —
-    // the error counting, scoring and detection logic are unchanged.
+    // Two-column compare. ALL error markings live in the "Your Typed Passage" (right)
+    // column only — omissions (strikethrough missed word), wrong words (yellow), half
+    // mistakes (orange), extra/repeated words (blue +) and extra-space markers. The
+    // "Original Passage" (left) column stays plain for clean side-by-side reading.
+    // This only re-locates the existing markings into one column — the error counting,
+    // scoring and detection logic are unchanged.
     const { byRef: extrasByRef, trailing: trailingExtras } = buildExtraWordPlacement(
       referenceWords.length, baseAdditionWords, extraTypedWordRefs, repeatedRanges
     );
 
-    // ── Original Passage: the complete uploaded text, with omitted (missed) words
-    //    struck through and half mistakes highlighted. referenceWords may be trimmed
-    //    (re-type tests); words beyond it come from the full passage and render plain.
+    // ── Original Passage: the complete uploaded text, rendered plain with no markings,
+    //    highlights or annotations. referenceWords may be trimmed (re-type tests);
+    //    words beyond it come from the full passage and also render plain.
     const origWords = tokenizeResult(originalPassage || referenceWords.join(' '));
     const renderOriginal = () => {
       const out = [];
       const n = Math.max(referenceWords.length, origWords.length);
       for (let i = 0; i < n; i++) {
-        const inRef   = i < referenceWords.length;
-        const refWord = inRef ? referenceWords[i] : origWords[i];
-        const status  = inRef ? (wordStatuses[i] || 'pending') : 'beyond';
-        if (status === 'half-error')
-          out.push(<span key={i}><span className="pa-res-half">{refWord}</span> </span>);
-        else if (status === 'pending') {
-          // Mid-text skip → strikethrough. Trailing skips stay plain when the admin
-          // disabled omission counting (keeps scoring behaviour identical).
-          if (i > lastTypedRefIdx && !countOmissions)
-            out.push(<span key={i} style={{color:'#94a3b8'}}>{refWord} </span>);
-          else
-            out.push(<span key={i}><span className="pa-res-omit">{refWord}</span> </span>);
-        } else {
-          // correct, substitution, or beyond-trim → plain. A substitution's wrong
-          // word is shown in the typed column, not here.
-          out.push(<span key={i}>{refWord} </span>);
-        }
+        const refWord = i < referenceWords.length ? referenceWords[i] : origWords[i];
+        out.push(<span key={i}>{refWord} </span>);
       }
       return out;
     };
 
-    // ── Your Typed Passage: reconstruct what the student typed, in order. Substituted
-    //    words are highlighted as wrong; extra/repeated words appear as blue +word at
-    //    their position. Omitted ref words contribute nothing (never typed).
+    // ── Your Typed Passage: reconstruct what the student typed, in order, carrying
+    //    every error marking. Substituted words are highlighted as wrong (yellow);
+    //    half mistakes are orange; extra/repeated words appear as blue +word at their
+    //    position; an omitted ref word is shown struck-through at the exact spot it
+    //    should have appeared; an extra-space marker is dropped at each 2+ space gap.
     const renderExtra = (w, key) => (
       <span key={key}><span className="pa-res-extra">+{w}</span> </span>
     );
     const renderTyped = () => {
       const out = [];
+      let typedOrd = 0; // count of emitted typed words, to place extra-space markers
+      const emitSpace = () => {
+        if (extraSpaceBefore.has(typedOrd))
+          out.push(<span key={`sp-${typedOrd}`} className="pa-res-space" title="Extra space (½ mistake)">␣</span>);
+      };
       referenceWords.forEach((refWord, i) => {
         const extras = extrasByRef.get(i);
-        if (extras) extras.forEach((w, k) => out.push(renderExtra(w, `tx-${i}-${k}`)));
+        if (extras) extras.forEach((w, k) => { emitSpace(); out.push(renderExtra(w, `tx-${i}-${k}`)); typedOrd++; });
         const status = wordStatuses[i] || 'pending';
         const typed  = wordAt(i);
-        if (status === 'correct')         out.push(<span key={i}>{typed} </span>);
-        else if (status === 'error')      out.push(<span key={i}><span className="pa-res-wrong">{typed}</span> </span>);
-        else if (status === 'half-error') out.push(<span key={i}>{typed} </span>);
-        // pending (omission) → nothing typed at this position
+        if (status === 'correct')         { emitSpace(); out.push(<span key={i}>{typed} </span>); typedOrd++; }
+        else if (status === 'error')      { emitSpace(); out.push(<span key={i}><span className="pa-res-wrong">{typed}</span> </span>); typedOrd++; }
+        else if (status === 'half-error') { emitSpace(); out.push(<span key={i}><span className="pa-res-half">{typed}</span> </span>); typedOrd++; }
+        else {
+          // omission — show the missed reference word struck through at this exact
+          // position. A trailing skip stays invisible when the admin disabled
+          // omission counting (keeps the display consistent with the score).
+          if (!(i > lastTypedRefIdx && !countOmissions))
+            out.push(<span key={i}><span className="pa-res-omit">{refWord}</span> </span>);
+        }
       });
-      trailingExtras.forEach((w, i) => out.push(renderExtra(w, `tx-tail-${i}`)));
+      trailingExtras.forEach((w, i) => { emitSpace(); out.push(renderExtra(w, `tx-tail-${i}`)); typedOrd++; });
       return out;
     };
 
@@ -996,15 +1039,11 @@ const ResultScreen = () => {
     ? stateRepeatedRanges
     : (Array.isArray(location.state?.pattern?.repeated_ranges) ? location.state.pattern.repeated_ranges : []);
   const repeatedWordCount = repeatedRanges.reduce((sum, r) => sum + ((r.end ?? 0) - (r.start ?? 0) + 1), 0);
-  // Ref positions a repeat duplicated. When the same word is both skipped at its
-  // original position (omission) and re-supplied by a repeat, it must count as ONE
-  // full error — so the omission tally below skips any pending position covered
-  // here (it is already counted once via repeatedWordCount).
-  const repeatSourceRefs = new Set();
-  for (const r of repeatedRanges) {
-    if (typeof r?.sourceStart === 'number' && typeof r?.sourceEnd === 'number')
-      for (let k = r.sourceStart; k <= r.sourceEnd; k++) repeatSourceRefs.add(k);
-  }
+  // A word that is BOTH omitted at its original position AND later repeated counts
+  // as TWO separate full mistakes (omission + repetition); the two tallies are no
+  // longer de-duplicated.
+  // Extra spaces (2+ consecutive) each count as one half mistake (see below).
+  const extraSpaceCount = (userInput.match(/ {2,}/g) || []).length;
 
   const isStenoResult = !!(typedText && referenceText);
 
@@ -1114,8 +1153,7 @@ const ResultScreen = () => {
       if (s === 'error') _sp++;
       if (s === 'pending') {
         const isTrailing = i > _lastTyped;
-        // Skip if this word was re-supplied by a repeat — already counted once there.
-        if ((!isTrailing || countOmissions) && !repeatSourceRefs.has(i)) _om++;
+        if (!isTrailing || countOmissions) _om++;
       }
       if (s === 'half-error') {
         if (t.toLowerCase() === refWord.toLowerCase()) _cap++;
@@ -1126,8 +1164,8 @@ const ResultScreen = () => {
   // For steno fall back to passed-in props; for typing always use wordStatuses-derived values.
   // repeatedWordCount is added here because repeated words are stripped before alignment and
   // therefore not reflected in wordStatuses — they must be counted separately.
-  const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + _cap + _pct + repeatedWordCount);
-  const effectiveHalfErrors = isStenoResult ? halfErrors : (_cap + _pct);
+  const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + _cap + _pct + repeatedWordCount + extraSpaceCount);
+  const effectiveHalfErrors = isStenoResult ? halfErrors : (_cap + _pct + extraSpaceCount);
 
   const totalMistakes = parseFloat(
     (effectiveFullErrors + effectiveHalfErrors * 0.5).toFixed(2)
@@ -1505,7 +1543,7 @@ const ResultScreen = () => {
         <div className="sheet-footer-notes">
           <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} wpm</strong> → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
           <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>Count as 0.5</strong></p>
-          <p>* Punctuation and Capital/Small letter mistakes count as Half Mistakes; spelling mistakes count as Full Mistakes.</p>
+          <p>* Punctuation, Capital/Small letter and Extra-Space mistakes count as Half Mistakes; spelling mistakes count as Full Mistakes.</p>
         </div>
 
         {/* ── Repeated Lines Section ───────────────────── */}
@@ -1562,6 +1600,7 @@ const ResultScreen = () => {
             )}
             <span className="legend-chip"><strong>–</strong>&nbsp;sign:– for Omission Word</span>
             <span className="legend-chip"><strong>+</strong>&nbsp;Sign:– for Addition word</span>
+            <span className="legend-chip"><span className="pa-res-space">␣</span>&nbsp;Extra Space (½ mistake)</span>
           </div>
 
           {isStenoResult ? (

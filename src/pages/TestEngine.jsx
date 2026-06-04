@@ -748,22 +748,26 @@ const TestEngine = () => {
     // position (pending) AND re-supplied by a repeat must count as ONE full error,
     // not two — so the omission pass below skips any pending position covered here
     // (it is already counted once via repeatedWordCount).
-    const repeatSourceRefs = new Set();
-    for (const r of repeatedRanges) {
-      for (let k = r.sourceStart; k <= r.sourceEnd; k++) repeatSourceRefs.add(k);
-    }
-    // Re-derive error counts respecting the admin's omission setting
+    // Re-derive error counts respecting the admin's omission setting.
+    // NOTE: a word that is BOTH omitted at its original position AND later repeated
+    // counts as TWO separate full mistakes (omission + repetition) — the tallies
+    // are no longer de-duplicated.
     const countOmissions = pattern?.count_omissions_as_errors ?? true;
     let derivedBase = extraTypedWords.length; // A.iii addition errors
     derivedBase += repeatedWordCount;          // A.v repetition (each repeated word = full error)
     let derivedHalf = 0;
-    finalStatuses.forEach((s, idx) => {
+    finalStatuses.forEach((s) => {
       if (s === 'error')           derivedBase++;              // spelling/substitution
       else if (s === 'half-error') derivedHalf++;             // cap/punct
-      else if (s === 'pending' && countOmissions && !repeatSourceRefs.has(idx)) derivedBase++; // A.i omission (skip if already counted as a repeat)
+      else if (s === 'pending' && countOmissions) derivedBase++; // A.i omission
     });
-    // Full mistakes = ALL error types (spelling + omission + addition + repetition + formatting/cap+punct)
-    // Half mistakes = cap/punct subset (gets a 0.5 discount in the formula)
+    // Extra spaces (2+ consecutive) each count as one half mistake, handled exactly
+    // like the cap/punct half mistakes: added to both the half tally and the full
+    // tally so the result calculation includes them.
+    const extraSpaceCount = (finalInput.match(/ {2,}/g) || []).length;
+    derivedHalf += extraSpaceCount;
+    // Full mistakes = ALL error types (spelling + omission + addition + repetition + cap/punct + extra spaces)
+    // Half mistakes = cap/punct + extra-space subset (gets a 0.5 discount in the formula)
     finalFull = derivedBase + derivedHalf;
     finalHalf = derivedHalf;
 

@@ -51,6 +51,7 @@
 .pa-res-half  { background:#fed7aa; color:#7c2d12; border-radius:3px; padding:0 3px; }
 .pa-res-omit  { color:#dc2626; text-decoration:line-through; }
 .pa-res-extra { color:#1d4ed8; background:#eff6ff; border-radius:3px; padding:0 3px; }
+.pa-res-space { color:#ea580c; background:#fff7ed; border:1px solid #fed7aa; border-radius:3px; padding:0 2px; font-weight:700; margin:0 1px; }
 
 /* ── Page shell ─────────────────────────────────────────────── */
 .result-layout {
@@ -659,6 +660,7 @@
 .prt-omit     { color: #dc2626; text-decoration: line-through; }
 .prt-trailing { color: #94a3b8; }
 .prt-extra    { color: #1d4ed8; }
+.prt-space    { color: #ea580c; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
 /* Divider */
 .prt-divider-line {
