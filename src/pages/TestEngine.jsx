@@ -308,10 +308,11 @@ const TestEngine = () => {
 
     // Rule 4: small window — single-word match for same-sentence omissions
     // Rule 5: large window — require MIN_CLUSTER consecutive matches for paragraph-level jumps
-    const SMALL_WIN   = 10;  // single-word look-ahead within a sentence
-    const LARGE_WIN   = 150; // extended look-ahead for bigger skips
-    const MIN_CLUSTER = 2;   // consecutive typed+ref matches required for large jumps
-    const INSERT_LOOK = 5;   // how many typed words ahead to check for extra-word detection
+    const SMALL_WIN     = 10;  // single-word look-ahead within a sentence
+    const LARGE_WIN     = 150; // extended look-ahead for bigger skips
+    const MIN_CLUSTER   = 2;   // consecutive typed+ref matches required for large jumps
+    const INSERT_LOOK   = 5;   // how many typed words ahead to check for extra-word detection
+    const SUBST_CONFIRM = 2;   // consecutive matches after a mismatch that confirm a substitution (realignment)
 
     const statuses   = new Array(R).fill('pending');
     const typedAtRef = new Array(R).fill('');
@@ -336,6 +337,27 @@ const TestEngine = () => {
 
       if (cmp !== 'error') {
         statuses[refPos]   = cmp;
+        typedAtRef[refPos] = tw;
+        omissionRunLen = 0;
+        refPos++;
+        continue;
+      }
+
+      // Substitution check (realign on a single wrong word). Before treating a
+      // mismatch as an omission jump, see whether the text has simply realigned: if
+      // the NEXT few typed words match the NEXT few reference words (both streams
+      // advancing together), the current typed word is a one-off substitution — not
+      // the start of a skipped span. Without this, a wrong word that happens to equal
+      // some later passage word (e.g. typing "with" for "we") jumps ahead to that
+      // word and marks every correct word in between as an omission. Require
+      // SUBST_CONFIRM consecutive matches to confirm the realignment.
+      let subConsec = 0;
+      for (let k = 1; k <= SUBST_CONFIRM; k++) {
+        if (tp + k < T && refPos + k < R && compareWords(typedWords[tp + k], refWords[refPos + k]) !== 'error') subConsec++;
+        else break;
+      }
+      if (subConsec >= SUBST_CONFIRM) {
+        statuses[refPos]   = 'error'; // substitution = full mistake (Rule A.ii)
         typedAtRef[refPos] = tw;
         omissionRunLen = 0;
         refPos++;

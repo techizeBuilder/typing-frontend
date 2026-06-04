@@ -1045,6 +1045,49 @@ const ResultScreen = () => {
   // Extra spaces (2+ consecutive) each count as one half mistake (see below).
   const extraSpaceCount = (userInput.match(/ {2,}/g) || []).length;
 
+  // ─── Typed-word alignment (typed word shown at each ref position) ─────────────
+  // A fresh test passes `alignedTypedWords` directly. Results opened from history
+  // (My Results / Admin) come through the DB, which stores `word_statuses` but NOT
+  // the alignment array — so `alignedTypedWords` is null and the compare/passage
+  // columns would fall back to a POSITIONAL map (typedWords[i]). After any omission
+  // that map is off-by-one for every following word, making a typed word look
+  // missing (e.g. an omitted "drain" hides the next typed "of"). Reconstruct the
+  // alignment deterministically from the data we DO have: walk the reference and
+  // assign the next non-repeat typed word to each non-pending position, honouring
+  // the stored insertion anchors. This matches the grading alignment exactly for
+  // results that carry repeat/insertion metadata (all current results) and is
+  // never worse than the positional fallback for older ones.
+  const effectiveAlignedTypedWords = React.useMemo(() => {
+    if (Array.isArray(alignedTypedWords) && alignedTypedWords.length) return alignedTypedWords;
+    if (!Array.isArray(referenceWords) || referenceWords.length === 0) return null;
+    if (!Array.isArray(wordStatuses) || wordStatuses.length === 0) return null;
+    const typedWords = userInput.trim().split(/\s+/).filter(Boolean);
+    // Words stripped before grading because they duplicated an earlier passage span.
+    const covered = new Set();
+    (repeatedRanges || []).forEach((r) => {
+      for (let k = r.start; k <= r.end; k++) covered.add(k);
+    });
+    const wordsForAlignment = typedWords.filter((_, i) => !covered.has(i));
+    const exWords = Array.isArray(extraTypedWords) ? extraTypedWords : [];
+    const exRefs  = Array.isArray(extraTypedWordRefs) ? extraTypedWordRefs : [];
+    // We can only place insertions (and thus stay in sync) when each one carries a
+    // ref anchor. Some legacy results stored extra words without anchors; for those
+    // the walk would desync after the first insertion, so we bail out to the old
+    // positional fallback rather than render something worse.
+    if (exWords.length > 0 && exRefs.length !== exWords.length) return null;
+    const out = new Array(referenceWords.length).fill('');
+    let tp = 0, ex = 0;
+    for (let i = 0; i < referenceWords.length; i++) {
+      // Insertions (extra words) sit *before* the ref word they were typed ahead of;
+      // they consume a typed word without mapping to a reference position.
+      while (ex < exWords.length && exRefs[ex] === i) { tp++; ex++; }
+      const s = wordStatuses[i];
+      if (s && s !== 'pending') { out[i] = wordsForAlignment[tp] || ''; tp++; }
+      // pending → omission: no typed word consumed.
+    }
+    return out;
+  }, [alignedTypedWords, userInput, referenceWords, wordStatuses, repeatedRanges, extraTypedWords, extraTypedWordRefs]);
+
   const isStenoResult = !!(typedText && referenceText);
 
   // Font group of this result — used to render the passage in the correct Hindi font.
@@ -1130,7 +1173,7 @@ const ResultScreen = () => {
   // Always derive from wordStatuses so Full Mistakes = Total Errors in analysis panel.
   // Fixes mismatches from old stored results or detectLineChanges divergence.
   const _typedWds  = userInput.trim().split(/\s+/).filter(Boolean);
-  const _wordAtFn  = (i) => alignedTypedWords ? (alignedTypedWords[i] || '') : (_typedWds[i] || '');
+  const _wordAtFn  = (i) => effectiveAlignedTypedWords ? (effectiveAlignedTypedWords[i] || '') : (_typedWds[i] || '');
   const _lastTyped = (() => {
     for (let i = wordStatuses.length - 1; i >= 0; i--) {
       if (wordStatuses[i] && wordStatuses[i] !== 'pending') return i;
@@ -1307,7 +1350,7 @@ const ResultScreen = () => {
           referenceText={referenceText}
           isStenoResult={isStenoResult}
           lineChangeCount={lineChangeCount}
-          alignedTypedWords={alignedTypedWords}
+          alignedTypedWords={effectiveAlignedTypedWords}
           extraTypedWords={extraTypedWords}
           extraTypedWordRefs={extraTypedWordRefs}
           countOmissions={countOmissions}
@@ -1619,7 +1662,7 @@ const ResultScreen = () => {
               grossSpeedCalculated={grossSpeedCalculated}
               accuracy={accuracyCalculated}
               lineChangeCount={lineChangeCount}
-              alignedTypedWords={alignedTypedWords}
+              alignedTypedWords={effectiveAlignedTypedWords}
               extraTypedWords={extraTypedWords}
               extraTypedWordRefs={extraTypedWordRefs}
               countOmissions={countOmissions}
