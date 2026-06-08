@@ -43,7 +43,9 @@ const AdminExams = () => {
     qualify_on: 'NWPM',
     required_speed: 35,
     required_accuracy: 95,
+    ignorable_mistakes_enabled: false,
     ignorable_mistakes_percent: 0,
+    ignorable_penalty_words_per_mistake: 10,
     show_half_mistakes: true,
     show_full_mistakes: true,
     show_total_strokes: true,
@@ -75,7 +77,9 @@ const AdminExams = () => {
     qualify_on: 'NWPM',
     required_speed: 35,
     required_accuracy: 95,
+    ignorable_mistakes_enabled: false,
     ignorable_mistakes_percent: 0,
+    ignorable_penalty_words_per_mistake: 10,
     show_half_mistakes: true,
     show_full_mistakes: true,
     show_total_strokes: true,
@@ -371,10 +375,44 @@ const AdminExams = () => {
                         <input type="number" value={patternData.required_accuracy} onChange={(e) => setPatternData({...patternData, required_accuracy: parseInt(e.target.value)})} required />
                     </div>
                     <div className="input-group">
-                        <label>Ignorable Mistakes (%)</label>
-                        <input type="number" min="0" step="0.1" placeholder="0 = not enforced" value={patternData.ignorable_mistakes_percent ?? 0} onChange={(e) => setPatternData({...patternData, ignorable_mistakes_percent: e.target.value === '' ? 0 : parseFloat(e.target.value)})} />
-                        <small style={{ color: '#64748b', fontSize: '11px' }}>Max mistake rate allowed. Above this → Unqualified. 0 = not enforced.</small>
+                        <label>Ignorable Mistakes</label>
+                        <select
+                            value={patternData.ignorable_mistakes_enabled ? 'Yes' : 'No'}
+                            onChange={(e) => setPatternData({ ...patternData, ignorable_mistakes_enabled: e.target.value === 'Yes' })}
+                        >
+                            <option value="No">Disabled</option>
+                            <option value="Yes">Enabled</option>
+                        </select>
+                        <small style={{ color: '#64748b', fontSize: '11px' }}>When enabled, a percentage of the student's mistakes is ignored before scoring.</small>
                     </div>
+                    {patternData.ignorable_mistakes_enabled && (
+                      <>
+                      <div className="input-group">
+                        <label>Ignorable Allowance (% of words typed)</label>
+                        <input
+                            type="number" min="0" max="100" step="0.1" placeholder="e.g. 5"
+                            value={patternData.ignorable_mistakes_percent ?? 0}
+                            onChange={(e) => {
+                              const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                              setPatternData({ ...patternData, ignorable_mistakes_percent: Math.max(0, Math.min(100, isNaN(v) ? 0 : v)) });
+                            }}
+                        />
+                        <small style={{ color: '#64748b', fontSize: '11px' }}>Mistakes up to this % of total words typed are ignored (e.g. 5% of 400 words = 20 free mistakes).</small>
+                      </div>
+                      <div className="input-group">
+                        <label>Words Deducted per Excess Mistake</label>
+                        <input
+                            type="number" min="0" step="1" placeholder="e.g. 10"
+                            value={patternData.ignorable_penalty_words_per_mistake ?? 10}
+                            onChange={(e) => {
+                              const v = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                              setPatternData({ ...patternData, ignorable_penalty_words_per_mistake: Math.max(0, isNaN(v) ? 0 : v) });
+                            }}
+                        />
+                        <small style={{ color: '#64748b', fontSize: '11px' }}>Each mistake beyond the allowance deducts this many words from net speed.</small>
+                      </div>
+                      </>
+                    )}
 
                     {/* Visibility Section */}
                     <div className="form-actions-full" style={{ gridColumn: '1 / -1', marginTop: '15px' }}>

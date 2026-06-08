@@ -43,6 +43,11 @@ const StenoTestEngine = () => {
   const isStrictMode = !!exam;
   const pattern      = exam?.result_pattern || null;
 
+  // Live Steno tests need an internet connection and must NOT expose the passage
+  // text or allow audio download. Pre-loaded (practice) tests support both.
+  const isLiveTest   = (testType || chapter?.test_type || '').toLowerCase().includes('live');
+  const isPreloaded  = !isLiveTest;
+
   // ─── Font for Hindi Steno chapters ────────────────────────────────────────────
   // Admin-selected Hindi font (Mangal / Kruti Dev / Remington). The student types
   // and the result renders in this exact font. English steno → undefined (default).
@@ -74,6 +79,13 @@ const StenoTestEngine = () => {
   const [totalStrokes,  setTotalStrokes]  = useState(0);
   const [stats, setStats] = useState({ gwpm: 0, nwpm: 0, accuracy: 100 });
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
+
+  // ─── Passage (Text/PDF) view + offline-audio download state ──────────────────
+  const [showPassageModal, setShowPassageModal] = useState(false);
+  // idle | downloading | saved | nofile | error
+  const [audioDownloadStatus, setAudioDownloadStatus] = useState('idle');
+  // Brief "processing result" screen shown for 2s after submit before the result.
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const textareaRef = useRef(null);
 
@@ -200,6 +212,99 @@ const StenoTestEngine = () => {
     // Start timer when student dismisses audio player
     setIsStarted(true);
     setTimeout(() => textareaRef.current?.focus(), 100);
+  };
+
+  // ─── Passage Text / PDF view (pre-loaded practice tests only) ─────────────────
+  const escapeHtml = (s) => String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Build a self-contained printable page for the dictated passage. The Electron
+  // print dialog (and the browser fallback) both offer "Save as PDF", so this one
+  // action covers both "download as PDF" and "print".
+  const buildPassageHtml = () => {
+    let cssText = '';
+    try {
+      Array.from(document.styleSheets).forEach(sheet => {
+        try {
+          Array.from(sheet.cssRules || []).forEach(rule => { cssText += rule.cssText + '\n'; });
+        } catch (_) { /* cross-origin sheet — skip */ }
+      });
+    } catch (_) { /* ignore */ }
+    const passage = chapter?.content_text || '';
+    const fontCss = stenoFontFamily ? `font-family: ${stenoFontFamily};` : '';
+    const title = `${exam?.name || 'Steno Practice'} — Chapter ${chapter?.chapter_no ?? ''}`;
+    return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8" /><title>${escapeHtml(title)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #fff; color: #111; font-family: 'Times New Roman', Times, serif; padding: 32px 40px; }
+  ${cssText}
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .meta { color: #555; font-size: 13px; margin-bottom: 18px; }
+  .passage { ${fontCss} white-space: pre-wrap; font-size: 18px; line-height: 1.9; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+</style></head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <div class="meta">Dictation Passage${mode ? ` · ${escapeHtml(mode)}` : ''}</div>
+  <div class="passage">${escapeHtml(passage)}</div>
+</body></html>`;
+  };
+
+  const handlePrintPassage = () => {
+    const html = buildPassageHtml();
+    if (window.electronAPI?.printResult) {
+      window.electronAPI.printResult(html).catch((err) => {
+        console.error('Electron print error:', err);
+        openPrintWindow(html);
+      });
+    } else {
+      openPrintWindow(html);
+    }
+  };
+
+  const openPrintWindow = (html) => {
+    const w = window.open('', '_blank');
+    if (!w) { alert('Please allow pop-ups to print or save the passage.'); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { try { w.print(); } catch (_) {} }, 300);
+  };
+
+  // ─── Download dictation audio for offline use (pre-loaded tests only) ─────────
+  const handleDownloadAudioOffline = async () => {
+    if (!chapter?.id) return;
+    if (!window.electronAPI?.saveAudio) {
+      // Browser build can't persist files locally — caching needs the desktop app.
+      setAudioDownloadStatus('error');
+      return;
+    }
+    try {
+      if (window.electronAPI.hasAudio) {
+        const { exists } = await window.electronAPI.hasAudio(chapter.id);
+        if (exists) { setAudioDownloadStatus('saved'); return; }
+      }
+      if (!navigator.onLine) { setAudioDownloadStatus('error'); return; }
+      setAudioDownloadStatus('downloading');
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/chapters/${chapter.id}/audio`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) { setAudioDownloadStatus('nofile'); return; }
+      const blob = await res.blob();
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      await window.electronAPI.saveAudio(chapter.id, base64);
+      setAudioDownloadStatus('saved');
+    } catch (err) {
+      console.error('[Offline Audio] download failed:', err);
+      setAudioDownloadStatus('error');
+    }
   };
 
   // ─── Timer ──────────────────────────────────────────────────────────────────
@@ -346,9 +451,19 @@ const StenoTestEngine = () => {
     const penaltyFactor   = pattern?.penalty_value ?? 1;
     const penaltyType     = pattern?.penalty_type  ?? 'Word';
     const totalMistakes   = full + half * 0.5;
-    const penaltyWords    = penaltyType === 'Stroke'
-      ? (totalMistakes * 5 / 5) * penaltyFactor
-      : totalMistakes * penaltyFactor;
+    // Ignorable Mistakes rule: mistakes up to (pct)% of total words typed are free;
+    // each mistake beyond that allowance deducts (deductionPerMistake) words.
+    const ignorableEnabled = !!pattern?.ignorable_mistakes_enabled;
+    const ignorablePct     = ignorableEnabled
+      ? Math.max(0, Math.min(100, pattern?.ignorable_mistakes_percent ?? 0)) : 0;
+    const deductionPerMistake = pattern?.ignorable_penalty_words_per_mistake ?? 10;
+    const ignorableAllowance  = ignorableEnabled ? totalWords * (ignorablePct / 100) : 0;
+    const excessMistakes      = ignorableEnabled ? Math.max(0, totalMistakes - ignorableAllowance) : 0;
+    const penaltyWords    = ignorableEnabled
+      ? excessMistakes * deductionPerMistake
+      : penaltyType === 'Stroke'
+        ? (totalMistakes * 5 / 5) * penaltyFactor
+        : totalMistakes * penaltyFactor;
 
     const gwpm     = Math.round(totalWords / minutes);
     const nwpm     = Math.max(0, Math.round((totalWords - penaltyWords) / minutes));
@@ -378,6 +493,9 @@ const StenoTestEngine = () => {
       show_accuracy:            pattern.show_accuracy,
       show_penalty_words:       pattern.show_penalty_words,
       show_ignorable_mistakes:  pattern.show_ignorable_mistakes,
+      ignorable_mistakes_enabled: pattern.ignorable_mistakes_enabled ?? false,
+      ignorable_mistakes_percent: pattern.ignorable_mistakes_percent ?? 0,
+      ignorable_penalty_words_per_mistake: pattern.ignorable_penalty_words_per_mistake ?? 10,
       count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
       hindi_font_type:          hindiFontType,
     } : { hindi_font_type: hindiFontType };
@@ -428,7 +546,9 @@ const StenoTestEngine = () => {
       }
     } catch (err) { console.error('Save Error:', err); }
 
-    navigate('/result', { state: finalData });
+    // Show a brief "processing result" screen for 2s, then go to the result.
+    setIsProcessing(true);
+    setTimeout(() => navigate('/result', { state: finalData }), 2000);
   }, [typedText, chapter, timeElapsed, exam, mode, testType, pattern, compareTexts, navigate]);
 
   // Keep ref in sync with latest handleFinish
@@ -439,11 +559,62 @@ const StenoTestEngine = () => {
 
   const progressPct = audioDuration > 0 ? (audioCurrentTime / audioDuration) * 100 : 0;
 
+  if (isProcessing) return (
+    <div className="test-processing-overlay">
+      <div className="test-processing-spinner" />
+      <div className="test-processing-title">Processing your result…</div>
+      <div className="test-processing-sub">Please wait while we evaluate your dictation.</div>
+    </div>
+  );
+
   return (
     <div className="steno-engine-layout">
       {/* ── Hidden native audio element ──────────────────────────────────── */}
       {audioUrl && (
         <audio ref={audioRef} src={audioUrl} preload="metadata" />
+      )}
+
+      {/* ══════════════════ PASSAGE TEXT / PDF MODAL ════════════════════════ */}
+      {showPassageModal && (
+        <div className="steno-modal-overlay" onClick={() => setShowPassageModal(false)}>
+          <div
+            className="steno-audio-modal"
+            style={{ maxWidth: '780px', width: '92%', textAlign: 'left' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="steno-modal-header">
+              <span className="steno-modal-icon">📄</span>
+              <h2>Dictation Passage</h2>
+              <p className="steno-modal-sub">{exam?.name || 'Steno Practice'} — Chapter {chapter?.chapter_no}</p>
+            </div>
+
+            <div
+              style={{
+                maxHeight: '50vh', overflowY: 'auto', textAlign: 'left',
+                background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px',
+                padding: '16px 18px', margin: '12px 0', whiteSpace: 'pre-wrap',
+                fontSize: '1.05rem', lineHeight: 1.9, color: '#0f172a',
+                ...(stenoFontFamily ? { fontFamily: stenoFontFamily } : {}),
+              }}
+            >
+              {chapter?.content_text || 'No passage text is available for this test.'}
+            </div>
+
+            <div className="steno-controls">
+              <button className="steno-btn steno-btn-play" onClick={handlePrintPassage}>
+                🖨 Print / Save as PDF
+              </button>
+              <button className="steno-btn steno-btn-close" onClick={() => setShowPassageModal(false)}>
+                ✕ Close
+              </button>
+            </div>
+
+            <p className="steno-modal-note">
+              Use this to review the passage during practice. In the print dialog choose
+              <strong> “Save as PDF” </strong> to download it. Not available for Live Steno tests.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* ══════════════════ AUDIO PLAYER MODAL ══════════════════════════════ */}
@@ -663,7 +834,44 @@ const StenoTestEngine = () => {
             ) : (
               <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>No audio attached</p>
             )}
+
+            {/* Offline audio download — pre-loaded practice tests only */}
+            {isPreloaded && (
+              <>
+                <button
+                  className="steno-btn steno-btn-replay-mini"
+                  style={{ marginTop: '8px', background: audioDownloadStatus === 'saved' ? '#16a34a' : undefined }}
+                  onClick={handleDownloadAudioOffline}
+                  disabled={audioDownloadStatus === 'downloading'}
+                  title="Save this dictation audio on your computer so the test works offline"
+                >
+                  {audioDownloadStatus === 'downloading' ? 'Downloading…'
+                    : audioDownloadStatus === 'saved' ? '✓ Audio Saved Offline'
+                    : '⬇ Download Audio for Offline'}
+                </button>
+                {audioDownloadStatus === 'nofile' && (
+                  <p style={{ color: '#b45309', fontSize: '0.78rem', marginTop: '6px' }}>No audio file is attached to this test.</p>
+                )}
+                {audioDownloadStatus === 'error' && (
+                  <p style={{ color: '#dc2626', fontSize: '0.78rem', marginTop: '6px' }}>Could not save audio. Connect to the internet and use the desktop app.</p>
+                )}
+              </>
+            )}
           </div>
+
+          {/* Passage Text / PDF view — pre-loaded practice tests only */}
+          {isPreloaded && (
+            <div className="steno-audio-mini-card">
+              <h3>📄 Passage</h3>
+              <button
+                className="steno-btn steno-btn-replay-mini"
+                onClick={() => setShowPassageModal(true)}
+                title="View the dictated passage as text; print or save it as a PDF"
+              >
+                View Passage (Text / PDF)
+              </button>
+            </div>
+          )}
 
           <button
             className="steno-btn-submit desktop-only"
