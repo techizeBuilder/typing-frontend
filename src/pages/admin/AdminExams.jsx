@@ -43,6 +43,7 @@ const AdminExams = () => {
     qualify_on: 'NWPM',
     required_speed: 35,
     required_accuracy: 95,
+    ignorable_mistakes_percent: 0,
     show_half_mistakes: true,
     show_full_mistakes: true,
     show_total_strokes: true,
@@ -74,6 +75,7 @@ const AdminExams = () => {
     qualify_on: 'NWPM',
     required_speed: 35,
     required_accuracy: 95,
+    ignorable_mistakes_percent: 0,
     show_half_mistakes: true,
     show_full_mistakes: true,
     show_total_strokes: true,
@@ -367,6 +369,11 @@ const AdminExams = () => {
                     <div className="input-group">
                         <label>Qualifying ACCURACY (%)*</label>
                         <input type="number" value={patternData.required_accuracy} onChange={(e) => setPatternData({...patternData, required_accuracy: parseInt(e.target.value)})} required />
+                    </div>
+                    <div className="input-group">
+                        <label>Ignorable Mistakes (%)</label>
+                        <input type="number" min="0" step="0.1" placeholder="0 = not enforced" value={patternData.ignorable_mistakes_percent ?? 0} onChange={(e) => setPatternData({...patternData, ignorable_mistakes_percent: e.target.value === '' ? 0 : parseFloat(e.target.value)})} />
+                        <small style={{ color: '#64748b', fontSize: '11px' }}>Max mistake rate allowed. Above this → Unqualified. 0 = not enforced.</small>
                     </div>
 
                     {/* Visibility Section */}

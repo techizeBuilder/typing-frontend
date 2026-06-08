@@ -22,6 +22,7 @@ import AdminMessages from './pages/admin/AdminMessages';
 import AdminFlashBanner from './pages/admin/AdminFlashBanner';
 import AdminStaff from './pages/admin/AdminStaff';
 import AdminResults from './pages/admin/AdminResults';
+import AdminLeaderboard from './pages/admin/AdminLeaderboard';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import SelfAssessmentSetup from './pages/SelfAssessmentSetup';
 
@@ -59,6 +60,7 @@ function App() {
               <Route path="flash-banner" element={<AdminFlashBanner />} />
               <Route path="staff" element={<AdminStaff />} />
               <Route path="results" element={<AdminResults />} />
+              <Route path="leaderboard" element={<AdminLeaderboard />} />
             </Route>
           </Route>
         </Routes>

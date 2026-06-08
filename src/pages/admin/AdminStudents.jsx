@@ -56,6 +56,8 @@ const AdminStudents = () => {
     allowed_login_time_end: '',
     applyValidityEnd: false,
     validity_end: '',
+    applyLiveTestsLimit: false,
+    live_tests_limit: '',
   });
 
   const toggleStudentSelect = (id) => {
@@ -88,6 +90,11 @@ const AdminStudents = () => {
       payload.allowed_login_time_end = bulkFormData.allowed_login_time_end || null;
     }
     if (bulkFormData.applyValidityEnd) payload.validity_end = bulkFormData.validity_end || null;
+    if (bulkFormData.applyLiveTestsLimit) {
+      payload.live_tests_limit = bulkFormData.live_tests_limit === ''
+        ? null
+        : parseInt(bulkFormData.live_tests_limit, 10);
+    }
 
     if (Object.keys(payload).length === 0) {
       alert('Please enable and fill at least one field to update.');
@@ -409,6 +416,23 @@ const AdminStudents = () => {
                 value={bulkFormData.validity_end}
                 onChange={e => setBulkFormData(f => ({ ...f, validity_end: e.target.value }))}
                 style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyValidityEnd ? 1 : 0.5 }}
+              />
+            </div>
+
+            <div className="form-section">
+              <h4>Live Tests Per Day Limit</h4>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={bulkFormData.applyLiveTestsLimit} onChange={e => setBulkFormData(f => ({ ...f, applyLiveTestsLimit: e.target.checked }))} />
+                Update live tests per day limit (leave blank for default 1)
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder="Empty = Default 1"
+                disabled={!bulkFormData.applyLiveTestsLimit}
+                value={bulkFormData.live_tests_limit}
+                onChange={e => setBulkFormData(f => ({ ...f, live_tests_limit: e.target.value }))}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyLiveTestsLimit ? 1 : 0.5 }}
               />
             </div>
 

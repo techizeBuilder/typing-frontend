@@ -30,22 +30,42 @@ const Leaderboard = () => {
     new Set(rawData.map(r => r.exam_name || 'Self Practice'))
   ).sort();
 
-  // Filter → deduplicate by username (keep best NWPM) → top 10
-  const leaderboard = (() => {
+  // Logged-in student's identifiers. user_id is unique, so it's the reliable key for
+  // locating this student in the ranking; name is only a display fallback for legacy
+  // rows that predate user_id being returned by the leaderboard query.
+  const myUserId = localStorage.getItem('user_id') || '';
+  const myName   = localStorage.getItem('name') || localStorage.getItem('username') || '';
+
+  // True when a ranking row belongs to the logged-in student.
+  const rowIsMe = (row) => (myUserId && row.user_id)
+    ? row.user_id === myUserId
+    : (!!myName && row.username === myName);
+
+  // Filter → deduplicate per student (rows arrive NWPM-desc, so first seen = best).
+  // Keep the FULL ranking so we can compute the logged-in student's rank even when
+  // they fall outside the visible top 10.
+  const fullRanking = (() => {
     const filtered = examFilter === 'All'
       ? rawData
       : rawData.filter(r => (r.exam_name || 'Self Practice') === examFilter);
     const seen = new Set();
     const result = [];
     for (const row of filtered) {
-      if (!seen.has(row.username)) {
-        seen.add(row.username);
+      const key = row.user_id || row.username;
+      if (!seen.has(key)) {
+        seen.add(key);
         result.push(row);
-        if (result.length >= 10) break;
       }
     }
     return result;
   })();
+
+  const leaderboard = fullRanking.slice(0, 10);
+
+  // The logged-in student's position in the full ranking (1-based) and their best row.
+  const myIndex = fullRanking.findIndex(rowIsMe);
+  const myRank  = myIndex >= 0 ? myIndex + 1 : null;
+  const myEntry = myIndex >= 0 ? fullRanking[myIndex] : null;
 
   return (
     <div className="dashboard-page-container">
@@ -90,6 +110,49 @@ const Leaderboard = () => {
               </div>
             </div>
 
+            {/* Logged-in student's own rank — always shown on top */}
+            {!loading && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px',
+                background: myRank ? 'linear-gradient(90deg,#eff6ff,#dbeafe)' : '#f8fafc',
+                border: myRank ? '2px solid #3b82f6' : '1px solid #e2e8f0',
+                borderRadius: '10px', padding: '14px 20px', marginBottom: '20px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <span style={{ fontSize: '1.6rem' }}>🎯</span>
+                  <div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Your Rank</div>
+                    {myRank ? (
+                      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#1d4ed8' }}>
+                        #{myRank} {myRank === 1 && '🥇'} {myRank === 2 && '🥈'} {myRank === 3 && '🥉'}
+                        <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}> of {fullRanking.length}</span>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#475569' }}>
+                        No ranked Live Test{examFilter !== 'All' ? ` for "${examFilter}"` : ''} yet
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {myEntry && (
+                  <div style={{ display: 'flex', gap: '22px', textAlign: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>GWPM</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#475569' }}>{Math.round(myEntry.max_gwpm)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>NWPM</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0b4bcc' }}>{Math.round(myEntry.max_nwpm)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>Accuracy</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>{parseFloat(myEntry.max_accuracy).toFixed(2)}%</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {loading ? (
               <p>Loading leaderboard...</p>
             ) : leaderboard.length === 0 ? (
@@ -107,26 +170,34 @@ const Leaderboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {leaderboard.map((row, index) => (
+                    {leaderboard.map((row, index) => {
+                      const isMe = rowIsMe(row);
+                      const baseBg = isMe ? '#dbeafe' : index === 0 ? '#fefce8' : index === 1 ? '#f8fafc' : index === 2 ? '#fff7ed' : 'white';
+                      return (
                       <tr
                         key={index}
                         style={{
                           borderBottom: '1px solid #e2e8f0',
-                          backgroundColor: index === 0 ? '#fefce8' : index === 1 ? '#f8fafc' : index === 2 ? '#fff7ed' : 'white',
+                          backgroundColor: baseBg,
+                          boxShadow: isMe ? 'inset 3px 0 0 #3b82f6' : 'none',
                           transition: 'background-color 0.2s',
                         }}
-                        onMouseOver={(e) => { if (index > 2) e.currentTarget.style.backgroundColor = '#f8fafc'; }}
-                        onMouseOut={(e) => { if (index > 2) e.currentTarget.style.backgroundColor = 'white'; }}
+                        onMouseOver={(e) => { if (!isMe && index > 2) e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                        onMouseOut={(e) => { if (!isMe && index > 2) e.currentTarget.style.backgroundColor = 'white'; }}
                       >
                         <td style={{ padding: '15px 20px', fontWeight: 'bold', color: index < 3 ? '#b45309' : '#64748b' }}>
                           #{index + 1} {index === 0 && '🥇'} {index === 1 && '🥈'} {index === 2 && '🥉'}
                         </td>
-                        <td style={{ padding: '15px 20px', fontWeight: '600', color: '#1e293b' }}>{row.username}</td>
+                        <td style={{ padding: '15px 20px', fontWeight: '600', color: '#1e293b' }}>
+                          {row.username}
+                          {isMe && <span style={{ marginLeft: '8px', background: '#3b82f6', color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: '10px' }}>You</span>}
+                        </td>
                         <td style={{ padding: '15px 20px', color: '#475569', fontWeight: '600' }}>{Math.round(row.max_gwpm)} WPM</td>
                         <td style={{ padding: '15px 20px', color: '#0b4bcc', fontWeight: 'bold' }}>{Math.round(row.max_nwpm)} WPM</td>
                         <td style={{ padding: '15px 20px', color: '#0f172a' }}>{parseFloat(row.max_accuracy).toFixed(2)}%</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
