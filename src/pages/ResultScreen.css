@@ -53,6 +53,13 @@
 .pa-res-extra { color:#1d4ed8; background:#eff6ff; border-radius:3px; padding:0 3px; }
 .pa-res-space { color:#ea580c; background:#fff7ed; border:1px solid #fed7aa; border-radius:3px; padding:0 2px; font-weight:700; margin:0 1px; }
 
+/* ── Original Passage markings (mirror the typed-passage errors at the same
+      word position for side-by-side comparison) ──────────────────────────── */
+.pa-orig-omit   { background:#fef08a; color:#78350f; border-radius:3px; padding:0 3px; }   /* missing / skipped — yellow */
+.pa-orig-wrong  { background:#fecaca; color:#b91c1c; border-radius:3px; padding:0 3px; }   /* wrong spelling / incorrect — red */
+.pa-orig-half   { background:#fbcfe8; color:#9d174f; border-radius:3px; padding:0 3px; }   /* capitalization / punctuation — pink */
+.pa-orig-repeat { border-bottom:2px dashed #1d4ed8; }                                       /* repeated / extra word inserted here */
+
 /* ── Page shell ─────────────────────────────────────────────── */
 .result-layout {
   min-height: 100vh;

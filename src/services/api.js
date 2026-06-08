@@ -421,8 +421,8 @@ export const resultService = {
     const response = await api.get('/results');
     return response.data;
   },
-  getLeaderboard: async () => {
-    const response = await api.get('/results/leaderboard');
+  getLeaderboard: async (period) => {
+    const response = await api.get('/results/leaderboard', { params: period ? { period } : {} });
     return response.data;
   },
   getChapterRank: async (chapterId, studentId) => {

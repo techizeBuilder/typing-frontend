@@ -875,26 +875,44 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   );
 
   const renderComparePanel = () => {
-    // Two-column compare. ALL error markings live in the "Your Typed Passage" (right)
-    // column only — omissions (strikethrough missed word), wrong words (yellow), half
-    // mistakes (orange), extra/repeated words (blue +) and extra-space markers. The
-    // "Original Passage" (left) column stays plain for clean side-by-side reading.
-    // This only re-locates the existing markings into one column — the error counting,
-    // scoring and detection logic are unchanged.
+    // Two-column compare. BOTH columns carry the error markings at the matching word
+    // position so mistakes can be verified against the source. The "Your Typed Passage"
+    // (right) shows what the student produced — omissions (strikethrough missed word),
+    // wrong words (yellow), half mistakes (orange), extra/repeated words (blue +) and
+    // extra-space markers. The "Original Passage" (left) highlights the corresponding
+    // source word per category — missing/skipped (yellow), wrong spelling (red),
+    // capitalization/punctuation (pink) and repeated/extra insertion points (dashed
+    // underline). This is purely presentational — the error counting, scoring and
+    // detection logic are unchanged.
     const { byRef: extrasByRef, trailing: trailingExtras } = buildExtraWordPlacement(
       referenceWords.length, baseAdditionWords, extraTypedWordRefs, repeatedRanges
     );
 
-    // ── Original Passage: the complete uploaded text, rendered plain with no markings,
-    //    highlights or annotations. referenceWords may be trimmed (re-type tests);
-    //    words beyond it come from the full passage and also render plain.
+    // ── Original Passage: the complete uploaded text, with each word highlighted to
+    //    mirror the mistake made at that position (same categories as the typed column,
+    //    using the spec colours). referenceWords may be trimmed (re-type tests); words
+    //    beyond it come from the full passage and render plain (never compared/scored).
     const origWords = tokenizeResult(originalPassage || referenceWords.join(' '));
     const renderOriginal = () => {
       const out = [];
       const n = Math.max(referenceWords.length, origWords.length);
       for (let i = 0; i < n; i++) {
         const refWord = i < referenceWords.length ? referenceWords[i] : origWords[i];
-        out.push(<span key={i}>{refWord} </span>);
+        let cls = '';
+        if (i < referenceWords.length) {
+          const status = wordStatuses[i] || 'pending';
+          if (status === 'error')            cls = 'pa-orig-wrong';   // wrong spelling / incorrect word — red
+          else if (status === 'half-error')  cls = 'pa-orig-half';    // capitalization / punctuation — pink
+          else if (status === 'pending') {
+            // omission — yellow, mirroring the typed column (trailing skips stay
+            // unmarked when the admin disabled omission counting, to match the score)
+            if (!(i > lastTypedRefIdx && !countOmissions)) cls = 'pa-orig-omit';
+          }
+          // a repeated / extra word was typed at this spot → flag the source position
+          // too (stacks with any status colour via a dashed underline)
+          if (extrasByRef.has(i)) cls = `${cls} pa-orig-repeat`.trim();
+        }
+        out.push(<span key={i} className={cls || undefined}>{refWord} </span>);
       }
       return out;
     };
@@ -1234,12 +1252,21 @@ const ResultScreen = () => {
   const requiredSpeed = pattern?.required_speed ?? 30;
   const requiredAcc   = pattern?.required_accuracy ?? 95;
   const speedToCheck  = qualifyOn === 'GWPM' ? grossSpeedCalculated : netSpeedCalculated;
-  const isQualified   = speedToCheck >= requiredSpeed;
 
-  // Shows actual mistake rate so it can be compared against the 7% ignorable threshold
+  // Actual mistake rate of this attempt (full + half-weighted mistakes ÷ words).
   const ignorableMistakePercent = totalWords > 0
     ? parseFloat(((totalMistakes / totalWords) * 100).toFixed(1))
     : 0;
+  // Admin-configured ceiling on mistakes (0 / unset = not enforced, backward compatible).
+  // When set, the attempt must stay at or below it to qualify, regardless of speed/accuracy.
+  const ignorableLimit = pattern?.ignorable_mistakes_percent ?? 0;
+  const withinIgnorableLimit = !(ignorableLimit > 0) || ignorableMistakePercent <= ignorableLimit;
+
+  // Qualification requires BOTH the speed and accuracy thresholds the admin set, and —
+  // when configured — the mistake rate must not exceed the ignorable-mistakes ceiling.
+  const isQualified = speedToCheck >= requiredSpeed
+    && accuracyCalculated >= requiredAcc
+    && withinIgnorableLimit;
   const testDurationMinutes = location.state?.testDurationMinutes || Math.floor(timeElapsed / 60) || 10;
   const backspaceControl = location.state?.backspaceControl || 'Full Backspace';
 
@@ -1418,7 +1445,7 @@ const ResultScreen = () => {
               </div>
               <div className="final-result-sub">
                 {isQualified
-                  ? `You met the required ${qualifyOn} of ${requiredSpeed} WPM.`
+                  ? `You met the required ${qualifyOn} of ${requiredSpeed} WPM and ${requiredAcc}% accuracy.`
                   : 'You did not meet the required speed and accuracy criteria.'}
               </div>
             </div>
@@ -1584,7 +1611,7 @@ const ResultScreen = () => {
 
         {/* ── Footer Notes ───────────────────────────────── */}
         <div className="sheet-footer-notes">
-          <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} wpm</strong> → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
+          <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} wpm</strong> | Required Accuracy: <strong>{requiredAcc}%</strong> | Your Accuracy: <strong>{accuracyCalculated}%</strong>{ignorableLimit > 0 ? <> | Max Ignorable Mistakes: <strong>{ignorableLimit}%</strong> | Your Mistakes: <strong>{ignorableMistakePercent}%</strong></> : null} → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
           <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>Count as 0.5</strong></p>
           <p>* Punctuation, Capital/Small letter and Extra-Space mistakes count as Half Mistakes; spelling mistakes count as Full Mistakes.</p>
         </div>
