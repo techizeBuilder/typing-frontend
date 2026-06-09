@@ -10,6 +10,7 @@ const PrintSheet = ({
   userId, phone, city, state, profileImage,
   mode, testDurationMinutes, timeTakenStr,
   fullErrors, halfErrors, totalMistakes, halfMistakeEnabled,
+  ignorableEnabled = false, ignorableAllowance = 0, excessMistakes = 0, deductionPerMistake = 10,
   ignorableMistakePercent, penaltyWords, penaltyFactor, penaltyType,
   totalStrokes, totalWords,
   grossSpeedCalculated, netSpeedCalculated, accuracy,
@@ -97,9 +98,11 @@ const PrintSheet = ({
   };
 
   const totalMistakesFormula = `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`;
-  const penaltyFormula = penaltyType === 'Stroke'
-    ? `${totalMistakes} × 5 ÷ 5 × ${penaltyFactor} = ${penaltyWords}`
-    : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
+  const penaltyFormula = ignorableEnabled
+    ? `${excessMistakes} excess (over ${ignorableAllowance} allowed) × ${deductionPerMistake} = ${penaltyWords}`
+    : penaltyType === 'Stroke'
+      ? `${totalMistakes} × 5 ÷ 5 × ${penaltyFactor} = ${penaltyWords}`
+      : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
 
   return (
     <div className="prt-sheet">
@@ -1228,16 +1231,37 @@ const ResultScreen = () => {
   const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + _cap + _pct + repeatedWordCount + extraSpaceCount);
   const effectiveHalfErrors = isStenoResult ? halfErrors : (_cap + _pct + extraSpaceCount);
 
+  // Total weighted mistakes (full = 1, half = 0.5). Shown as-is on the result.
   const totalMistakes = parseFloat(
     (effectiveFullErrors + effectiveHalfErrors * 0.5).toFixed(2)
   );
 
   const penaltyFactor = pattern?.penalty_value ?? 1;
   const penaltyType   = pattern?.penalty_type ?? 'Word';
-  const penaltyWords  = parseFloat(
-    penaltyType === 'Stroke'
-      ? ((totalMistakes * 5 / 5) * penaltyFactor).toFixed(2)
-      : (totalMistakes * penaltyFactor).toFixed(2)
+
+  // ── Ignorable Mistakes rule ─────────────────────────────────────────────────
+  // When enabled: mistakes up to (ignorablePercent)% of the total words typed are
+  // ignored; every mistake BEYOND that allowance deducts (deductionPerMistake)
+  // words from net speed. Net words come off the TOTAL words typed, so the ignored
+  // mistakes do not affect the score at all. When disabled, the legacy penalty
+  // model (totalMistakes × penaltyFactor) applies.
+  const ignorableEnabled = pattern?.ignorable_mistakes_enabled ?? false;
+  const ignorablePercent = Math.max(0, Math.min(100, pattern?.ignorable_mistakes_percent ?? 0));
+  const deductionPerMistake = pattern?.ignorable_penalty_words_per_mistake ?? 10;
+  const ignorableAllowance = ignorableEnabled
+    ? parseFloat((totalWords * (ignorablePercent / 100)).toFixed(2))
+    : 0;
+  const excessMistakes = ignorableEnabled
+    ? parseFloat(Math.max(0, totalMistakes - ignorableAllowance).toFixed(2))
+    : 0;
+
+  const penaltyWords = parseFloat(
+    (ignorableEnabled
+      ? excessMistakes * deductionPerMistake
+      : penaltyType === 'Stroke'
+        ? (totalMistakes * 5 / 5) * penaltyFactor
+        : totalMistakes * penaltyFactor
+    ).toFixed(2)
   );
 
   const netWordsCalculated = parseFloat(Math.max(0, totalWords - penaltyWords).toFixed(2));
@@ -1253,20 +1277,14 @@ const ResultScreen = () => {
   const requiredAcc   = pattern?.required_accuracy ?? 95;
   const speedToCheck  = qualifyOn === 'GWPM' ? grossSpeedCalculated : netSpeedCalculated;
 
-  // Actual mistake rate of this attempt (full + half-weighted mistakes ÷ words).
-  const ignorableMistakePercent = totalWords > 0
-    ? parseFloat(((totalMistakes / totalWords) * 100).toFixed(1))
-    : 0;
-  // Admin-configured ceiling on mistakes (0 / unset = not enforced, backward compatible).
-  // When set, the attempt must stay at or below it to qualify, regardless of speed/accuracy.
-  const ignorableLimit = pattern?.ignorable_mistakes_percent ?? 0;
-  const withinIgnorableLimit = !(ignorableLimit > 0) || ignorableMistakePercent <= ignorableLimit;
+  // Value shown in the "Ignorable Mistake (%)" row — the configured percentage of
+  // mistakes that was forgiven for this attempt (0 when the feature is disabled).
+  const ignorableMistakePercent = ignorableEnabled ? ignorablePercent : 0;
 
-  // Qualification requires BOTH the speed and accuracy thresholds the admin set, and —
-  // when configured — the mistake rate must not exceed the ignorable-mistakes ceiling.
+  // Qualification uses the (already forgiveness-adjusted) speed and accuracy, since
+  // the ignored mistakes have lowered the penalty and raised the accuracy above.
   const isQualified = speedToCheck >= requiredSpeed
-    && accuracyCalculated >= requiredAcc
-    && withinIgnorableLimit;
+    && accuracyCalculated >= requiredAcc;
   const testDurationMinutes = location.state?.testDurationMinutes || Math.floor(timeElapsed / 60) || 10;
   const backspaceControl = location.state?.backspaceControl || 'Full Backspace';
 
@@ -1344,6 +1362,10 @@ const ResultScreen = () => {
           halfErrors={effectiveHalfErrors}
           totalMistakes={totalMistakes}
           halfMistakeEnabled={halfMistakeEnabled}
+          ignorableEnabled={ignorableEnabled}
+          ignorableAllowance={ignorableAllowance}
+          excessMistakes={excessMistakes}
+          deductionPerMistake={deductionPerMistake}
           ignorableMistakePercent={ignorableMistakePercent}
           penaltyWords={penaltyWords}
           penaltyFactor={penaltyFactor}
@@ -1545,6 +1567,7 @@ const ResultScreen = () => {
                 <span className="stat-val">{totalMistakes}</span>
                 <span className="stat-formula">
                   [{effectiveFullErrors} + ({effectiveHalfErrors} × 0.5) = {totalMistakes}]
+                  {ignorableEnabled ? `  ·  Allowance ${ignorablePercent}% of ${totalWords} = ${ignorableAllowance} ignored, ${excessMistakes} excess` : ''}
                 </span>
               </div>
             )}
@@ -1553,7 +1576,9 @@ const ResultScreen = () => {
                 <span className="stat-label">Penalty Words =</span>
                 <span className="stat-val">{penaltyWords}</span>
                 <span className="stat-formula">
-                  {penaltyType === 'Stroke'
+                  {ignorableEnabled
+                    ? `[${excessMistakes} excess mistakes × ${deductionPerMistake} words]`
+                    : penaltyType === 'Stroke'
                     ? `[${totalMistakes} mistakes × 5 strokes / 5 × ${penaltyFactor} factor]`
                     : `[${totalMistakes} mistakes × ${penaltyFactor} penalty factor]`}
                 </span>
@@ -1611,7 +1636,7 @@ const ResultScreen = () => {
 
         {/* ── Footer Notes ───────────────────────────────── */}
         <div className="sheet-footer-notes">
-          <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} wpm</strong> | Required Accuracy: <strong>{requiredAcc}%</strong> | Your Accuracy: <strong>{accuracyCalculated}%</strong>{ignorableLimit > 0 ? <> | Max Ignorable Mistakes: <strong>{ignorableLimit}%</strong> | Your Mistakes: <strong>{ignorableMistakePercent}%</strong></> : null} → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
+          <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} wpm</strong> | Required Accuracy: <strong>{requiredAcc}%</strong> | Your Accuracy: <strong>{accuracyCalculated}%</strong>{ignorableEnabled ? <> | Ignorable Allowance: <strong>{ignorablePercent}%</strong> ({ignorableAllowance} of {totalMistakes} mistakes) | Excess: <strong>{excessMistakes}</strong> × {deductionPerMistake} = <strong>{penaltyWords}</strong> words deducted</> : null} → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
           <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>Count as 0.5</strong></p>
           <p>* Punctuation, Capital/Small letter and Extra-Space mistakes count as Half Mistakes; spelling mistakes count as Full Mistakes.</p>
         </div>

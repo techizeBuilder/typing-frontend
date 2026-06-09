@@ -31,6 +31,8 @@ const AdminStudents = () => {
     fees_amount: '',
     roll_no: '',
     live_tests_limit: '',
+    preload_tests_limit: '',
+    steno_tests_limit: '',
     category: '',
     selectedCategories: []
   });
@@ -58,6 +60,10 @@ const AdminStudents = () => {
     validity_end: '',
     applyLiveTestsLimit: false,
     live_tests_limit: '',
+    applyPreloadTestsLimit: false,
+    preload_tests_limit: '',
+    applyStenoTestsLimit: false,
+    steno_tests_limit: '',
   });
 
   const toggleStudentSelect = (id) => {
@@ -94,6 +100,16 @@ const AdminStudents = () => {
       payload.live_tests_limit = bulkFormData.live_tests_limit === ''
         ? null
         : parseInt(bulkFormData.live_tests_limit, 10);
+    }
+    if (bulkFormData.applyPreloadTestsLimit) {
+      payload.preload_tests_limit = bulkFormData.preload_tests_limit === ''
+        ? null
+        : parseInt(bulkFormData.preload_tests_limit, 10);
+    }
+    if (bulkFormData.applyStenoTestsLimit) {
+      payload.steno_tests_limit = bulkFormData.steno_tests_limit === ''
+        ? null
+        : parseInt(bulkFormData.steno_tests_limit, 10);
     }
 
     if (Object.keys(payload).length === 0) {
@@ -171,6 +187,8 @@ const AdminStudents = () => {
       fees_amount: student.fees_amount || '',
       roll_no: student.roll_no || '',
       live_tests_limit: student.live_tests_limit !== null && student.live_tests_limit !== undefined ? student.live_tests_limit : '',
+      preload_tests_limit: student.preload_tests_limit !== null && student.preload_tests_limit !== undefined ? student.preload_tests_limit : '',
+      steno_tests_limit: student.steno_tests_limit !== null && student.steno_tests_limit !== undefined ? student.steno_tests_limit : '',
       category: student.category || '',
       selectedCategories: existingCats
     });
@@ -224,6 +242,16 @@ const AdminStudents = () => {
         payload.live_tests_limit = null;
       } else {
         payload.live_tests_limit = parseInt(payload.live_tests_limit, 10);
+      }
+      if (payload.preload_tests_limit === '') {
+        payload.preload_tests_limit = null;
+      } else {
+        payload.preload_tests_limit = parseInt(payload.preload_tests_limit, 10);
+      }
+      if (payload.steno_tests_limit === '') {
+        payload.steno_tests_limit = null;
+      } else {
+        payload.steno_tests_limit = parseInt(payload.steno_tests_limit, 10);
       }
       if (!payload.password_hash || payload.password_hash.trim() === '') {
         delete payload.password_hash;
@@ -436,6 +464,40 @@ const AdminStudents = () => {
               />
             </div>
 
+            <div className="form-section">
+              <h4>Pre-load Tests Limit</h4>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={bulkFormData.applyPreloadTestsLimit} onChange={e => setBulkFormData(f => ({ ...f, applyPreloadTestsLimit: e.target.checked }))} />
+                Update pre-load tests limit (leave blank for default 10)
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder="Empty = Default 10"
+                disabled={!bulkFormData.applyPreloadTestsLimit}
+                value={bulkFormData.preload_tests_limit}
+                onChange={e => setBulkFormData(f => ({ ...f, preload_tests_limit: e.target.value }))}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyPreloadTestsLimit ? 1 : 0.5 }}
+              />
+            </div>
+
+            <div className="form-section">
+              <h4>Steno Tests Limit</h4>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={bulkFormData.applyStenoTestsLimit} onChange={e => setBulkFormData(f => ({ ...f, applyStenoTestsLimit: e.target.checked }))} />
+                Update steno tests limit (leave blank for default 10)
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder="Empty = Default 10"
+                disabled={!bulkFormData.applyStenoTestsLimit}
+                value={bulkFormData.steno_tests_limit}
+                onChange={e => setBulkFormData(f => ({ ...f, steno_tests_limit: e.target.value }))}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyStenoTestsLimit ? 1 : 0.5 }}
+              />
+            </div>
+
             <div className="form-actions-full" style={{ gap: '10px' }}>
               <button type="submit" className="btn-primary">Apply to {selectedStudentIds.size} Student(s)</button>
               <button type="button" className="btn-secondary" onClick={() => setShowBulkEditModal(false)}>Cancel</button>
@@ -592,6 +654,16 @@ const AdminStudents = () => {
                   <div className="input-group">
                     <label>Live Tests Per Day Limit</label>
                     <input type="number" min="0" placeholder="Empty = Default 1" value={formData.live_tests_limit} onChange={(e) => setFormData({...formData, live_tests_limit: e.target.value})} />
+                  </div>
+                </div>
+                <div className="admin-inline-group">
+                  <div className="input-group">
+                    <label>Pre-load Tests Limit</label>
+                    <input type="number" min="0" placeholder="Empty = Default 10" value={formData.preload_tests_limit} onChange={(e) => setFormData({...formData, preload_tests_limit: e.target.value})} />
+                  </div>
+                  <div className="input-group">
+                    <label>Steno Tests Limit</label>
+                    <input type="number" min="0" placeholder="Empty = Default 10" value={formData.steno_tests_limit} onChange={(e) => setFormData({...formData, steno_tests_limit: e.target.value})} />
                   </div>
                 </div>
                 <div className="admin-inline-group">

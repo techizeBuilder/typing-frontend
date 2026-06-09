@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { userService, resultService } from '../services/api';
+import { userService, resultService, offlineTestService } from '../services/api';
 import { API_BASE_URL } from '../config';
 import DashboardNav from '../components/DashboardNav';
 import Header from '../components/Header';
@@ -30,6 +30,62 @@ const filterByDays = (results, days) => {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   return results.filter(r => new Date(r.date_taken) >= cutoff);
+};
+
+// Default download allowances when the admin hasn't set a per-student limit.
+const DEFAULT_PRELOAD_LIMIT = 10;
+const DEFAULT_STENO_LIMIT = 10;
+
+// A result/test row is "Steno" if its mode or test_type mentions steno.
+const isStenoResult = (r) =>
+  (r.mode || '').toLowerCase().includes('steno') ||
+  (r.test_type || '').toLowerCase().includes('steno');
+
+// Live Tests require an internet connection and cannot be downloaded for offline
+// practice, so they are excluded from the download lists.
+const isLiveResult = (r) =>
+  (r.test_type || r.chapter?.test_type || '').toLowerCase().includes('live');
+
+// Resolve the language (Hindi / English) for a row from its mode, test_type,
+// chapter language or exam category — whichever first mentions the script.
+const langOf = (r) => {
+  const s = `${r.mode || ''} ${r.test_type || ''} ${r.chapter?.language_type || ''} ${r.exam?.category || ''}`.toLowerCase();
+  return s.includes('hindi') ? 'Hindi' : 'English';
+};
+
+// Chapter number for a row, or a dash when not linked to a chapter.
+const chapterNoOf = (r) => (r.chapter?.chapter_no != null ? r.chapter.chapter_no : '—');
+
+// Composite key identifying a downloadable test in the offline store. Mirrors the
+// exam + mode keys used when saving, so a row can be matched against saved entries.
+const offlineKey = (examId, mode, chapterId) => `${examId}::${mode}::${chapterId}`;
+const rowOfflineKey = (r) =>
+  offlineKey(r.exam?.id || r.exam_id || null, r.mode || r.chapter?.font_group || null, r.chapter?.id || null);
+
+// Convert a Blob to a base64 string (no data: prefix) for IPC audio storage.
+const blobToBase64 = (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+// Download a single Steno chapter's dictation audio and store it locally so the
+// test can be taken offline. No-op outside Electron or when no audio exists.
+const cacheChapterAudio = async (chapterId) => {
+  if (!chapterId || !window.electronAPI?.saveAudio) return;
+  if (window.electronAPI.hasAudio) {
+    const { exists } = await window.electronAPI.hasAudio(chapterId);
+    if (exists) return; // already saved locally
+  }
+  const token = localStorage.getItem('token');
+  const res = await fetch(`${API_BASE_URL}/chapters/${chapterId}/audio`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return; // chapter has no audio attached
+  const base64 = await blobToBase64(await res.blob());
+  await window.electronAPI.saveAudio(chapterId, base64);
 };
 
 // ─── SVG Line Chart ──────────────────────────────────────────────────────────
@@ -152,6 +208,11 @@ const StudentProfile = () => {
   const [speedDays, setSpeedDays] = useState(7);
   const [accDays, setAccDays] = useState(7);
   const [mistakeDays, setMistakeDays] = useState(7);
+  const [downloadNotice, setDownloadNotice] = useState('');
+  const [downloadOk, setDownloadOk] = useState(false);
+  const [downloadingKey, setDownloadingKey] = useState(null);
+  // Composite keys (examId::mode::chapterId) of tests already saved for offline use.
+  const [downloadedKeys, setDownloadedKeys] = useState(new Set());
   const fileInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
@@ -159,7 +220,22 @@ const StudentProfile = () => {
     password: '', confirm_password: ''
   });
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); refreshDownloaded(); }, []);
+
+  // Build the set of tests already saved for offline use, so their Download
+  // buttons can be disabled/shown as downloaded.
+  const refreshDownloaded = async () => {
+    try {
+      const data = await offlineTestService.getTests();
+      const set = new Set();
+      (data.tests || []).forEach(t => {
+        (t.chapters || []).forEach(c => { if (c?.id) set.add(offlineKey(t.examId, t.mode, c.id)); });
+      });
+      setDownloadedKeys(set);
+    } catch (err) {
+      console.warn('[Downloads] Could not read offline store:', err?.message);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -295,6 +371,80 @@ const StudentProfile = () => {
   const daysLeft = user?.validity_end
     ? Math.max(0, Math.ceil((new Date(user.validity_end) - new Date()) / 86400000))
     : null;
+
+  // ── Download allowances (admin-controlled, per student) ─────────────────────
+  const typingDownloadLimit = user?.preload_tests_limit ?? DEFAULT_PRELOAD_LIMIT;
+  const stenoDownloadLimit  = user?.steno_tests_limit ?? DEFAULT_STENO_LIMIT;
+
+  // Only downloadable (non-Live) tests appear in the lists — Live Tests need the internet.
+  const typingDownloads = results.filter(r => !isStenoResult(r) && !isLiveResult(r));
+  const stenoDownloads  = results.filter(r => isStenoResult(r) && !isLiveResult(r));
+
+  // Download a test for offline practice. Gated by the student's allowed count —
+  // beyond the limit we prompt them to contact their administrator instead.
+  // For Steno tests the dictation audio is fetched and stored locally as well so
+  // the test can be taken with no internet connection.
+  const handleDownload = async (kind, index, r) => {
+    const limit = kind === 'steno' ? stenoDownloadLimit : typingDownloadLimit;
+    const noun = kind === 'steno' ? 'dictation' : 'typing test';
+    if (index >= limit) {
+      setDownloadOk(false);
+      setDownloadNotice(
+        `You have reached your limit of ${limit} ${noun} download${limit !== 1 ? 's' : ''}. ` +
+        `Please contact your administrator to unlock more tests.`
+      );
+      return;
+    }
+    if (!r?.chapter?.id) {
+      setDownloadOk(false);
+      setDownloadNotice('This test cannot be downloaded — it is not linked to a chapter.');
+      return;
+    }
+
+    const key = r.id || `${kind}-${index}`;
+    try {
+      setDownloadingKey(key);
+      setDownloadNotice('');
+
+      // Merge this chapter into the offline store, keyed by exam + mode + testType
+      // so the Available Tests screen can find it when offline. The offline reader
+      // and the dashboard always key pre-load tests as exactly 'Pre-load Test', and
+      // Live tests are excluded from these tables, so we normalize the testType —
+      // legacy results may store 'Preloaded' or null, which would never match offline.
+      const examId   = r.exam?.id || r.exam_id || null;
+      const mode     = r.mode || r.chapter?.font_group || null;
+      const testType = 'Pre-load Test';
+
+      const existing = await offlineTestService.getTests();
+      const tests = existing.tests || [];
+      const match = (t) => t.examId === examId && t.mode === mode && t.testType === testType;
+      const current = tests.find(match);
+      const others  = tests.filter(t => !match(t));
+      const chapters = current ? [...current.chapters] : [];
+      if (!chapters.some(c => c.id === r.chapter.id)) chapters.push(r.chapter);
+
+      await offlineTestService.saveTests([...others, {
+        examId, mode, testType,
+        exam: r.exam || null,
+        chapters,
+        saved_at: new Date().toISOString(),
+      }]);
+
+      // Steno tests also need their dictation audio stored for offline use.
+      if (kind === 'steno') await cacheChapterAudio(r.chapter.id);
+
+      // Mark this test as downloaded so its button is disabled immediately.
+      setDownloadedKeys(prev => new Set(prev).add(offlineKey(examId, mode, r.chapter.id)));
+      setDownloadOk(true);
+      setDownloadNotice(`"${r.exam?.name || `Chapter ${chapterNoOf(r)}`}" saved for offline practice.`);
+    } catch (err) {
+      console.error('[Download] failed:', err);
+      setDownloadOk(false);
+      setDownloadNotice('Download failed. Please try again while connected to the internet.');
+    } finally {
+      setDownloadingKey(null);
+    }
+  };
 
   if (loading && !user) return <div className="profile-loading"><div className="spinner" /></div>;
 
@@ -493,6 +643,12 @@ const StudentProfile = () => {
           </div>
 
           {/* ── Row 4: Downloads ── */}
+          {downloadNotice && (
+            <div className={`sp-alert ${downloadOk ? 'sp-alert-success' : 'sp-alert-error'}`} style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span>{downloadOk ? '✓' : '⚠'} {downloadNotice}</span>
+              <button className="sp-btn-outline" style={{ padding: '2px 10px' }} onClick={() => setDownloadNotice('')}>Dismiss</button>
+            </div>
+          )}
           <div className="sp-row-2 sp-downloads-row">
 
             {/* Test Downloads */}
@@ -500,36 +656,55 @@ const StudentProfile = () => {
               <div className="sp-card-header">
                 <div>
                   <div className="sp-section-title">New Test Download</div>
-                  <div className="sp-section-sub">Download Latest Typing Tests For Practice</div>
+                  <div className="sp-section-sub">Download Latest Typing Tests For Practice ({typingDownloadLimit} allowed)</div>
                 </div>
                 <button className="sp-view-all">View All</button>
               </div>
               <table className="sp-table">
                 <thead>
                   <tr>
-                    <th>Title</th><th>Type</th><th>Size</th><th>Added On</th><th>Action</th>
+                    <th>Title</th><th>Type</th><th>Chapter No.</th><th>Language</th><th>Size</th><th>Added On</th><th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {results.slice(0, 9).map((r, i) => (
+                  {typingDownloads.slice(0, 9).map((r, i) => {
+                    const locked = i >= typingDownloadLimit;
+                    const busy = downloadingKey === (r.id || `typing-${i}`);
+                    const downloaded = downloadedKeys.has(rowOfflineKey(r));
+                    return (
                     <tr key={r.id || i}>
                       <td>
                         <span className="sp-file-icon">📄</span>
                         {r.exam?.name || `Test Set-${i + 1}`}
                       </td>
                       <td>{r.test_type || r.mode || 'Typing Test'}</td>
+                      <td>{chapterNoOf(r)}</td>
+                      <td>{langOf(r)}</td>
                       <td>—</td>
                       <td>{fmtShort(r.date_taken)}</td>
                       <td>
-                        <button className="sp-dl-btn" disabled>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          Download
+                        <button
+                          className="sp-dl-btn"
+                          onClick={() => handleDownload('typing', i, r)}
+                          disabled={busy || downloaded}
+                          title={locked ? 'Locked — contact your administrator for more tests' : downloaded ? 'Already downloaded for offline use' : 'Download for offline practice'}
+                          style={locked || downloaded ? { background: '#e2e8f0', color: downloaded ? '#16a34a' : '#64748b', cursor: 'default' } : undefined}
+                        >
+                          {locked ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          ) : downloaded ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          )}
+                          {locked ? 'Locked' : downloaded ? 'Downloaded' : busy ? 'Saving…' : 'Download'}
                         </button>
                       </td>
                     </tr>
-                  ))}
-                  {results.length === 0 && (
-                    <tr><td colSpan="5" className="sp-table-empty">No test records found</td></tr>
+                    );
+                  })}
+                  {typingDownloads.length === 0 && (
+                    <tr><td colSpan="7" className="sp-table-empty">No test records found</td></tr>
                   )}
                 </tbody>
               </table>
@@ -540,36 +715,55 @@ const StudentProfile = () => {
               <div className="sp-card-header">
                 <div>
                   <div className="sp-section-title">New Dictation Download</div>
-                  <div className="sp-section-sub">Download Latest Dictation Files For Practice</div>
+                  <div className="sp-section-sub">Download Latest Dictation Files For Practice ({stenoDownloadLimit} allowed)</div>
                 </div>
                 <button className="sp-view-all">View All</button>
               </div>
               <table className="sp-table">
                 <thead>
                   <tr>
-                    <th>Title</th><th>Duration</th><th>Size</th><th>Added On</th><th>Action</th>
+                    <th>Title</th><th>Chapter No.</th><th>Language</th><th>Duration</th><th>Size</th><th>Added On</th><th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {results.filter(r => r.mode === 'Steno' || r.test_type === 'Steno').slice(0, 9).map((r, i) => (
+                  {stenoDownloads.slice(0, 9).map((r, i) => {
+                    const locked = i >= stenoDownloadLimit;
+                    const busy = downloadingKey === (r.id || `steno-${i}`);
+                    const downloaded = downloadedKeys.has(rowOfflineKey(r));
+                    return (
                     <tr key={r.id || i}>
                       <td>
                         <span className="sp-file-icon">🎧</span>
                         {r.exam?.name || `Dictation Set-${i + 1}`}
                       </td>
+                      <td>{chapterNoOf(r)}</td>
+                      <td>{langOf(r)}</td>
                       <td>{r.time_elapsed ? `${Math.floor(r.time_elapsed / 60)}:${String(r.time_elapsed % 60).padStart(2, '0')}` : '—'}</td>
                       <td>—</td>
                       <td>{fmtShort(r.date_taken)}</td>
                       <td>
-                        <button className="sp-dl-btn" disabled>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          Download
+                        <button
+                          className="sp-dl-btn"
+                          onClick={() => handleDownload('steno', i, r)}
+                          disabled={busy || downloaded}
+                          title={locked ? 'Locked — contact your administrator for more tests' : downloaded ? 'Already downloaded for offline use' : 'Download dictation + audio for offline practice'}
+                          style={locked || downloaded ? { background: '#e2e8f0', color: downloaded ? '#16a34a' : '#64748b', cursor: 'default' } : undefined}
+                        >
+                          {locked ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          ) : downloaded ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          )}
+                          {locked ? 'Locked' : downloaded ? 'Downloaded' : busy ? 'Saving…' : 'Download'}
                         </button>
                       </td>
                     </tr>
-                  ))}
-                  {results.filter(r => r.mode === 'Steno' || r.test_type === 'Steno').length === 0 && (
-                    <tr><td colSpan="5" className="sp-table-empty">No dictation records found</td></tr>
+                    );
+                  })}
+                  {stenoDownloads.length === 0 && (
+                    <tr><td colSpan="7" className="sp-table-empty">No dictation records found</td></tr>
                   )}
                 </tbody>
               </table>

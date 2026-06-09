@@ -3,10 +3,24 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import DashboardNav from '../components/DashboardNav';
 import Header from '../components/Header';
 import { chapterService, userService, resultService, offlineTestService, getCurrentUserUuid } from '../services/api';
+import { API_BASE_URL } from '../config';
 import './StudentDashboard.css';
 import './AvailableTests.css';
 
 const MAX_REATTEMPTS = 3;
+
+// Default number of unlocked tests when the admin hasn't set a per-student limit.
+const DEFAULT_PRELOAD_LIMIT = 10;
+const DEFAULT_STENO_LIMIT = 10;
+
+// Convert a Blob to a base64 string (no data: prefix) for IPC audio storage.
+const blobToBase64 = (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 
 const AvailableTests = () => {
   const location = useLocation();
@@ -24,6 +38,31 @@ const AvailableTests = () => {
   const [downloadStatus, setDownloadStatus] = useState('idle'); // idle | saving | saved | error
 
   const moduleType = localStorage.getItem('moduleType') || 'typing';
+  const isStenoMode = selectedMode === 'Steno English' || selectedMode === 'Steno Hindi';
+
+  // Download + cache the dictation audio for each Steno chapter so the test can
+  // be taken fully offline. No-op for non-Steno modes or outside Electron.
+  const cacheStenoAudio = async (chaptersList) => {
+    if (!isStenoMode || !window.electronAPI?.saveAudio) return;
+    const token = localStorage.getItem('token');
+    for (const ch of chaptersList) {
+      if (!ch?.id) continue;
+      try {
+        if (window.electronAPI.hasAudio) {
+          const { exists } = await window.electronAPI.hasAudio(ch.id);
+          if (exists) continue; // already saved locally
+        }
+        const res = await fetch(`${API_BASE_URL}/chapters/${ch.id}/audio`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) continue; // chapter has no audio attached
+        const base64 = await blobToBase64(await res.blob());
+        await window.electronAPI.saveAudio(ch.id, base64);
+      } catch (err) {
+        console.warn('[Offline Audio] Could not cache chapter', ch.id, err?.message);
+      }
+    }
+  };
 
   // Track online/offline transitions
   useEffect(() => {
@@ -64,6 +103,8 @@ const AvailableTests = () => {
             examId: selectedExam.id, mode: selectedMode, testType,
             exam: selectedExam, chapters, saved_at: new Date().toISOString(),
           }]);
+          // Cache dictation audio alongside the chapters so Steno works offline.
+          await cacheStenoAudio(chapters);
           console.log('[Auto-Offline] Saved', selectedExam?.name, 'for offline use.');
         } catch (err) {
           console.warn('[Auto-Offline] Could not save:', err);
@@ -84,6 +125,10 @@ const AvailableTests = () => {
           setLoading(false);
           return;
         }
+        // Load the cached profile (served from the offline cache) so the
+        // admin-set test limits still apply while offline.
+        const offlineProfile = await userService.getProfile().catch(() => null);
+        if (offlineProfile) setUserProfile(offlineProfile);
         const offlineData = await offlineTestService.getTests();
         const entry = (offlineData.tests || []).find(t =>
           t.examId === selectedExam.id &&
@@ -164,6 +209,8 @@ const AvailableTests = () => {
         saved_at:  new Date().toISOString(),
       };
       await offlineTestService.saveTests([...others, entry]);
+      // Steno tests also need their audio stored locally for offline practice.
+      await cacheStenoAudio(chapters);
       setDownloadStatus('saved');
       setTimeout(() => setDownloadStatus('idle'), 3000);
     } catch (err) {
@@ -266,6 +313,12 @@ const AvailableTests = () => {
   // Determine how many tests are unlocked for the user. Default is 1 if not set by admin.
   const unlockedCount = userProfile?.live_tests_limit ?? 1;
 
+  // Pre-load tests (typing) and Steno tests each have their own admin-set limit.
+  // Steno mode uses steno_tests_limit; other pre-load tests use preload_tests_limit.
+  const preloadUnlockedCount = isStenoMode
+    ? (userProfile?.steno_tests_limit ?? DEFAULT_STENO_LIMIT)
+    : (userProfile?.preload_tests_limit ?? DEFAULT_PRELOAD_LIMIT);
+
   return (
     <div className="dashboard-page-container">
       <Header />
@@ -356,7 +409,8 @@ const AvailableTests = () => {
               ) : filteredChapters.length === 0 ? (
                 <p style={{ padding: '20px', textAlign: 'center', gridColumn: '1 / -1', color: '#94a3b8' }}>No exercises found for {selectedMode}.</p>
               ) : (
-                filteredChapters.map((chapter) => {
+                filteredChapters.map((chapter, index) => {
+                  const isUnlocked = index < preloadUnlockedCount;
                   return (
                     <div key={chapter.id} className="preload-card">
                       <div className="preload-card-icon">
@@ -366,9 +420,19 @@ const AvailableTests = () => {
                         </svg>
                       </div>
                       <div className="preload-card-title">Practice Test {chapter.chapter_no}</div>
-                      <button className="preload-card-btn" onClick={() => handleStartTest(chapter)}>
-                        Start Test
-                      </button>
+                      {isUnlocked ? (
+                        <button className="preload-card-btn" onClick={() => handleStartTest(chapter)}>
+                          Start Test
+                        </button>
+                      ) : (
+                        <button className="preload-card-btn" disabled title="Locked — contact your administrator to unlock more tests" style={{ background: '#e2e8f0', color: '#64748b', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                          Locked
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   );
                 })

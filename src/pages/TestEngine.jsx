@@ -76,6 +76,8 @@ const TestEngine = () => {
   const [showInstructions, setShowInstructions] = useState(false);
   const [s6ShowText, setS6ShowText] = useState(false);
   const [profileImageUrl, setProfileImageUrl] = useState(null);
+  // Brief "processing result" screen shown for 2s after submit before the result.
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Fetch profile image once on mount — used in screens that have a photo provision
   useEffect(() => {
@@ -846,9 +848,18 @@ const TestEngine = () => {
     const totalMist   = finalFull + finalHalf * 0.5;
     const pfactor     = pattern?.penalty_value ?? 1;
     const ptype       = pattern?.penalty_type  ?? 'Word';
-    const penaltyWds  = ptype === 'Stroke'
-      ? (totalMist * 5 / 5) * pfactor
-      : totalMist * pfactor;
+    // Ignorable Mistakes rule: mistakes up to (pct)% of total words typed are free;
+    // each mistake beyond that allowance deducts (deductionPerMistake) words.
+    const ignEnabled  = !!pattern?.ignorable_mistakes_enabled;
+    const ignPct      = ignEnabled ? Math.max(0, Math.min(100, pattern?.ignorable_mistakes_percent ?? 0)) : 0;
+    const ignDeduct   = pattern?.ignorable_penalty_words_per_mistake ?? 10;
+    const ignAllowance = ignEnabled ? totalWords * (ignPct / 100) : 0;
+    const ignExcess   = ignEnabled ? Math.max(0, totalMist - ignAllowance) : 0;
+    const penaltyWds  = ignEnabled
+      ? ignExcess * ignDeduct
+      : ptype === 'Stroke'
+        ? (totalMist * 5 / 5) * pfactor
+        : totalMist * pfactor;
     const finalGwpm = Math.round(totalWords / minutes);
     const finalNwpm = Math.max(0, Math.round((totalWords - penaltyWds) / minutes));
     // Accuracy = (NWPM / GWPM) × 100  per standard typing test formula (PDF rule)
@@ -891,7 +902,9 @@ const TestEngine = () => {
         qualify_on: pattern.qualify_on,
         required_speed: pattern.required_speed,
         required_accuracy: pattern.required_accuracy,
+        ignorable_mistakes_enabled: pattern.ignorable_mistakes_enabled ?? false,
         ignorable_mistakes_percent: pattern.ignorable_mistakes_percent,
+        ignorable_penalty_words_per_mistake: pattern.ignorable_penalty_words_per_mistake ?? 10,
         show_half_mistakes: pattern.show_half_mistakes,
         show_full_mistakes: pattern.show_full_mistakes,
         show_total_strokes: pattern.show_total_strokes,
@@ -907,8 +920,10 @@ const TestEngine = () => {
       } : null,
     };
 
-    // Navigate immediately — don't block on DB save
-    navigate('/result', { state: finalData });
+    // Show a brief "processing result" screen for 2s, then go to the result.
+    // The DB save below runs in the background during this delay.
+    setIsProcessing(true);
+    setTimeout(() => navigate('/result', { state: finalData }), 2000);
 
     // Save in background. We surface errors via console + a sessionStorage flag
     // so the next page load can warn the student that their result wasn't stored.
@@ -936,7 +951,9 @@ const TestEngine = () => {
           qualify_on: pattern.qualify_on,
           required_speed: pattern.required_speed,
           required_accuracy: pattern.required_accuracy,
-        ignorable_mistakes_percent: pattern.ignorable_mistakes_percent,
+          ignorable_mistakes_enabled: pattern.ignorable_mistakes_enabled ?? false,
+          ignorable_mistakes_percent: pattern.ignorable_mistakes_percent,
+          ignorable_penalty_words_per_mistake: pattern.ignorable_penalty_words_per_mistake ?? 10,
           show_half_mistakes: pattern.show_half_mistakes,
           show_full_mistakes: pattern.show_full_mistakes,
           show_total_strokes: pattern.show_total_strokes,
@@ -973,6 +990,13 @@ const TestEngine = () => {
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
+  if (isProcessing) return (
+    <div className="test-processing-overlay">
+      <div className="test-processing-spinner" />
+      <div className="test-processing-title">Processing your result…</div>
+      <div className="test-processing-sub">Please wait while we calculate your speed and accuracy.</div>
+    </div>
+  );
   if (loading) return <div className="loading-screen">Preparing Test...</div>;
 
   const isLineByLine = screenType === 'Screen-4';
