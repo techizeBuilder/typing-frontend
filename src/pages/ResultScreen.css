@@ -40,10 +40,15 @@
 
 /* ── Compare panel ───────────────────────────────────────────────────────── */
 .pa-compare-layout { display:flex; flex-direction:column; gap:0; }
-.pa-compare-cols { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
-.pa-compare-col:first-child { border-right:1px solid #e2e8f0; }
+/* Stack Original Passage and Your Typed Passage vertically (up & down) */
+.pa-compare-cols { display:grid; grid-template-columns:1fr; gap:0; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+.pa-compare-col:first-child { border-bottom:1px solid #e2e8f0; }
 .pa-compare-header { background:#1a9e8f; color:#fff; font-weight:700; font-size:0.88rem; padding:8px 14px; text-align:center; }
 .pa-compare-body { padding:12px 14px; font-size:0.88rem; line-height:1.9; color:#374151; max-height:240px; overflow-y:auto; background:#fff; font-family:'Courier New',monospace; white-space:pre-wrap; }
+
+/* In full screen, give each stacked passage more height */
+:fullscreen .pa-compare-body { max-height:38vh; }
+:-webkit-full-screen .pa-compare-body { max-height:38vh; }
 .pa-result-bar { background:#f0fdf4; border:1px solid #bbf7d0; border-top:none; border-radius:0 0 8px 8px; padding:10px 14px; }
 .pa-result-bar-label { font-weight:700; font-size:0.8rem; color:#15803d; text-align:center; margin-bottom:6px; }
 .pa-result-text { font-size:0.88rem; line-height:2; font-family:'Courier New',monospace; flex-wrap:wrap; }
@@ -419,9 +424,10 @@
   border: none;
   border-bottom: 3px solid transparent;
   background: transparent;
-  font-size: 0.87rem;
-  font-weight: 600;
-  color: #64748b;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1d4ed8;
+  letter-spacing: 0.2px;
   cursor: pointer;
   transition: all 0.18s;
   margin-bottom: -2px;

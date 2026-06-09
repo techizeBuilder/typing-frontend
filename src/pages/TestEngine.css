@@ -2311,6 +2311,17 @@
   gap: 10px;
 }
 
+.s1new-toolbar-timer {
+  background: #fee2e2;
+  border: 1px solid #ef4444;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #b91c1c;
+  white-space: nowrap;
+}
+
 .s1new-blue-btn {
   background-color: #1d4ed8;
   color: #ffffff;

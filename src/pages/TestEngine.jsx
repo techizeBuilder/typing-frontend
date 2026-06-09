@@ -857,8 +857,9 @@ const TestEngine = () => {
     const ignExcess   = ignEnabled ? Math.max(0, totalMist - ignAllowance) : 0;
     const penaltyWds  = ignEnabled
       ? ignExcess * ignDeduct
+      // Stroke penalty: (pfactor) strokes per mistake → words (1 word = 5 strokes).
       : ptype === 'Stroke'
-        ? (totalMist * 5 / 5) * pfactor
+        ? totalMist * pfactor / 5
         : totalMist * pfactor;
     const finalGwpm = Math.round(totalWords / minutes);
     const finalNwpm = Math.max(0, Math.round((totalWords - penaltyWds) / minutes));
@@ -1458,6 +1459,9 @@ const TestEngine = () => {
         <div className="s1new-main">
           <div className="s1new-toolbar">
             <button className="s1new-blue-btn s1new-btn-submit" onClick={() => handleFinish()}>Submit</button>
+            {isFullscreen && (
+              <div className="s1new-toolbar-timer">{formatTime(timeLeft)} Time Left</div>
+            )}
             <div className="s1new-toolbar-right">
               <button
                 className="s1new-blue-btn"
