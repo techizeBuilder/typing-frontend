@@ -335,7 +335,7 @@ const StenoTestEngine = () => {
       const gwpm            = Math.round(totalWordsTyped / minutes);
       const penaltyFactor   = pattern?.penalty_value || 1;
       const totalMistakes   = fullErrors + halfErrors * 0.5;
-      const penaltyWords    = totalMistakes * penaltyFactor;
+      const penaltyWords    = (pattern?.penalty_type === 'Stroke' ? totalMistakes / 5 : totalMistakes) * penaltyFactor;
       const nwpm            = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
       const accuracy        = totalStrokes > 0
         ? Math.round(((totalWordsTyped - totalMistakes) / totalWordsTyped) * 100)
@@ -461,8 +461,9 @@ const StenoTestEngine = () => {
     const excessMistakes      = ignorableEnabled ? Math.max(0, totalMistakes - ignorableAllowance) : 0;
     const penaltyWords    = ignorableEnabled
       ? excessMistakes * deductionPerMistake
+      // Stroke penalty: (penaltyFactor) strokes per mistake → words (1 word = 5 strokes).
       : penaltyType === 'Stroke'
-        ? (totalMistakes * 5 / 5) * penaltyFactor
+        ? totalMistakes * penaltyFactor / 5
         : totalMistakes * penaltyFactor;
 
     const gwpm     = Math.round(totalWords / minutes);

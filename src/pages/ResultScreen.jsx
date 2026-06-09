@@ -101,7 +101,7 @@ const PrintSheet = ({
   const penaltyFormula = ignorableEnabled
     ? `${excessMistakes} excess (over ${ignorableAllowance} allowed) × ${deductionPerMistake} = ${penaltyWords}`
     : penaltyType === 'Stroke'
-      ? `${totalMistakes} × 5 ÷ 5 × ${penaltyFactor} = ${penaltyWords}`
+      ? `${totalMistakes} × ${penaltyFactor} ÷ 5 = ${penaltyWords}`
       : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
 
   return (
@@ -1259,7 +1259,9 @@ const ResultScreen = () => {
     (ignorableEnabled
       ? excessMistakes * deductionPerMistake
       : penaltyType === 'Stroke'
-        ? (totalMistakes * 5 / 5) * penaltyFactor
+        // Penalty set in strokes: deduct (penaltyFactor) strokes per mistake,
+        // converted to words (1 word = 5 strokes) since net speed is word-based.
+        ? totalMistakes * penaltyFactor / 5
         : totalMistakes * penaltyFactor
     ).toFixed(2)
   );
@@ -1579,7 +1581,7 @@ const ResultScreen = () => {
                   {ignorableEnabled
                     ? `[${excessMistakes} excess mistakes × ${deductionPerMistake} words]`
                     : penaltyType === 'Stroke'
-                    ? `[${totalMistakes} mistakes × 5 strokes / 5 × ${penaltyFactor} factor]`
+                    ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes ÷ 5 strokes/word]`
                     : `[${totalMistakes} mistakes × ${penaltyFactor} penalty factor]`}
                 </span>
               </div>
