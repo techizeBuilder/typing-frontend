@@ -101,8 +101,8 @@ const PrintSheet = ({
   const penaltyFormula = ignorableEnabled
     ? `${excessMistakes} excess (over ${ignorableAllowance} allowed) × ${deductionPerMistake} = ${penaltyWords}`
     : penaltyType === 'Stroke'
-      ? `${totalMistakes} × ${penaltyFactor} ÷ 5 = ${penaltyWords}`
-      : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
+      ? `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`
+      : `${totalMistakes} × ${penaltyFactor} ÷ 5 = ${penaltyWords}`;
 
   return (
     <div className="prt-sheet">
@@ -1259,10 +1259,11 @@ const ResultScreen = () => {
     (ignorableEnabled
       ? excessMistakes * deductionPerMistake
       : penaltyType === 'Stroke'
-        // Penalty set in strokes: deduct (penaltyFactor) strokes per mistake,
-        // converted to words (1 word = 5 strokes) since net speed is word-based.
-        ? totalMistakes * penaltyFactor / 5
-        : totalMistakes * penaltyFactor
+        // Stroke-based exam: deduct (penaltyFactor) strokes per mistake directly;
+        // the penalty stays in strokes, so no ÷5 word conversion is applied.
+        ? totalMistakes * penaltyFactor
+        // Word-based exam: convert the stroke penalty to words (1 word = 5 strokes).
+        : totalMistakes * penaltyFactor / 5
     ).toFixed(2)
   );
 
@@ -1581,8 +1582,8 @@ const ResultScreen = () => {
                   {ignorableEnabled
                     ? `[${excessMistakes} excess mistakes × ${deductionPerMistake} words]`
                     : penaltyType === 'Stroke'
-                    ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes ÷ 5 strokes/word]`
-                    : `[${totalMistakes} mistakes × ${penaltyFactor} penalty factor]`}
+                    ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes]`
+                    : `[${totalMistakes} mistakes × ${penaltyFactor} penalty factor ÷ 5]`}
                 </span>
               </div>
             )}
