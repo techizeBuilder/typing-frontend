@@ -335,7 +335,8 @@ const StenoTestEngine = () => {
       const gwpm            = Math.round(totalWordsTyped / minutes);
       const penaltyFactor   = pattern?.penalty_value || 1;
       const totalMistakes   = fullErrors + halfErrors * 0.5;
-      const penaltyWords    = (pattern?.penalty_type === 'Stroke' ? totalMistakes / 5 : totalMistakes) * penaltyFactor;
+      // Word-based exam divides the penalty by 5; stroke-based keeps it in strokes.
+      const penaltyWords    = (pattern?.penalty_type === 'Stroke' ? totalMistakes : totalMistakes / 5) * penaltyFactor;
       const nwpm            = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
       const accuracy        = totalStrokes > 0
         ? Math.round(((totalWordsTyped - totalMistakes) / totalWordsTyped) * 100)
@@ -461,10 +462,11 @@ const StenoTestEngine = () => {
     const excessMistakes      = ignorableEnabled ? Math.max(0, totalMistakes - ignorableAllowance) : 0;
     const penaltyWords    = ignorableEnabled
       ? excessMistakes * deductionPerMistake
-      // Stroke penalty: (penaltyFactor) strokes per mistake → words (1 word = 5 strokes).
+      // Stroke-based exam: penalty stays in strokes (no ÷5 conversion).
       : penaltyType === 'Stroke'
-        ? totalMistakes * penaltyFactor / 5
-        : totalMistakes * penaltyFactor;
+        ? totalMistakes * penaltyFactor
+        // Word-based exam: convert stroke penalty to words (1 word = 5 strokes).
+        : totalMistakes * penaltyFactor / 5;
 
     const gwpm     = Math.round(totalWords / minutes);
     const nwpm     = Math.max(0, Math.round((totalWords - penaltyWords) / minutes));

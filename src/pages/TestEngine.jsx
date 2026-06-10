@@ -216,7 +216,8 @@ const TestEngine = () => {
       const halfMistakeEnabled = pattern?.half_mistake_enabled || false;
       const penaltyFactor = pattern?.penalty_value || 1;
       const totalMistakes = fullErrors + halfErrors * 0.5;
-      const penaltyWords = (pattern?.penalty_type === 'Stroke' ? totalMistakes / 5 : totalMistakes) * penaltyFactor;
+      // Word-based exam divides the penalty by 5; stroke-based keeps it in strokes.
+      const penaltyWords = (pattern?.penalty_type === 'Stroke' ? totalMistakes : totalMistakes / 5) * penaltyFactor;
       const nwpm = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
       // Accuracy = (NWPM / GWPM) × 100  [standard typing test formula]
     const accuracy = gwpm > 0
@@ -857,10 +858,11 @@ const TestEngine = () => {
     const ignExcess   = ignEnabled ? Math.max(0, totalMist - ignAllowance) : 0;
     const penaltyWds  = ignEnabled
       ? ignExcess * ignDeduct
-      // Stroke penalty: (pfactor) strokes per mistake → words (1 word = 5 strokes).
+      // Stroke-based exam: penalty stays in strokes (no ÷5 conversion).
       : ptype === 'Stroke'
-        ? totalMist * pfactor / 5
-        : totalMist * pfactor;
+        ? totalMist * pfactor
+        // Word-based exam: convert stroke penalty to words (1 word = 5 strokes).
+        : totalMist * pfactor / 5;
     const finalGwpm = Math.round(totalWords / minutes);
     const finalNwpm = Math.max(0, Math.round((totalWords - penaltyWds) / minutes));
     // Accuracy = (NWPM / GWPM) × 100  per standard typing test formula (PDF rule)
