@@ -265,7 +265,7 @@ const AdminChapters = () => {
             <div className="form-section">
               <div className="input-group">
                 <label>Chapter No</label>
-                <input type="number" value={formData.chapter_no} onChange={(e) => setFormData({...formData, chapter_no: e.target.value})} placeholder="e.g. 101" required />
+                <input type="text" value={formData.chapter_no} onChange={(e) => setFormData({...formData, chapter_no: e.target.value})} placeholder="e.g. 101, A-1, CH-01" required />
               </div>
               <div className="input-group">
                 <label>Select Date</label>
