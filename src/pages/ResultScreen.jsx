@@ -12,6 +12,8 @@ const PrintSheet = ({
   fullErrors, halfErrors, totalMistakes, halfMistakeEnabled,
   ignorableEnabled = false, ignorableAllowance = 0, excessMistakes = 0, deductionPerMistake = 10,
   ignorableMistakePercent, penaltyWords, penaltyFactor, penaltyType,
+  unitLabel = 'Words', grossAbbr = 'GWPM', netAbbr = 'NWPM', speedUnit = 'wpm',
+  penaltyDiv5 = false, penaltyMul5 = false,
   totalStrokes, totalWords,
   grossSpeedCalculated, netSpeedCalculated, accuracy,
   qualifyOn, requiredSpeed, isQualified, netWordsCalculated, correctWordsCalculated,
@@ -100,9 +102,11 @@ const PrintSheet = ({
   const totalMistakesFormula = `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`;
   const penaltyFormula = ignorableEnabled
     ? `${excessMistakes} excess (over ${ignorableAllowance} allowed) × ${deductionPerMistake} = ${penaltyWords}`
-    : penaltyType === 'Stroke'
-      ? `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`
-      : `${totalMistakes} × ${penaltyFactor} ÷ 5 = ${penaltyWords}`;
+    : penaltyDiv5
+      ? `${totalMistakes} × ${penaltyFactor} ÷ 5 = ${penaltyWords}`
+      : penaltyMul5
+        ? `${totalMistakes} × ${penaltyFactor} × 5 = ${penaltyWords}`
+        : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
 
   return (
     <div className="prt-sheet">
@@ -193,13 +197,13 @@ const PrintSheet = ({
           <tr>
             <td className="prt-perf-lbl">{showCorrectWords ? 'Right Words Typed:' : ''}</td>
             <td className="prt-perf-val prt-val-green">{showCorrectWords ? correctWordsCalculated : ''}</td>
-            <td className="prt-perf-lbl">{showGrossSpeed ? 'Gross Speed (GWPM):' : ''}</td>
-            <td className="prt-perf-val prt-val-blue">{showGrossSpeed ? `${grossSpeedCalculated} WPM` : ''}</td>
-            <td className="prt-perf-lbl">{showNetSpeed ? 'Net Speed (NWPM):' : ''}</td>
-            <td className="prt-perf-val prt-val-green">{showNetSpeed ? `${netSpeedCalculated} WPM` : ''}</td>
+            <td className="prt-perf-lbl">{showGrossSpeed ? `Gross Speed (${grossAbbr}):` : ''}</td>
+            <td className="prt-perf-val prt-val-blue">{showGrossSpeed ? `${grossSpeedCalculated} ${speedUnit.toUpperCase()}` : ''}</td>
+            <td className="prt-perf-lbl">{showNetSpeed ? `Net Speed (${netAbbr}):` : ''}</td>
+            <td className="prt-perf-val prt-val-green">{showNetSpeed ? `${netSpeedCalculated} ${speedUnit.toUpperCase()}` : ''}</td>
           </tr>
           <tr>
-            <td className="prt-perf-lbl">{showPenaltyWords ? 'Penalty Words:' : ''}</td>
+            <td className="prt-perf-lbl">{showPenaltyWords ? `Penalty ${unitLabel}:` : ''}</td>
             <td className="prt-perf-val">{showPenaltyWords ? penaltyWords : ''}</td>
             <td className="prt-perf-lbl prt-formula-col" colSpan={2}>{showPenaltyWords ? `[${penaltyFormula}]` : ''}</td>
             <td className="prt-perf-lbl">{showIgnorableMistakes ? 'Ignorable Mistake (%):' : ''}</td>
@@ -209,7 +213,7 @@ const PrintSheet = ({
             <td className="prt-perf-lbl">{showAccuracy ? 'Accuracy (%):' : ''}</td>
             <td className="prt-perf-val">{showAccuracy ? `${accuracy}%` : ''}</td>
             <td className="prt-perf-lbl">Qualifying Speed ({qualifyOn}):</td>
-            <td className="prt-perf-val">{requiredSpeed} WPM</td>
+            <td className="prt-perf-val">{requiredSpeed} {speedUnit.toUpperCase()}</td>
             <td className="prt-perf-lbl">Status:</td>
             <td className={`prt-perf-val prt-status ${isQualified ? 'prt-pass' : 'prt-fail'}`}>
               {isQualified ? '✔ QUALIFIED' : '✘ UNQUALIFIED'}
@@ -1168,10 +1172,20 @@ const ResultScreen = () => {
   // ─── Pattern-driven Calculations ─────────────────────────────────────────────
   // Pattern controls whether speed counts in Words or Strokes.
   // 'Words' = actual typed word count. 'Strokes' = totalStrokes/5 (industry standard).
-  const speedCount = pattern?.speed_count ?? 'Strokes';
-  const totalWords = speedCount === 'Words'
-    ? actualTypedWordCount
-    : parseFloat((totalStrokes / 5).toFixed(2));
+  const speedCount = pattern?.speed_count ?? 'Strokes';   // 'Words' | 'Strokes'
+  const isStrokeMode = speedCount === 'Strokes';
+
+  // Display unit follows Speed Count: stroke exams report speed / net / penalty
+  // in raw strokes, word exams in words. These labels are threaded through every
+  // result row and the print sheet (Gross Words/Strokes Per Minute, etc.).
+  const unitLabel = isStrokeMode ? 'Strokes' : 'Words';   // "Total ___ Typed", "Net ___ Typed", "Penalty ___"
+  const grossAbbr = isStrokeMode ? 'GSPM' : 'GWPM';
+  const netAbbr   = isStrokeMode ? 'NSPM' : 'NWPM';
+  const speedUnit = isStrokeMode ? 'spm' : 'wpm';
+
+  // Speed base = raw strokes for stroke exams, actual typed words for word exams.
+  // (Variable kept named totalWords as it feeds every downstream net/gross calc.)
+  const totalWords = isStrokeMode ? totalStrokes : actualTypedWordCount;
   const grossSpeedCalculated = parseFloat((totalWords / timeMinutes).toFixed(2));
 
   const halfMistakeEnabled = pattern?.half_mistake_enabled ?? true;
@@ -1255,15 +1269,25 @@ const ResultScreen = () => {
     ? parseFloat(Math.max(0, totalMistakes - ignorableAllowance).toFixed(2))
     : 0;
 
+  // Penalty is expressed in penaltyType's own unit, then converted into the
+  // display (Speed Count) unit so it can be deducted from totalWords:
+  //   • Penalty in Strokes shown in Words   → ÷5  (5 strokes = 1 word)
+  //   • Penalty in Words   shown in Strokes → ×5
+  //   • Same unit                           → no conversion
+  // Word-based penalties are NEVER divided by 5; the ÷5 only ever applies to a
+  // stroke penalty being shown against a word-based speed count.
+  const penaltyDiv5 = penaltyType === 'Stroke' && !isStrokeMode;
+  const penaltyMul5 = penaltyType === 'Word'   &&  isStrokeMode;
+  const penaltyConverted = penaltyDiv5
+    ? totalMistakes * penaltyFactor / 5
+    : penaltyMul5
+      ? totalMistakes * penaltyFactor * 5
+      : totalMistakes * penaltyFactor;
+
   const penaltyWords = parseFloat(
     (ignorableEnabled
       ? excessMistakes * deductionPerMistake
-      : penaltyType === 'Stroke'
-        // Stroke-based exam: deduct (penaltyFactor) strokes per mistake directly;
-        // the penalty stays in strokes, so no ÷5 word conversion is applied.
-        ? totalMistakes * penaltyFactor
-        // Word-based exam: convert the stroke penalty to words (1 word = 5 strokes).
-        : totalMistakes * penaltyFactor / 5
+      : penaltyConverted
     ).toFixed(2)
   );
 
@@ -1373,6 +1397,12 @@ const ResultScreen = () => {
           penaltyWords={penaltyWords}
           penaltyFactor={penaltyFactor}
           penaltyType={penaltyType}
+          unitLabel={unitLabel}
+          grossAbbr={grossAbbr}
+          netAbbr={netAbbr}
+          speedUnit={speedUnit}
+          penaltyDiv5={penaltyDiv5}
+          penaltyMul5={penaltyMul5}
           totalStrokes={totalStrokes}
           totalWords={totalWords}
           grossSpeedCalculated={grossSpeedCalculated}
@@ -1486,7 +1516,7 @@ const ResultScreen = () => {
                 <span className="stat-metric-icon">🕹</span>
                 <span className="stat-metric-value">{grossSpeedCalculated}</span>
               </div>
-              <div className="stat-metric-unit">WPM</div>
+              <div className="stat-metric-unit">{speedUnit.toUpperCase()}</div>
             </div>
           )}
           {showNetSpeed && (
@@ -1496,7 +1526,7 @@ const ResultScreen = () => {
                 <span className="stat-metric-icon">📊</span>
                 <span className="stat-metric-value">{netSpeedCalculated}</span>
               </div>
-              <div className="stat-metric-unit">WPM</div>
+              <div className="stat-metric-unit">{speedUnit.toUpperCase()}</div>
             </div>
           )}
           {showAccuracy && (
@@ -1576,14 +1606,16 @@ const ResultScreen = () => {
             )}
             {showPenaltyWords && (
               <div className="stat-line">
-                <span className="stat-label">Penalty Words =</span>
+                <span className="stat-label">Penalty {unitLabel} =</span>
                 <span className="stat-val">{penaltyWords}</span>
                 <span className="stat-formula">
                   {ignorableEnabled
                     ? `[${excessMistakes} excess mistakes × ${deductionPerMistake} words]`
-                    : penaltyType === 'Stroke'
-                    ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes]`
-                    : `[${totalMistakes} mistakes × ${penaltyFactor} penalty factor ÷ 5]`}
+                    : penaltyDiv5
+                    ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes ÷ 5]`
+                    : penaltyMul5
+                    ? `[${totalMistakes} mistakes × ${penaltyFactor} words × 5]`
+                    : `[${totalMistakes} mistakes × ${penaltyFactor} ${unitLabel.toLowerCase()}]`}
                 </span>
               </div>
             )}
@@ -1592,20 +1624,20 @@ const ResultScreen = () => {
           <div className="stats-col-right">
             {showTotalWords && (
               <div className="stat-line">
-                <span className="stat-label">Total Words Typed =</span>
+                <span className="stat-label">Total {unitLabel} Typed =</span>
                 <span className="stat-val">{totalWords}</span>
                 <span className="stat-formula">
-                  {speedCount === 'Words'
-                    ? `[${actualTypedWordCount} actual words typed]`
-                    : `[${totalStrokes} Keystrokes / 5]`}
+                  {isStrokeMode
+                    ? `[${totalStrokes} keystrokes]`
+                    : `[${actualTypedWordCount} actual words typed]`}
                 </span>
               </div>
             )}
             {showGrossSpeed && (
               <div className="stat-line">
-                <span className="stat-label">Gross Speed (GWPM) =</span>
-                <span className="stat-val highlight-yellow">{grossSpeedCalculated} wpm</span>
-                <span className="stat-formula">[{totalWords} words / {timeMinutes.toFixed(2)} min]</span>
+                <span className="stat-label">Gross Speed ({grossAbbr}) =</span>
+                <span className="stat-val highlight-yellow">{grossSpeedCalculated} {speedUnit}</span>
+                <span className="stat-formula">[{totalWords} {unitLabel.toLowerCase()} / {timeMinutes.toFixed(2)} min]</span>
               </div>
             )}
             {showAccuracy && (
@@ -1616,15 +1648,15 @@ const ResultScreen = () => {
             )}
             {showNetSpeed && (
               <div className="stat-line">
-                <span className="stat-label">Net Words Typed =</span>
+                <span className="stat-label">Net {unitLabel} Typed =</span>
                 <span className="stat-val">{netWordsCalculated}</span>
-                <span className="stat-formula">[{totalWords} - {penaltyWords} penalty words]</span>
+                <span className="stat-formula">[{totalWords} - {penaltyWords} penalty {unitLabel.toLowerCase()}]</span>
               </div>
             )}
             {showNetSpeed && (
               <div className="stat-line">
-                <span className="stat-label">Net Speed (NWPM) =</span>
-                <span className="stat-val highlight-yellow">{netSpeedCalculated} wpm</span>
+                <span className="stat-label">Net Speed ({netAbbr}) =</span>
+                <span className="stat-val highlight-yellow">{netSpeedCalculated} {speedUnit}</span>
                 <span className="stat-formula">[{netWordsCalculated} / {timeMinutes.toFixed(2)} min]</span>
               </div>
             )}
@@ -1639,7 +1671,7 @@ const ResultScreen = () => {
 
         {/* ── Footer Notes ───────────────────────────────── */}
         <div className="sheet-footer-notes">
-          <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} wpm</strong> | Required Accuracy: <strong>{requiredAcc}%</strong> | Your Accuracy: <strong>{accuracyCalculated}%</strong>{ignorableEnabled ? <> | Ignorable Allowance: <strong>{ignorablePercent}%</strong> ({ignorableAllowance} of {totalMistakes} mistakes) | Excess: <strong>{excessMistakes}</strong> × {deductionPerMistake} = <strong>{penaltyWords}</strong> words deducted</> : null} → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
+          <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} {speedUnit}</strong> | Required Accuracy: <strong>{requiredAcc}%</strong> | Your Accuracy: <strong>{accuracyCalculated}%</strong>{ignorableEnabled ? <> | Ignorable Allowance: <strong>{ignorablePercent}%</strong> ({ignorableAllowance} of {totalMistakes} mistakes) | Excess: <strong>{excessMistakes}</strong> × {deductionPerMistake} = <strong>{penaltyWords}</strong> words deducted</> : null} → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
           <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>Count as 0.5</strong></p>
           <p>* Punctuation, Capital/Small letter and Extra-Space mistakes count as Half Mistakes; spelling mistakes count as Full Mistakes.</p>
         </div>

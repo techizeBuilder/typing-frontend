@@ -60,6 +60,9 @@ const TestEngine = () => {
 
   const [userInput, setUserInput] = useState('');
   const [words, setWords] = useState([]);
+  // Whitespace that FOLLOWS each word in the source passage (seps[i] trails words[i]).
+  // Lets the passage render visible ⇥ / ↵ markers where tabs and line breaks exist.
+  const [wordSeps, setWordSeps] = useState([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [wordStatuses, setWordStatuses] = useState([]);
 
@@ -119,11 +122,28 @@ const TestEngine = () => {
     else fetchFallbackChapter();
   }, [passedChapter]);
 
+  // Tokenize while preserving the exact whitespace that follows each word, so the
+  // passage can later surface tabs (⇥) and line breaks (↵) that /\s+/ would collapse.
+  const tokenizeWithSeps = (text) => {
+    const words = [], seps = [];
+    const re = /\S+/g;
+    let match, prevEnd = -1;
+    while ((match = re.exec(text)) !== null) {
+      if (words.length > 0) seps.push(text.slice(prevEnd, match.index));
+      words.push(match[0]);
+      prevEnd = re.lastIndex;
+    }
+    if (words.length > 0) seps.push(''); // last word has no trailing separator
+    return { words, seps };
+  };
+
   const initChapter = (c) => {
     if (!c) { setLoading(false); return; }
     setChapter(c);
     const text = c.content_text || '';
-    let splitWords = text.trim() ? text.trim().split(/\s+/) : [];
+    const tokenized = text.trim() ? tokenizeWithSeps(text) : { words: [], seps: [] };
+    let splitWords = tokenized.words;
+    let splitSeps = tokenized.seps;
     const speedCount = pattern?.speed_count ?? 'Words';
 
     // Industry-standard: 5 keystrokes = 1 word.
@@ -137,7 +157,10 @@ const TestEngine = () => {
     const maxCap = exam?.max_words_strokes || 0;
     if (maxCap > 0) {
       const maxWords = toWords(maxCap);
-      if (splitWords.length > maxWords) splitWords = splitWords.slice(0, maxWords);
+      if (splitWords.length > maxWords) {
+        splitWords = splitWords.slice(0, maxWords);
+        splitSeps = splitSeps.slice(0, maxWords);
+      }
     }
 
     // ── Step 2: no_of_words_strokes — MINIMUM the student must type ─────────────
@@ -151,7 +174,11 @@ const TestEngine = () => {
       const minWords = toWords(minCount);
       if (splitWords.length < minWords) {
         const base = [...splitWords];
-        while (splitWords.length < minWords) splitWords = splitWords.concat(base);
+        const baseSeps = [...splitSeps];
+        while (splitWords.length < minWords) {
+          splitWords = splitWords.concat(base);
+          splitSeps = splitSeps.concat(baseSeps);
+        }
       }
     }
 
@@ -164,10 +191,15 @@ const TestEngine = () => {
       const testMinutes = exam.test_time_minutes || 10;
       const targetWords = Math.ceil(200 * testMinutes);
       const base = [...splitWords];
-      while (splitWords.length < targetWords) splitWords = splitWords.concat(base);
+      const baseSeps = [...splitSeps];
+      while (splitWords.length < targetWords) {
+        splitWords = splitWords.concat(base);
+        splitSeps = splitSeps.concat(baseSeps);
+      }
     }
 
     setWords(splitWords);
+    setWordSeps(splitSeps);
     setWordStatuses(new Array(splitWords.length).fill('pending'));
     setLoading(false);
   };
@@ -271,12 +303,14 @@ const TestEngine = () => {
     const stripPunct = (s) => s.replace(/[.,;:!?'"()\[\]{}\-–—\/\\]/g, '').trim();
     const tCore = stripPunct(t);
     const rCore = stripPunct(r);
-    if (tCore && rCore) {
-      // For Hindi: compare as-is (no case folding); for English: case-insensitive
-      const tCmp = isHindiMode ? tCore : tCore.toLowerCase();
-      const rCmp = isHindiMode ? rCore : rCore.toLowerCase();
-      if (tCmp === rCmp) return 'half-error';
-    }
+    // For Hindi: compare as-is (no case folding); for English: case-insensitive
+    const tCmp = isHindiMode ? tCore : tCore.toLowerCase();
+    const rCmp = isHindiMode ? rCore : rCore.toLowerCase();
+    // Same core content → punctuation-only difference → half mistake. This also
+    // covers two pure-punctuation tokens whose cores are both empty (e.g. an
+    // en-dash "–" typed as an em-dash "—"): a punctuation substitution, not a
+    // full spelling error.
+    if (tCmp === rCmp) return 'half-error';
 
     // Full mistake: spelling error or completely wrong word (A.ii, A.iv)
     return 'error';
@@ -1014,19 +1048,28 @@ const TestEngine = () => {
     }
     return wordsToRender.map((word, relIdx) => {
       const idx = offset + relIdx;
+      // Whitespace following this word in the source — surface tabs / line breaks
+      // that would otherwise be invisible in the word-by-word passage view.
+      const sep = wordSeps[idx] || '';
+      const hasTab = sep.includes('\t');
+      const hasEnter = sep.includes('\n');
       return (
-        <span
-          key={idx}
-          ref={(el) => scrollRef.current[idx] = el}
-          className={`word
-            ${idx === currentWordIndex ? (settings.highlightWord ? `current hl-${settings.highlightColor}` : 'current-no-bg') : ''}
-            ${wordStatuses[idx] === 'correct' ? (settings.highlightError ? 'correct' : '') : ''}
-            ${wordStatuses[idx] === 'half-error' ? (settings.highlightError ? 'half-mistake' : '') : ''}
-            ${wordStatuses[idx] === 'error' ? (settings.highlightError ? 'error' : '') : ''}
-          `}
-        >
-          {word}
-        </span>
+        <React.Fragment key={idx}>
+          <span
+            ref={(el) => scrollRef.current[idx] = el}
+            className={`word
+              ${idx === currentWordIndex ? (settings.highlightWord ? `current hl-${settings.highlightColor}` : 'current-no-bg') : ''}
+              ${wordStatuses[idx] === 'correct' ? (settings.highlightError ? 'correct' : '') : ''}
+              ${wordStatuses[idx] === 'half-error' ? (settings.highlightError ? 'half-mistake' : '') : ''}
+              ${wordStatuses[idx] === 'error' ? (settings.highlightError ? 'error' : '') : ''}
+            `}
+          >
+            {word}
+          </span>
+          {hasTab && <span className="ws-marker ws-tab" title="Tab in passage">⇥</span>}
+          {hasEnter && <span className="ws-marker ws-enter" title="Line break in passage">↵</span>}
+          {hasEnter && <span className="ws-break" />}
+        </React.Fragment>
       );
     });
   };
@@ -1990,7 +2033,9 @@ const TestEngine = () => {
                    onChange={(e) => {
                      const txt = e.target.value;
                      setChapter({ ...chapter, content_text: txt });
-                     setWords(txt.split(/\s+/).filter(w => w.length > 0));
+                     const tk = tokenizeWithSeps(txt);
+                     setWords(tk.words);
+                     setWordSeps(tk.seps);
                    }}
                    style={{ width: '100%', height: '100%', resize: 'none', border: 'none', outline: 'none', background: 'transparent', padding: '10px', fontFamily: hindiFontFamily, fontSize: `${settings.testFontSize}px`, color: '#333' }}
                 />
