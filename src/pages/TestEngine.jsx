@@ -248,8 +248,12 @@ const TestEngine = () => {
       const halfMistakeEnabled = pattern?.half_mistake_enabled || false;
       const penaltyFactor = pattern?.penalty_value || 1;
       const totalMistakes = fullErrors + halfErrors * 0.5;
-      // Word-based exam divides the penalty by 5; stroke-based keeps it in strokes.
-      const penaltyWords = (pattern?.penalty_type === 'Stroke' ? totalMistakes : totalMistakes / 5) * penaltyFactor;
+      // Penalty is deducted in WORDS. A stroke-unit penalty against a WORD speed
+      // count converts ÷5; otherwise it is used directly (never ×5).
+      const speedCount = pattern?.speed_count ?? 'Strokes';
+      const penaltyWords = (pattern?.penalty_type === 'Stroke' && speedCount !== 'Strokes')
+        ? totalMistakes * penaltyFactor / 5
+        : totalMistakes * penaltyFactor;
       const nwpm = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
       // Accuracy = (NWPM / GWPM) × 100  [standard typing test formula]
     const accuracy = gwpm > 0
@@ -890,13 +894,15 @@ const TestEngine = () => {
     const ignDeduct   = pattern?.ignorable_penalty_words_per_mistake ?? 10;
     const ignAllowance = ignEnabled ? totalWords * (ignPct / 100) : 0;
     const ignExcess   = ignEnabled ? Math.max(0, totalMist - ignAllowance) : 0;
+    // Net/Gross speed are always in WORDS, so the penalty is deducted in words.
+    // A stroke-unit penalty against a WORD speed count converts ÷5 (5 strokes =
+    // 1 word); otherwise the penalty (mistakes × factor) is used directly and is
+    // never multiplied by 5.
     const penaltyWds  = ignEnabled
       ? ignExcess * ignDeduct
-      // Stroke-based exam: penalty stays in strokes (no ÷5 conversion).
-      : ptype === 'Stroke'
-        ? totalMist * pfactor
-        // Word-based exam: convert stroke penalty to words (1 word = 5 strokes).
-        : totalMist * pfactor / 5;
+      : (ptype === 'Stroke' && speedCount !== 'Strokes')
+        ? totalMist * pfactor / 5
+        : totalMist * pfactor;
     const finalGwpm = Math.round(totalWords / minutes);
     const finalNwpm = Math.max(0, Math.round((totalWords - penaltyWds) / minutes));
     // Accuracy = (NWPM / GWPM) × 100  per standard typing test formula (PDF rule)

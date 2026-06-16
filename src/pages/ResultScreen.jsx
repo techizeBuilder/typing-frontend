@@ -13,7 +13,7 @@ const PrintSheet = ({
   ignorableEnabled = false, ignorableAllowance = 0, excessMistakes = 0, deductionPerMistake = 10,
   ignorableMistakePercent, penaltyWords, penaltyFactor, penaltyType,
   unitLabel = 'Words', grossAbbr = 'GWPM', netAbbr = 'NWPM', speedUnit = 'wpm',
-  penaltyDiv5 = false, penaltyMul5 = false,
+  penaltyDiv5 = false,
   totalStrokes, totalWords,
   grossSpeedCalculated, netSpeedCalculated, accuracy,
   qualifyOn, requiredSpeed, isQualified, netWordsCalculated, correctWordsCalculated,
@@ -104,9 +104,7 @@ const PrintSheet = ({
     ? `${excessMistakes} excess (over ${ignorableAllowance} allowed) × ${deductionPerMistake} = ${penaltyWords}`
     : penaltyDiv5
       ? `${totalMistakes} × ${penaltyFactor} ÷ 5 = ${penaltyWords}`
-      : penaltyMul5
-        ? `${totalMistakes} × ${penaltyFactor} × 5 = ${penaltyWords}`
-        : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
+      : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
 
   return (
     <div className="prt-sheet">
@@ -1175,17 +1173,20 @@ const ResultScreen = () => {
   const speedCount = pattern?.speed_count ?? 'Strokes';   // 'Words' | 'Strokes'
   const isStrokeMode = speedCount === 'Strokes';
 
-  // Display unit follows Speed Count: stroke exams report speed / net / penalty
-  // in raw strokes, word exams in words. These labels are threaded through every
-  // result row and the print sheet (Gross Words/Strokes Per Minute, etc.).
-  const unitLabel = isStrokeMode ? 'Strokes' : 'Words';   // "Total ___ Typed", "Net ___ Typed", "Penalty ___"
-  const grossAbbr = isStrokeMode ? 'GSPM' : 'GWPM';
-  const netAbbr   = isStrokeMode ? 'NSPM' : 'NWPM';
-  const speedUnit = isStrokeMode ? 'spm' : 'wpm';
+  // Net & Gross Speed are ALWAYS reported in Words, whatever the Speed Count.
+  // Stroke-counted exams convert keystrokes → words (5 strokes = 1 word) for
+  // every speed / net / penalty figure, so the labels never switch to strokes.
+  const unitLabel = 'Words';   // "Total ___ Typed", "Net ___ Typed", "Penalty ___"
+  const grossAbbr = 'GWPM';
+  const netAbbr   = 'NWPM';
+  const speedUnit = 'wpm';
 
-  // Speed base = raw strokes for stroke exams, actual typed words for word exams.
-  // (Variable kept named totalWords as it feeds every downstream net/gross calc.)
-  const totalWords = isStrokeMode ? totalStrokes : actualTypedWordCount;
+  // Speed base in WORDS: stroke exams use keystrokes ÷ 5, word exams use the
+  // actual typed word count. (Variable kept named totalWords as it feeds every
+  // downstream net/gross calc.)
+  const totalWords = isStrokeMode
+    ? parseFloat((totalStrokes / 5).toFixed(2))
+    : actualTypedWordCount;
   const grossSpeedCalculated = parseFloat((totalWords / timeMinutes).toFixed(2));
 
   const halfMistakeEnabled = pattern?.half_mistake_enabled ?? true;
@@ -1269,20 +1270,15 @@ const ResultScreen = () => {
     ? parseFloat(Math.max(0, totalMistakes - ignorableAllowance).toFixed(2))
     : 0;
 
-  // Penalty is expressed in penaltyType's own unit, then converted into the
-  // display (Speed Count) unit so it can be deducted from totalWords:
-  //   • Penalty in Strokes shown in Words   → ÷5  (5 strokes = 1 word)
-  //   • Penalty in Words   shown in Strokes → ×5
-  //   • Same unit                           → no conversion
-  // Word-based penalties are NEVER divided by 5; the ÷5 only ever applies to a
-  // stroke penalty being shown against a word-based speed count.
+  // Net & Gross Speed are always reported in WORDS, so the penalty is always
+  // deducted in words too. A stroke-unit penalty shown against a WORD speed
+  // count is converted ÷5 (5 strokes = 1 word); in every other case — including
+  // a stroke-counted exam — the penalty (mistakes × factor) is used directly and
+  // is NEVER multiplied by 5.
   const penaltyDiv5 = penaltyType === 'Stroke' && !isStrokeMode;
-  const penaltyMul5 = penaltyType === 'Word'   &&  isStrokeMode;
   const penaltyConverted = penaltyDiv5
     ? totalMistakes * penaltyFactor / 5
-    : penaltyMul5
-      ? totalMistakes * penaltyFactor * 5
-      : totalMistakes * penaltyFactor;
+    : totalMistakes * penaltyFactor;
 
   const penaltyWords = parseFloat(
     (ignorableEnabled
@@ -1402,7 +1398,6 @@ const ResultScreen = () => {
           netAbbr={netAbbr}
           speedUnit={speedUnit}
           penaltyDiv5={penaltyDiv5}
-          penaltyMul5={penaltyMul5}
           totalStrokes={totalStrokes}
           totalWords={totalWords}
           grossSpeedCalculated={grossSpeedCalculated}
@@ -1613,8 +1608,6 @@ const ResultScreen = () => {
                     ? `[${excessMistakes} excess mistakes × ${deductionPerMistake} words]`
                     : penaltyDiv5
                     ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes ÷ 5]`
-                    : penaltyMul5
-                    ? `[${totalMistakes} mistakes × ${penaltyFactor} words × 5]`
                     : `[${totalMistakes} mistakes × ${penaltyFactor} ${unitLabel.toLowerCase()}]`}
                 </span>
               </div>
@@ -1628,7 +1621,7 @@ const ResultScreen = () => {
                 <span className="stat-val">{totalWords}</span>
                 <span className="stat-formula">
                   {isStrokeMode
-                    ? `[${totalStrokes} keystrokes]`
+                    ? `[${totalStrokes} keystrokes ÷ 5]`
                     : `[${actualTypedWordCount} actual words typed]`}
                 </span>
               </div>
