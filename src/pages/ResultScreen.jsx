@@ -1241,14 +1241,28 @@ const ResultScreen = () => {
     });
   }
   // For steno fall back to passed-in props; for typing always use wordStatuses-derived values.
-  // repeatedWordCount is added here because repeated words are stripped before alignment and
-  // therefore not reflected in wordStatuses — they must be counted separately.
-  const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + _cap + _pct + repeatedWordCount + extraSpaceCount);
+  //
+  // Full-mistake categories (count as 1 each): spelling/substitution (_sp), omission
+  // (_om), addition (_addCount) and repeated words. repeatedWordCount is added here
+  // because repeated words are stripped before alignment and therefore not reflected
+  // in wordStatuses — they must be counted separately.
+  //
+  // Half-mistake categories (count as 0.5 each): capitalisation (_cap), punctuation
+  // (_pct) and extra spaces. These belong to effectiveHalfErrors ONLY — they must NOT
+  // also be added to effectiveFullErrors, otherwise each one is counted as 1.5
+  // (once as a full mistake + 0.5 as a half mistake), which inflated totalMistakes
+  // and the penalty (e.g. 15 raw errors → bogus 18 weighted mistakes).
+  const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + repeatedWordCount);
   const effectiveHalfErrors = isStenoResult ? halfErrors : (_cap + _pct + extraSpaceCount);
 
-  // Total weighted mistakes (full = 1, half = 0.5). Shown as-is on the result.
+  // Total weighted mistakes. Half categories count as 0.5 each when half-mistakes are
+  // enabled; when disabled they count as full mistakes (1 each). This single weighted
+  // figure drives the penalty so the on-screen result and the PDF stay consistent.
   const totalMistakes = parseFloat(
-    (effectiveFullErrors + effectiveHalfErrors * 0.5).toFixed(2)
+    (halfMistakeEnabled
+      ? effectiveFullErrors + effectiveHalfErrors * 0.5
+      : effectiveFullErrors + effectiveHalfErrors
+    ).toFixed(2)
   );
 
   const penaltyFactor = pattern?.penalty_value ?? 1;
