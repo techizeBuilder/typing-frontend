@@ -245,9 +245,13 @@ const TestEngine = () => {
       const minutes = timeElapsed / 60;
       const totalWordsTyped = totalStrokes / 5;
       const gwpm = Math.round(totalWordsTyped / minutes);
-      const halfMistakeEnabled = pattern?.half_mistake_enabled || false;
+      const halfMistakeEnabled = pattern?.half_mistake_enabled ?? true;
       const penaltyFactor = pattern?.penalty_value || 1;
-      const totalMistakes = fullErrors + halfErrors * 0.5;
+      // Half mistakes count 0.5 each when enabled; when disabled they are ignored
+      // (not added at all — never counted as full).
+      const totalMistakes = halfMistakeEnabled
+        ? fullErrors + halfErrors * 0.5
+        : fullErrors;
       // Penalty is deducted in WORDS. A stroke-unit penalty against a WORD speed
       // count converts ÷5; otherwise it is used directly (never ×5).
       const speedCount = pattern?.speed_count ?? 'Strokes';
@@ -603,8 +607,11 @@ const TestEngine = () => {
       if (extraGroups) half += extraGroups.length;
     }
 
-    // Full = ALL errors (spelling/omission-base + formatting/cap+punct)
-    const full = fullBase + half;
+    // Full mistakes = full-weight categories ONLY (spelling / omission / addition /
+    // repetition). Cap/punct/extra-space are HALF mistakes and are tracked separately
+    // in `half`; they must NOT also be added into the full count or each one is
+    // counted as 1.5 (once as full + 0.5 as half) which inflates the total.
+    const full = fullBase;
 
     setWordStatuses(newStatuses);
     setFullErrors(full);
@@ -853,9 +860,11 @@ const TestEngine = () => {
     // tally so the result calculation includes them.
     const extraSpaceCount = (finalInput.match(/ {2,}/g) || []).length;
     derivedHalf += extraSpaceCount;
-    // Full mistakes = ALL error types (spelling + omission + addition + repetition + cap/punct + extra spaces)
-    // Half mistakes = cap/punct + extra-space subset (gets a 0.5 discount in the formula)
-    finalFull = derivedBase + derivedHalf;
+    // Full mistakes = full-weight categories ONLY (spelling + omission + addition + repetition).
+    // Half mistakes = cap/punct + extra-space subset (counted as 0.5 each, or ignored when
+    // the pattern disables them). The two tallies are disjoint — a half mistake must NEVER
+    // also be added into finalFull, otherwise it is counted as 1.5 (full + 0.5).
+    finalFull = derivedBase;
     finalHalf = derivedHalf;
 
     // ── RE-TYPE mode: trim reference to only the words the student reached ───
@@ -884,7 +893,9 @@ const TestEngine = () => {
     const totalWords  = speedCount === 'Words'
       ? typedFinalWords.length
       : finalStrokes / 5;
-    const totalMist   = finalFull + finalHalf * 0.5;
+    // Half mistakes weigh 0.5 each when enabled; ignored (not counted) when disabled.
+    const halfEnabled = pattern?.half_mistake_enabled ?? true;
+    const totalMist   = halfEnabled ? finalFull + finalHalf * 0.5 : finalFull;
     const pfactor     = pattern?.penalty_value ?? 1;
     const ptype       = pattern?.penalty_type  ?? 'Word';
     // Ignorable Mistakes rule: mistakes up to (pct)% of total words typed are free;
@@ -979,7 +990,7 @@ const TestEngine = () => {
         chapter_id: chapter?.id || null,
         exam_id: exam?.id || null,
         gwpm: finalGwpm, nwpm: finalNwpm, accuracy: finalAcc,
-        total_errors: Math.round(finalFull + finalHalf * 0.5),
+        total_errors: Math.round(totalMist),
         full_errors: finalFull, half_errors: finalHalf,
         total_strokes: finalStrokes, time_elapsed: elapsed,
         user_input: finalInput,
