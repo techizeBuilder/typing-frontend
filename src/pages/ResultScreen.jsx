@@ -113,7 +113,7 @@ const PrintSheet = ({
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="prt-header">
         <div className="prt-logo-wrap">
-          <img src="/balaji logo.jpeg" alt="Exam Logo" className="prt-logo-img"
+          <img src="balaji logo.jpeg" alt="Exam Logo" className="prt-logo-img"
             onError={e => { e.target.style.display='none'; }} />
         </div>
         <div className="prt-header-text">TYPING SKILL TEST RESULT</div>

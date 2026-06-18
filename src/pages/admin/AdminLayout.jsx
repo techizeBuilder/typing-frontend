@@ -17,7 +17,7 @@ const AdminLayout = () => {
     <div className="admin-layout">
       <aside className="admin-sidebar">
         <div className="admin-logo">
-          <img src="/balaji logo.jpeg" alt="Balaji TC" style={{ width: '100%', maxHeight: '80px', objectFit: 'contain', borderRadius: '6px' }} />
+          <img src="balaji logo.jpeg" alt="Balaji TC" style={{ width: '100%', maxHeight: '80px', objectFit: 'contain', borderRadius: '6px' }} />
         </div>
         
         <nav className="admin-nav">

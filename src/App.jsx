@@ -1,5 +1,8 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+// HashRouter (not BrowserRouter) so routing works when the packaged desktop app
+// is loaded from a file:// URL — BrowserRouter reads window.location.pathname,
+// which is the .html file path under file:// and matches no route.
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -29,7 +32,7 @@ import SelfAssessmentSetup from './pages/SelfAssessmentSetup';
 
 function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
@@ -66,7 +69,7 @@ function App() {
             </Route>
           </Route>
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
   );
 }
 

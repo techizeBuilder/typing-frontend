@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { userService, resultService, offlineTestService } from '../services/api';
+import { userService, resultService, offlineTestService, chapterService } from '../services/api';
 import { API_BASE_URL } from '../config';
 import DashboardNav from '../components/DashboardNav';
 import Header from '../components/Header';
@@ -35,6 +35,41 @@ const filterByDays = (results, days) => {
 // Default download allowances when the admin hasn't set a per-student limit.
 const DEFAULT_PRELOAD_LIMIT = 10;
 const DEFAULT_STENO_LIMIT = 10;
+
+// Steno font groups vs. regular typing font groups, used to split preloaded
+// exams into the "New Test Download" (typing) and "New Dictation Download" (steno)
+// sections on the account page.
+const STENO_FONT_GROUPS = ['Steno English', 'Steno Hindi'];
+const isStenoFont = (fontGroup) => STENO_FONT_GROUPS.includes(fontGroup);
+
+// Natural sort for alphanumeric chapter numbers (CH-01, A-1, Unit-5, 2, 10 …) so
+// "10" sorts after "2" and the per-index lock lines up with Available Tests.
+const chapterNoSort = (a, b) =>
+  String(a?.chapter_no ?? '').localeCompare(String(b?.chapter_no ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+
+// Map a font group to the language label shown in the exam/chapter lists.
+const fontLang = (fontGroup) => (String(fontGroup || '').toLowerCase().includes('hindi') ? 'Hindi' : 'English');
+
+// Group a flat list of Pre-load chapters into exams. A chapter can belong to
+// several exams (exam_ids / exams[]), so it appears under each. Returns an array
+// of { exam, chapters } sorted by exam name, chapters sorted by chapter_no.
+const groupChaptersByExam = (chapters) => {
+  const byExam = new Map(); // examId -> { exam, chapters: [] }
+  for (const ch of chapters) {
+    const exams = (Array.isArray(ch.exams) && ch.exams.length > 0)
+      ? ch.exams
+      : (ch.exam ? [ch.exam] : []);
+    for (const exam of exams) {
+      if (!exam?.id) continue;
+      if (!byExam.has(exam.id)) byExam.set(exam.id, { exam, chapters: [] });
+      byExam.get(exam.id).chapters.push(ch);
+    }
+  }
+  const list = Array.from(byExam.values());
+  list.forEach((e) => e.chapters.sort(chapterNoSort));
+  list.sort((a, b) => String(a.exam?.name || '').localeCompare(String(b.exam?.name || '')));
+  return list;
+};
 
 // A result/test row is "Steno" if its mode or test_type mentions steno.
 const isStenoResult = (r) =>
@@ -213,6 +248,13 @@ const StudentProfile = () => {
   const [downloadingKey, setDownloadingKey] = useState(null);
   // Composite keys (examId::mode::chapterId) of tests already saved for offline use.
   const [downloadedKeys, setDownloadedKeys] = useState(new Set());
+  // Preloaded exams (grouped from Pre-load chapters), split into typing vs steno.
+  const [typingExams, setTypingExams] = useState([]);
+  const [stenoExams, setStenoExams] = useState([]);
+  // The exam whose chapter list is open in the popup: { exam, chapters, kind } | null.
+  const [modalExam, setModalExam] = useState(null);
+  // Exam id currently being downloaded, so its button can show a spinner.
+  const [downloadingExamId, setDownloadingExamId] = useState(null);
   const fileInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
@@ -220,7 +262,21 @@ const StudentProfile = () => {
     password: '', confirm_password: ''
   });
 
-  useEffect(() => { fetchData(); refreshDownloaded(); }, []);
+  useEffect(() => { fetchData(); refreshDownloaded(); fetchPreloadExams(); }, []);
+
+  // Load every Pre-load Test chapter once and group it into exams, so the account
+  // page can list downloadable exams (typing + steno) regardless of whether the
+  // student has taken them yet. Works offline via the api-layer response cache.
+  const fetchPreloadExams = async () => {
+    try {
+      const chapters = await chapterService.getChapters(undefined, 'Pre-load Test', undefined);
+      const list = Array.isArray(chapters) ? chapters : [];
+      setTypingExams(groupChaptersByExam(list.filter(c => !isStenoFont(c.font_group))));
+      setStenoExams(groupChaptersByExam(list.filter(c => isStenoFont(c.font_group))));
+    } catch (err) {
+      console.warn('[Downloads] Could not load preloaded exams:', err?.message);
+    }
+  };
 
   // Build the set of tests already saved for offline use, so their Download
   // buttons can be disabled/shown as downloaded.
@@ -376,73 +432,84 @@ const StudentProfile = () => {
   const typingDownloadLimit = user?.preload_tests_limit ?? DEFAULT_PRELOAD_LIMIT;
   const stenoDownloadLimit  = user?.steno_tests_limit ?? DEFAULT_STENO_LIMIT;
 
-  // Only downloadable (non-Live) tests appear in the lists — Live Tests need the internet.
-  const typingDownloads = results.filter(r => !isStenoResult(r) && !isLiveResult(r));
-  const stenoDownloads  = results.filter(r => isStenoResult(r) && !isLiveResult(r));
+  // Lock rule (matches Available Tests): within an exam the first N chapters are
+  // unlocked, where N is the student's admin-set preload/steno limit. Chapters
+  // beyond N stay locked until the administrator raises the limit.
+  const unlockedCountFor = (kind) => (kind === 'steno' ? stenoDownloadLimit : typingDownloadLimit);
 
-  // Download a test for offline practice. Gated by the student's allowed count —
-  // beyond the limit we prompt them to contact their administrator instead.
-  // For Steno tests the dictation audio is fetched and stored locally as well so
-  // the test can be taken with no internet connection.
-  const handleDownload = async (kind, index, r) => {
-    const limit = kind === 'steno' ? stenoDownloadLimit : typingDownloadLimit;
-    const noun = kind === 'steno' ? 'dictation' : 'typing test';
-    if (index >= limit) {
+  // True when every UNLOCKED chapter of an exam is already saved offline.
+  const isExamDownloaded = (kind, exam, chapters) => {
+    const unlocked = chapters.slice(0, unlockedCountFor(kind));
+    if (unlocked.length === 0) return false;
+    return unlocked.every(c => downloadedKeys.has(offlineKey(exam.id, c.font_group, c.id)));
+  };
+
+  // Download a whole preloaded exam for offline use: caches every UNLOCKED chapter
+  // (locked ones are skipped) into the offline store, grouped by font group / mode
+  // so the Available Tests screen finds them while offline. Steno chapters also get
+  // their dictation audio cached so the dictation plays with no internet.
+  const handleDownloadExam = async (kind, exam, chapters) => {
+    const unlocked = chapters.slice(0, unlockedCountFor(kind));
+    if (unlocked.length === 0) {
       setDownloadOk(false);
-      setDownloadNotice(
-        `You have reached your limit of ${limit} ${noun} download${limit !== 1 ? 's' : ''}. ` +
-        `Please contact your administrator to unlock more tests.`
-      );
+      setDownloadNotice('No unlocked chapters to download. Please contact your administrator to unlock tests.');
       return;
     }
-    if (!r?.chapter?.id) {
-      setDownloadOk(false);
-      setDownloadNotice('This test cannot be downloaded — it is not linked to a chapter.');
-      return;
-    }
-
-    const key = r.id || `${kind}-${index}`;
     try {
-      setDownloadingKey(key);
+      setDownloadingExamId(exam.id);
       setDownloadNotice('');
-
-      // Merge this chapter into the offline store, keyed by exam + mode + testType
-      // so the Available Tests screen can find it when offline. The offline reader
-      // and the dashboard always key pre-load tests as exactly 'Pre-load Test', and
-      // Live tests are excluded from these tables, so we normalize the testType —
-      // legacy results may store 'Preloaded' or null, which would never match offline.
-      const examId   = r.exam?.id || r.exam_id || null;
-      const mode     = r.mode || r.chapter?.font_group || null;
       const testType = 'Pre-load Test';
 
+      // Group unlocked chapters by font group — that is the "mode" the offline reader
+      // keys on (examId + mode + testType), so chapters of different scripts within
+      // the same exam are stored under their own entry and still resolve offline.
+      const byMode = new Map();
+      for (const c of unlocked) {
+        const mode = c.font_group || null;
+        if (!byMode.has(mode)) byMode.set(mode, []);
+        byMode.get(mode).push(c);
+      }
+
       const existing = await offlineTestService.getTests();
-      const tests = existing.tests || [];
-      const match = (t) => t.examId === examId && t.mode === mode && t.testType === testType;
-      const current = tests.find(match);
-      const others  = tests.filter(t => !match(t));
-      const chapters = current ? [...current.chapters] : [];
-      if (!chapters.some(c => c.id === r.chapter.id)) chapters.push(r.chapter);
+      let tests = existing.tests || [];
+      const newlyDownloaded = [];
 
-      await offlineTestService.saveTests([...others, {
-        examId, mode, testType,
-        exam: r.exam || null,
-        chapters,
-        saved_at: new Date().toISOString(),
-      }]);
+      for (const [mode, modeChapters] of byMode.entries()) {
+        const match = (t) => t.examId === exam.id && t.mode === mode && t.testType === testType;
+        const current = tests.find(match);
+        tests = tests.filter(t => !match(t));
+        const merged = current ? [...current.chapters] : [];
+        for (const c of modeChapters) {
+          if (!merged.some(x => x.id === c.id)) merged.push(c);
+          newlyDownloaded.push(offlineKey(exam.id, mode, c.id));
+        }
+        tests.push({ examId: exam.id, mode, testType, exam, chapters: merged, saved_at: new Date().toISOString() });
+      }
 
-      // Steno tests also need their dictation audio stored for offline use.
-      if (kind === 'steno') await cacheChapterAudio(r.chapter.id);
+      await offlineTestService.saveTests(tests);
 
-      // Mark this test as downloaded so its button is disabled immediately.
-      setDownloadedKeys(prev => new Set(prev).add(offlineKey(examId, mode, r.chapter.id)));
+      // Steno chapters need their dictation audio stored locally too.
+      if (kind === 'steno') {
+        for (const c of unlocked) await cacheChapterAudio(c.id);
+      }
+
+      setDownloadedKeys(prev => {
+        const next = new Set(prev);
+        newlyDownloaded.forEach(k => next.add(k));
+        return next;
+      });
       setDownloadOk(true);
-      setDownloadNotice(`"${r.exam?.name || `Chapter ${chapterNoOf(r)}`}" saved for offline practice.`);
+      const skipped = chapters.length - unlocked.length;
+      setDownloadNotice(
+        `"${exam.name}" saved for offline practice — ${unlocked.length} chapter${unlocked.length !== 1 ? 's' : ''} downloaded` +
+        (skipped > 0 ? `, ${skipped} locked chapter${skipped !== 1 ? 's' : ''} skipped.` : '.')
+      );
     } catch (err) {
-      console.error('[Download] failed:', err);
+      console.error('[Download Exam] failed:', err);
       setDownloadOk(false);
       setDownloadNotice('Download failed. Please try again while connected to the internet.');
     } finally {
-      setDownloadingKey(null);
+      setDownloadingExamId(null);
     }
   };
 
@@ -651,124 +718,165 @@ const StudentProfile = () => {
           )}
           <div className="sp-row-2 sp-downloads-row">
 
-            {/* Test Downloads */}
+            {/* Test Downloads — preloaded typing exams */}
             <div className="sp-card">
               <div className="sp-card-header">
                 <div>
                   <div className="sp-section-title">New Test Download</div>
-                  <div className="sp-section-sub">Download Latest Typing Tests For Practice ({typingDownloadLimit} allowed)</div>
+                  <div className="sp-section-sub">Preloaded Typing Exams — first {typingDownloadLimit} chapters unlocked each</div>
                 </div>
-                <button className="sp-view-all">View All</button>
               </div>
               <table className="sp-table">
                 <thead>
                   <tr>
-                    <th>Title</th><th>Type</th><th>Chapter No.</th><th>Language</th><th>Size</th><th>Added On</th><th>Action</th>
+                    <th>Exam</th><th>Chapters</th><th>Language</th><th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {typingDownloads.slice(0, 9).map((r, i) => {
-                    const locked = i >= typingDownloadLimit;
-                    const busy = downloadingKey === (r.id || `typing-${i}`);
-                    const downloaded = downloadedKeys.has(rowOfflineKey(r));
+                  {typingExams.length === 0 ? (
+                    <tr><td colSpan="4" className="sp-table-empty">No preloaded typing exams available</td></tr>
+                  ) : typingExams.map(({ exam, chapters }) => {
+                    const downloaded = isExamDownloaded('typing', exam, chapters);
+                    const busy = downloadingExamId === exam.id;
                     return (
-                    <tr key={r.id || i}>
+                    <tr key={exam.id} style={{ cursor: 'pointer' }} onClick={() => setModalExam({ exam, chapters, kind: 'typing' })}>
                       <td>
                         <span className="sp-file-icon">📄</span>
-                        {r.exam?.name || `Test Set-${i + 1}`}
+                        {exam.name}
                       </td>
-                      <td>{r.test_type || r.mode || 'Typing Test'}</td>
-                      <td>{chapterNoOf(r)}</td>
-                      <td>{langOf(r)}</td>
-                      <td>—</td>
-                      <td>{fmtShort(r.date_taken)}</td>
+                      <td>{chapters.length}</td>
+                      <td>{fontLang(chapters[0]?.font_group)}</td>
                       <td>
                         <button
                           className="sp-dl-btn"
-                          onClick={() => handleDownload('typing', i, r)}
-                          disabled={busy || downloaded}
-                          title={locked ? 'Locked — contact your administrator for more tests' : downloaded ? 'Already downloaded for offline use' : 'Download for offline practice'}
-                          style={locked || downloaded ? { background: '#e2e8f0', color: downloaded ? '#16a34a' : '#64748b', cursor: 'default' } : undefined}
+                          onClick={(e) => { e.stopPropagation(); setModalExam({ exam, chapters, kind: 'typing' }); }}
+                          disabled={busy}
+                          title="View chapters and download this exam for offline use"
+                          style={downloaded ? { background: '#f0fdf4', color: '#16a34a' } : undefined}
                         >
-                          {locked ? (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                          ) : downloaded ? (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                          ) : (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          )}
-                          {locked ? 'Locked' : downloaded ? 'Downloaded' : busy ? 'Saving…' : 'Download'}
+                          {downloaded ? '✓ Downloaded' : busy ? 'Saving…' : 'View / Download'}
                         </button>
                       </td>
                     </tr>
                     );
                   })}
-                  {typingDownloads.length === 0 && (
-                    <tr><td colSpan="7" className="sp-table-empty">No test records found</td></tr>
-                  )}
                 </tbody>
               </table>
             </div>
 
-            {/* Dictation Downloads */}
+            {/* Dictation Downloads — preloaded steno exams */}
             <div className="sp-card">
               <div className="sp-card-header">
                 <div>
                   <div className="sp-section-title">New Dictation Download</div>
-                  <div className="sp-section-sub">Download Latest Dictation Files For Practice ({stenoDownloadLimit} allowed)</div>
+                  <div className="sp-section-sub">Preloaded Steno Exams — first {stenoDownloadLimit} chapters unlocked each</div>
                 </div>
-                <button className="sp-view-all">View All</button>
               </div>
               <table className="sp-table">
                 <thead>
                   <tr>
-                    <th>Title</th><th>Chapter No.</th><th>Language</th><th>Duration</th><th>Size</th><th>Added On</th><th>Action</th>
+                    <th>Exam</th><th>Chapters</th><th>Language</th><th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {stenoDownloads.slice(0, 9).map((r, i) => {
-                    const locked = i >= stenoDownloadLimit;
-                    const busy = downloadingKey === (r.id || `steno-${i}`);
-                    const downloaded = downloadedKeys.has(rowOfflineKey(r));
+                  {stenoExams.length === 0 ? (
+                    <tr><td colSpan="4" className="sp-table-empty">No preloaded steno exams available</td></tr>
+                  ) : stenoExams.map(({ exam, chapters }) => {
+                    const downloaded = isExamDownloaded('steno', exam, chapters);
+                    const busy = downloadingExamId === exam.id;
                     return (
-                    <tr key={r.id || i}>
+                    <tr key={exam.id} style={{ cursor: 'pointer' }} onClick={() => setModalExam({ exam, chapters, kind: 'steno' })}>
                       <td>
                         <span className="sp-file-icon">🎧</span>
-                        {r.exam?.name || `Dictation Set-${i + 1}`}
+                        {exam.name}
                       </td>
-                      <td>{chapterNoOf(r)}</td>
-                      <td>{langOf(r)}</td>
-                      <td>{r.time_elapsed ? `${Math.floor(r.time_elapsed / 60)}:${String(r.time_elapsed % 60).padStart(2, '0')}` : '—'}</td>
-                      <td>—</td>
-                      <td>{fmtShort(r.date_taken)}</td>
+                      <td>{chapters.length}</td>
+                      <td>{fontLang(chapters[0]?.font_group)}</td>
                       <td>
                         <button
                           className="sp-dl-btn"
-                          onClick={() => handleDownload('steno', i, r)}
-                          disabled={busy || downloaded}
-                          title={locked ? 'Locked — contact your administrator for more tests' : downloaded ? 'Already downloaded for offline use' : 'Download dictation + audio for offline practice'}
-                          style={locked || downloaded ? { background: '#e2e8f0', color: downloaded ? '#16a34a' : '#64748b', cursor: 'default' } : undefined}
+                          onClick={(e) => { e.stopPropagation(); setModalExam({ exam, chapters, kind: 'steno' }); }}
+                          disabled={busy}
+                          title="View chapters and download this dictation exam for offline use"
+                          style={downloaded ? { background: '#f0fdf4', color: '#16a34a' } : undefined}
                         >
-                          {locked ? (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                          ) : downloaded ? (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                          ) : (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          )}
-                          {locked ? 'Locked' : downloaded ? 'Downloaded' : busy ? 'Saving…' : 'Download'}
+                          {downloaded ? '✓ Downloaded' : busy ? 'Saving…' : 'View / Download'}
                         </button>
                       </td>
                     </tr>
                     );
                   })}
-                  {stenoDownloads.length === 0 && (
-                    <tr><td colSpan="7" className="sp-table-empty">No dictation records found</td></tr>
-                  )}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {/* ── Chapters popup: lists an exam's chapters with lock state + offline download ── */}
+          {modalExam && (
+            <div
+              onClick={() => setModalExam(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 560, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+              >
+                <div style={{ padding: '18px 22px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>{modalExam.exam.name}</div>
+                    <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                      {modalExam.chapters.length} chapter{modalExam.chapters.length !== 1 ? 's' : ''} · first {unlockedCountFor(modalExam.kind)} unlocked
+                    </div>
+                  </div>
+                  <button onClick={() => setModalExam(null)} style={{ border: 'none', background: 'transparent', fontSize: '1.5rem', cursor: 'pointer', color: '#94a3b8', lineHeight: 1 }}>×</button>
+                </div>
+
+                <div style={{ padding: '6px 22px', overflowY: 'auto' }}>
+                  {modalExam.chapters.map((c, i) => {
+                    const locked = i >= unlockedCountFor(modalExam.kind);
+                    const saved = downloadedKeys.has(offlineKey(modalExam.exam.id, c.font_group, c.id));
+                    return (
+                      <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: '1.05rem' }}>{modalExam.kind === 'steno' ? '🎧' : '📄'}</span>
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.9rem' }}>{c.name || `Chapter ${c.chapter_no}`}</div>
+                            <div style={{ fontSize: '0.76rem', color: '#94a3b8' }}>Chapter {c.chapter_no} · {fontLang(c.font_group)}</div>
+                          </div>
+                        </div>
+                        {locked ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.76rem', fontWeight: 600, color: '#94a3b8' }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            Locked
+                          </span>
+                        ) : saved ? (
+                          <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#16a34a' }}>✓ Saved</span>
+                        ) : (
+                          <span style={{ fontSize: '0.76rem', fontWeight: 600, color: '#1d4ed8' }}>Unlocked</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ padding: '16px 22px', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Locked chapters are skipped. Contact your administrator to unlock more.</span>
+                  <button
+                    className="sp-dl-btn"
+                    disabled={downloadingExamId === modalExam.exam.id || isExamDownloaded(modalExam.kind, modalExam.exam, modalExam.chapters)}
+                    onClick={() => handleDownloadExam(modalExam.kind, modalExam.exam, modalExam.chapters)}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    {downloadingExamId === modalExam.exam.id
+                      ? 'Downloading…'
+                      : isExamDownloaded(modalExam.kind, modalExam.exam, modalExam.chapters)
+                        ? '✓ Downloaded'
+                        : 'Download Exam for Offline'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Edit Profile Form ── */}
           {isEditing && (
