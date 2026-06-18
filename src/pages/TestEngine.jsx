@@ -251,10 +251,10 @@ const TestEngine = () => {
       // "Count Half Mistake" = No  → each half mistake counts as 1 FULL mistake (multiplier 1).
       const halfMultiplier = halfMistakeEnabled ? 0.5 : 1;
       const totalMistakes = fullErrors + halfErrors * halfMultiplier;
-      // Penalty is deducted in WORDS. A stroke-unit penalty against a WORD speed
-      // count converts ÷5; otherwise it is used directly (never ×5).
-      const speedCount = pattern?.speed_count ?? 'Strokes';
-      const penaltyWords = (pattern?.penalty_type === 'Stroke' && speedCount !== 'Strokes')
+      // Net speed is reported in WORDS, so the penalty must be in WORDS too.
+      // A stroke-denominated penalty is ALWAYS converted ÷5 (5 strokes = 1 word),
+      // regardless of speed_count; a word-denominated penalty is used directly.
+      const penaltyWords = (pattern?.penalty_type === 'Stroke')
         ? totalMistakes * penaltyFactor / 5
         : totalMistakes * penaltyFactor;
       const nwpm = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
@@ -930,13 +930,12 @@ const TestEngine = () => {
     const ignDeduct   = pattern?.ignorable_penalty_words_per_mistake ?? 10;
     const ignAllowance = ignEnabled ? totalWords * (ignPct / 100) : 0;
     const ignExcess   = ignEnabled ? Math.max(0, totalMist - ignAllowance) : 0;
-    // Net/Gross speed are always in WORDS, so the penalty is deducted in words.
-    // A stroke-unit penalty against a WORD speed count converts ÷5 (5 strokes =
-    // 1 word); otherwise the penalty (mistakes × factor) is used directly and is
-    // never multiplied by 5.
+    // Net/Gross speed are always in WORDS, so the penalty must be in WORDS too.
+    // A stroke-denominated penalty is ALWAYS converted ÷5 (5 strokes = 1 word),
+    // regardless of speed_count; a word-denominated penalty is used directly.
     const penaltyWds  = ignEnabled
       ? ignExcess * ignDeduct
-      : (ptype === 'Stroke' && speedCount !== 'Strokes')
+      : (ptype === 'Stroke')
         ? totalMist * pfactor / 5
         : totalMist * pfactor;
     const finalGwpm = Math.round(totalWords / minutes);

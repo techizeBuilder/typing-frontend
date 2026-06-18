@@ -336,8 +336,9 @@ const StenoTestEngine = () => {
       const penaltyFactor   = pattern?.penalty_value || 1;
       // "Count Half Mistake" = Yes → 0.5 each; No → each counts as 1 full mistake.
       const totalMistakes   = fullErrors + halfErrors * ((pattern?.half_mistake_enabled ?? true) ? 0.5 : 1);
-      // Word-based exam divides the penalty by 5; stroke-based keeps it in strokes.
-      const penaltyWords    = (pattern?.penalty_type === 'Stroke' ? totalMistakes : totalMistakes / 5) * penaltyFactor;
+      // Net speed is in WORDS, so the penalty must be in WORDS. A stroke-denominated
+      // penalty is converted ÷5 (5 strokes = 1 word); a word-denominated one is used as-is.
+      const penaltyWords    = (pattern?.penalty_type === 'Stroke' ? totalMistakes / 5 : totalMistakes) * penaltyFactor;
       const nwpm            = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
       const accuracy        = totalStrokes > 0
         ? Math.round(((totalWordsTyped - totalMistakes) / totalWordsTyped) * 100)
@@ -464,11 +465,12 @@ const StenoTestEngine = () => {
     const excessMistakes      = ignorableEnabled ? Math.max(0, totalMistakes - ignorableAllowance) : 0;
     const penaltyWords    = ignorableEnabled
       ? excessMistakes * deductionPerMistake
-      // Stroke-based exam: penalty stays in strokes (no ÷5 conversion).
+      // Net speed is in WORDS, so the penalty must be in WORDS too.
+      // Stroke-denominated penalty → convert to words (1 word = 5 strokes).
       : penaltyType === 'Stroke'
-        ? totalMistakes * penaltyFactor
-        // Word-based exam: convert stroke penalty to words (1 word = 5 strokes).
-        : totalMistakes * penaltyFactor / 5;
+        ? totalMistakes * penaltyFactor / 5
+        // Word-denominated penalty is already in words → use directly.
+        : totalMistakes * penaltyFactor;
 
     const gwpm     = Math.round(totalWords / minutes);
     const nwpm     = Math.max(0, Math.round((totalWords - penaltyWords) / minutes));
