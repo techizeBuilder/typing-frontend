@@ -247,11 +247,10 @@ const TestEngine = () => {
       const gwpm = Math.round(totalWordsTyped / minutes);
       const halfMistakeEnabled = pattern?.half_mistake_enabled ?? true;
       const penaltyFactor = pattern?.penalty_value || 1;
-      // Half mistakes count 0.5 each when enabled; when disabled they are ignored
-      // (not added at all — never counted as full).
-      const totalMistakes = halfMistakeEnabled
-        ? fullErrors + halfErrors * 0.5
-        : fullErrors;
+      // "Count Half Mistake" = Yes → each half mistake counts as 0.5 (multiplier 0.5).
+      // "Count Half Mistake" = No  → each half mistake counts as 1 FULL mistake (multiplier 1).
+      const halfMultiplier = halfMistakeEnabled ? 0.5 : 1;
+      const totalMistakes = fullErrors + halfErrors * halfMultiplier;
       // Penalty is deducted in WORDS. A stroke-unit penalty against a WORD speed
       // count converts ÷5; otherwise it is used directly (never ×5).
       const speedCount = pattern?.speed_count ?? 'Strokes';
@@ -455,22 +454,47 @@ const TestEngine = () => {
         if (compareWords(typedWords[look], refWords[refPos]) !== 'error') { insDist = look - tp; break; }
       }
 
-      // Pick the cheapest realignment: substitution run, insertion, or omission jump.
-      // All three are "the student is still typing the passage in order"; we just owe
-      // the fewest skipped words. Substitution wins ties (1:1, least disruptive), then
-      // insertion, then the omission jump; if nothing realigns ahead, fall back to a
-      // substitution for the current ref word.
+      // ── Insertion vs omission: decide with bounded look-ahead ────────────────
+      // A wrong word here is one of: an EXTRA (inserted) typed word [hold refPos], or
+      // one/more SKIPPED reference words [omission jump to jumpRefPos]. A pure distance
+      // tie-break fails when the inserted word's value ALSO occurs later in the
+      // reference (e.g. a stray "the"/"past"): it would skip a reference word as an
+      // omission AND emit two extras, counting one mistake two or three times. Instead,
+      // score how many of the next few word pairs stay aligned under each reading — the
+      // correct interpretation keeps the upcoming passage in sync.
+      const LOOK_SCORE = 6;
+      const alignScore = (ts, rs) => {
+        let s = 0;
+        for (let k = 0; k < LOOK_SCORE; k++) {
+          const a = ts + k < T ? typedWords[ts + k] : null;
+          const b = rs + k < R ? refWords[rs + k] : null;
+          if (a && b && compareWords(a, b) !== 'error') s++;
+        }
+        return s;
+      };
+      // Insertion: the current typed word (and possibly a few more) is extra, refPos
+      // holds. Score the typed remainder against the held reference STARTING where the
+      // held ref word reappears (tp + insDist) — so a run of consecutive inserted words
+      // (e.g. "the past") still scores well instead of looking like a mismatch. Only a
+      // candidate when the current ref word reappears in the typed stream shortly.
+      const insScore  = insDist !== Infinity ? alignScore(tp + insDist, refPos) : -1;
+      // Omission: skip ref → jumpRefPos, where the current typed word matches; score
+      // from there (the match at jumpRefPos is included in the count).
+      const omitScore = jumpRefPos >= 0 ? alignScore(tp, jumpRefPos) : -1;
+
+      // Order: substitution run (1:1, least disruptive) → insertion → omission jump →
+      // fall back to a substitution for the current ref word.
       if (subResyncDist >= 0 && subResyncDist <= omitDist && subResyncDist <= insDist) {
         // Substitution: kept going forward, just got subResyncDist word(s) wrong.
         statuses[refPos]   = 'error'; // substitution = full mistake (Rule A.ii)
         typedAtRef[refPos] = tw;
         omissionRunLen = 0;
         refPos++;
-      } else if (insDist !== Infinity && insDist < omitDist) {
+      } else if (insScore >= 0 && insScore >= omitScore) {
         // Insertion: the current typed word is extra — refPos does NOT advance.
-        // Strictly cheaper than the omission jump (ties go to omission: an omitted
-        // word that merely recurs soon after should stay an omission, not flip to
-        // an insertion that re-consumes the recurrence).
+        // Ties favour insertion: holding the reference is non-destructive, while an
+        // omission jump discards reference words and would wrongly flag the next
+        // matching word as missing (the reported "the past" → "the" omission bug).
         extraTypedWords.push(tw);
         extraTypedWordRefs.push(refPos); // appears just before the current ref word
       } else if (jumpRefPos >= 0) {
@@ -893,9 +917,10 @@ const TestEngine = () => {
     const totalWords  = speedCount === 'Words'
       ? typedFinalWords.length
       : finalStrokes / 5;
-    // Half mistakes weigh 0.5 each when enabled; ignored (not counted) when disabled.
+    // "Count Half Mistake" = Yes → each half mistake weighs 0.5; No → each weighs 1 (full).
     const halfEnabled = pattern?.half_mistake_enabled ?? true;
-    const totalMist   = halfEnabled ? finalFull + finalHalf * 0.5 : finalFull;
+    const halfMultiplier = halfEnabled ? 0.5 : 1;
+    const totalMist   = finalFull + finalHalf * halfMultiplier;
     const pfactor     = pattern?.penalty_value ?? 1;
     const ptype       = pattern?.penalty_type  ?? 'Word';
     // Ignorable Mistakes rule: mistakes up to (pct)% of total words typed are free;
@@ -2176,7 +2201,7 @@ const TestEngine = () => {
                 )}
                 <div className="protocol-card">
                   <div className="protocol-item"><span>Target Speed</span><strong>{pattern?.required_speed || 35} WPM</strong></div>
-                  <div className="protocol-item"><span>Half Mistakes</span><strong>{pattern?.half_mistake_enabled ? 'Counted (0.5)' : 'Ignored'}</strong></div>
+                  <div className="protocol-item"><span>Half Mistakes</span><strong>{pattern?.half_mistake_enabled ? 'Counted (0.5)' : 'Counted as Full (1)'}</strong></div>
                   <div className="protocol-item"><span>Penalty</span><strong>{pattern?.penalty_value || 1} {pattern?.penalty_type || 'Word'}</strong></div>
                   <div className="protocol-item"><span>Mode</span><strong>{mode || exam?.test_paper_screen || 'English'}</strong></div>
                 </div>

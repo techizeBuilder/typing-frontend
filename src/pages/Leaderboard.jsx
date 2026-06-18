@@ -1,16 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import DashboardNav from '../components/DashboardNav';
 import Header from '../components/Header';
-import { resultService } from '../services/api';
+import { resultService, settingService } from '../services/api';
 import './StudentDashboard.css';
+
+// "21:00" → "9:00 PM" for display.
+const to12h = (hhmm) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((hhmm || '').trim());
+  if (!m) return '';
+  let h = parseInt(m[1], 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m[2]} ${ampm}`;
+};
 
 const Leaderboard = () => {
   const [rawData, setRawData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [examFilter, setExamFilter] = useState('All');
+  const [rankUpdateTime, setRankUpdateTime] = useState('21:00');
 
   useEffect(() => {
     fetchLeaderboard();
+    settingService.getAll()
+      .then((s) => { if (s && s.live_rank_update_time) setRankUpdateTime(s.live_rank_update_time); })
+      .catch(() => {});
   }, []);
 
   const fetchLeaderboard = async () => {
@@ -75,7 +89,7 @@ const Leaderboard = () => {
       <div className="dashboard-welcome-bar">
         <div className="welcome-text-content">
           <h2>🏆 Top Performers</h2>
-          <p>Global Live Test Rank Leaderboard</p>
+          <p>Global Live Test Rank Leaderboard · Rankings update daily at {to12h(rankUpdateTime)}</p>
         </div>
       </div>
 
