@@ -45,7 +45,7 @@ const Signup = () => {
 
       <div className="mobile-header-blue">
         <div className="login-logo-top">
-          <img src="/balaji logo.jpeg" alt="Balaji Logo" />
+          <img src="balaji logo.jpeg" alt="Balaji Logo" />
         </div>
         <h1 className="mobile-welcome-title">Create Account</h1>
         <p className="mobile-welcome-subtitle">Start Your Learning Journey</p>
@@ -53,7 +53,7 @@ const Signup = () => {
 
       <div className="login-split-container">
         <div className="login-left-side">
-          <img src="/girl.png" alt="Student Typing" className="girl-typing-image" />
+          <img src="girl.png" alt="Student Typing" className="girl-typing-image" />
         </div>
         
         <div className="login-right-side">
