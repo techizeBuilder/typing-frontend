@@ -1287,12 +1287,13 @@ const ResultScreen = () => {
     ? parseFloat(Math.max(0, totalMistakes - ignorableAllowance).toFixed(2))
     : 0;
 
-  // Net & Gross Speed are always reported in WORDS, so the penalty is always
-  // deducted in words too. A stroke-unit penalty shown against a WORD speed
-  // count is converted ÷5 (5 strokes = 1 word); in every other case — including
-  // a stroke-counted exam — the penalty (mistakes × factor) is used directly and
-  // is NEVER multiplied by 5.
-  const penaltyDiv5 = penaltyType === 'Stroke' && !isStrokeMode;
+  // Net & Gross Speed are always reported in WORDS, so the penalty must also be
+  // expressed in WORDS before it is subtracted — both operands of the net-words
+  // calc have to share the same unit. A stroke-denominated penalty is therefore
+  // ALWAYS converted to words ÷5 (5 strokes = 1 word), regardless of whether the
+  // exam itself counts speed in strokes or words. A word-denominated penalty is
+  // already in words and is used directly.
+  const penaltyDiv5 = penaltyType === 'Stroke';
   const penaltyConverted = penaltyDiv5
     ? totalMistakes * penaltyFactor / 5
     : totalMistakes * penaltyFactor;
