@@ -334,7 +334,10 @@ const StenoTestEngine = () => {
       const totalWordsTyped = totalStrokes / 5;
       const gwpm            = Math.round(totalWordsTyped / minutes);
       const penaltyFactor   = pattern?.penalty_value || 1;
-      const totalMistakes   = fullErrors + halfErrors * 0.5;
+      // Half mistakes weigh 0.5 each when enabled; ignored (not counted) when disabled.
+      const totalMistakes   = (pattern?.half_mistake_enabled ?? true)
+        ? fullErrors + halfErrors * 0.5
+        : fullErrors;
       // Word-based exam divides the penalty by 5; stroke-based keeps it in strokes.
       const penaltyWords    = (pattern?.penalty_type === 'Stroke' ? totalMistakes : totalMistakes / 5) * penaltyFactor;
       const nwpm            = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
@@ -451,7 +454,10 @@ const StenoTestEngine = () => {
     // ── Pattern-driven penalty ─────────────────────────────────────────────────
     const penaltyFactor   = pattern?.penalty_value ?? 1;
     const penaltyType     = pattern?.penalty_type  ?? 'Word';
-    const totalMistakes   = full + half * 0.5;
+    // Half mistakes weigh 0.5 each when enabled; ignored (not counted) when disabled.
+    const totalMistakes   = (pattern?.half_mistake_enabled ?? true)
+      ? full + half * 0.5
+      : full;
     // Ignorable Mistakes rule: mistakes up to (pct)% of total words typed are free;
     // each mistake beyond that allowance deducts (deductionPerMistake) words.
     const ignorableEnabled = !!pattern?.ignorable_mistakes_enabled;
