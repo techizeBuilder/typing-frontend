@@ -334,10 +334,8 @@ const StenoTestEngine = () => {
       const totalWordsTyped = totalStrokes / 5;
       const gwpm            = Math.round(totalWordsTyped / minutes);
       const penaltyFactor   = pattern?.penalty_value || 1;
-      // Half mistakes weigh 0.5 each when enabled; ignored (not counted) when disabled.
-      const totalMistakes   = (pattern?.half_mistake_enabled ?? true)
-        ? fullErrors + halfErrors * 0.5
-        : fullErrors;
+      // "Count Half Mistake" = Yes → 0.5 each; No → each counts as 1 full mistake.
+      const totalMistakes   = fullErrors + halfErrors * ((pattern?.half_mistake_enabled ?? true) ? 0.5 : 1);
       // Word-based exam divides the penalty by 5; stroke-based keeps it in strokes.
       const penaltyWords    = (pattern?.penalty_type === 'Stroke' ? totalMistakes : totalMistakes / 5) * penaltyFactor;
       const nwpm            = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
@@ -454,10 +452,8 @@ const StenoTestEngine = () => {
     // ── Pattern-driven penalty ─────────────────────────────────────────────────
     const penaltyFactor   = pattern?.penalty_value ?? 1;
     const penaltyType     = pattern?.penalty_type  ?? 'Word';
-    // Half mistakes weigh 0.5 each when enabled; ignored (not counted) when disabled.
-    const totalMistakes   = (pattern?.half_mistake_enabled ?? true)
-      ? full + half * 0.5
-      : full;
+    // "Count Half Mistake" = Yes → 0.5 each; No → each counts as 1 full mistake.
+    const totalMistakes   = full + half * ((pattern?.half_mistake_enabled ?? true) ? 0.5 : 1);
     // Ignorable Mistakes rule: mistakes up to (pct)% of total words typed are free;
     // each mistake beyond that allowance deducts (deductionPerMistake) words.
     const ignorableEnabled = !!pattern?.ignorable_mistakes_enabled;
@@ -823,7 +819,7 @@ const StenoTestEngine = () => {
             </div>
             <div className="steno-protocol-item">
               <span>Half Mistakes</span>
-              <strong>{pattern?.half_mistake_enabled ? 'Counted' : 'Ignored'}</strong>
+              <strong>{pattern?.half_mistake_enabled ? 'Counted (0.5)' : 'Counted as Full (1)'}</strong>
             </div>
             <div className="steno-protocol-item">
               <span>Time Limit</span>

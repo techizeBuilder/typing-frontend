@@ -38,6 +38,8 @@ const AdminLayout = () => {
              <NavLink to="/admin/results" className={({isActive}) => isActive ? "active" : ""}>Results (Typing/Steno)</NavLink>}
           {(role === 'Admin' || role === 'SuperAdmin') &&
              <NavLink to="/admin/leaderboard" className={({isActive}) => isActive ? "active" : ""}>🏆 Leaderboard</NavLink>}
+          {(role === 'Admin' || role === 'SuperAdmin') &&
+             <NavLink to="/admin/settings" className={({isActive}) => isActive ? "active" : ""}>⚙️ Settings</NavLink>}
 
           <div className="nav-divider"></div>
           <NavLink to="/dashboard" className="nav-secondary">Switch to Student View</NavLink>

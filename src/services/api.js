@@ -481,4 +481,20 @@ export const flashBannerService = {
   }
 };
 
+export const settingService = {
+  // Returns all settings as a { key: value } object.
+  getAll: async () => {
+    const res = await api.get('/settings');
+    return res.data;
+  },
+  get: async (key) => {
+    const res = await api.get(`/settings/${key}`);
+    return res.data;
+  },
+  update: async (key, value) => {
+    const res = await api.put(`/settings/${key}`, { value });
+    return res.data;
+  },
+};
+
 export default api;

@@ -101,7 +101,7 @@ const PrintSheet = ({
 
   const totalMistakesFormula = halfMistakeEnabled
     ? `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`
-    : `${fullErrors} full + ${halfErrors} half ignored = ${totalMistakes}`;
+    : `${fullErrors} + (${halfErrors} × 1) = ${totalMistakes}`;
   const penaltyFormula = ignorableEnabled
     ? `${excessMistakes} excess (over ${ignorableAllowance} allowed) × ${deductionPerMistake} = ${penaltyWords}`
     : penaltyDiv5
@@ -540,10 +540,11 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
   const halfEnabled    = pattern?.half_mistake_enabled ?? true;
   const rawFull        = (counts.missed || 0) + (counts.extra || 0) + (counts.caps || 0);
   const rawHalf        = (counts.spell || 0) + (counts.half || 0);
-  // When half mistakes are disabled they are IGNORED (count 0), not promoted to full.
+  // "Count Half Mistake" = Yes → each half weighs 0.5; No → each half weighs 1 (full).
+  const halfMultiplier = halfEnabled ? 0.5 : 1;
   const fullErrCount   = rawFull;
-  const halfErrCount   = halfEnabled ? rawHalf : 0;
-  const totalMistakes  = parseFloat((fullErrCount + halfErrCount * 0.5).toFixed(2));
+  const halfErrCount   = rawHalf;
+  const totalMistakes  = parseFloat((fullErrCount + halfErrCount * halfMultiplier).toFixed(2));
 
   // PDF formula: Error % = (Full + Half/2) × 100 / masterPassageWords
   // masterPassageWords = requiredSpeed × testDurationMinutes (per PDF table)
@@ -580,11 +581,11 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
       <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '18px', alignItems: 'center' }}>
         <span style={{ color: '#16a34a', fontWeight: 700 }}>✔ Correct: {counts.correct || 0}</span>
         <span style={{ color: '#dc2626', fontWeight: 700 }}>Full Mistakes: {fullErrCount}</span>
-        {halfEnabled && <span style={{ color: '#d97706', fontWeight: 700 }}>Half Mistakes: {halfErrCount}</span>}
+        <span style={{ color: '#d97706', fontWeight: 700 }}>Half Mistakes: {halfErrCount}{halfEnabled ? '' : ' (counted as full)'}</span>
         <span style={{ color: '#1e293b', fontWeight: 700 }}>
           Total = {totalMistakes}
           <span style={{ fontWeight: 400, color: '#64748b', fontSize: '0.82rem' }}>
-            &nbsp;[{fullErrCount} + {halfErrCount}×0.5]
+            &nbsp;[{fullErrCount} + {halfErrCount}×{halfMultiplier}]
           </span>
         </span>
         <span style={{ color: errorPercent > 5 ? '#dc2626' : '#16a34a', fontWeight: 700, fontSize: '1rem' }}>
@@ -1258,15 +1259,13 @@ const ResultScreen = () => {
   const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + repeatedWordCount);
   const effectiveHalfErrors = isStenoResult ? halfErrors : (_cap + _pct + extraSpaceCount);
 
-  // Total weighted mistakes. Half categories count as 0.5 each when half-mistakes are
-  // enabled; when disabled they are IGNORED (not counted at all — never promoted to a
-  // full mistake). This single weighted figure drives the penalty so the on-screen
-  // result and the PDF stay consistent.
+  // Total weighted mistakes. "Count Half Mistake" = Yes → half categories weigh 0.5
+  // each; No → each half category counts as 1 FULL mistake (multiplier 1). This single
+  // weighted figure drives the penalty so the on-screen result and the PDF stay
+  // consistent.
+  const halfMistakeMultiplier = halfMistakeEnabled ? 0.5 : 1;
   const totalMistakes = parseFloat(
-    (halfMistakeEnabled
-      ? effectiveFullErrors + effectiveHalfErrors * 0.5
-      : effectiveFullErrors
-    ).toFixed(2)
+    (effectiveFullErrors + effectiveHalfErrors * halfMistakeMultiplier).toFixed(2)
   );
 
   const penaltyFactor = pattern?.penalty_value ?? 1;
@@ -1604,7 +1603,7 @@ const ResultScreen = () => {
               <div className="stat-line">
                 <span className="stat-label">Half Mistakes =</span>
                 <span className="stat-val">{effectiveHalfErrors}</span>
-                <span className="stat-formula">[counted as 0.5 each]</span>
+                <span className="stat-formula">[counted as {halfMistakeMultiplier} each{halfMistakeEnabled ? '' : ' — i.e. as full mistakes'}]</span>
               </div>
             )}
             {showTotalErrors && (
@@ -1612,9 +1611,7 @@ const ResultScreen = () => {
                 <span className="stat-label">Total Mistakes =</span>
                 <span className="stat-val">{totalMistakes}</span>
                 <span className="stat-formula">
-                  {halfMistakeEnabled
-                    ? `[${effectiveFullErrors} + (${effectiveHalfErrors} × 0.5) = ${totalMistakes}]`
-                    : `[${effectiveFullErrors} full + ${effectiveHalfErrors} half ignored = ${totalMistakes}]`}
+                  {`[${effectiveFullErrors} + (${effectiveHalfErrors} × ${halfMistakeMultiplier}) = ${totalMistakes}]`}
                   {ignorableEnabled ? `  ·  Allowance ${ignorablePercent}% of ${totalWords} = ${ignorableAllowance} ignored, ${excessMistakes} excess` : ''}
                 </span>
               </div>
@@ -1685,8 +1682,8 @@ const ResultScreen = () => {
         {/* ── Footer Notes ───────────────────────────────── */}
         <div className="sheet-footer-notes">
           <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} {speedUnit}</strong> | Required Accuracy: <strong>{requiredAcc}%</strong> | Your Accuracy: <strong>{accuracyCalculated}%</strong>{ignorableEnabled ? <> | Ignorable Allowance: <strong>{ignorablePercent}%</strong> ({ignorableAllowance} of {totalMistakes} mistakes) | Excess: <strong>{excessMistakes}</strong> × {deductionPerMistake} = <strong>{penaltyWords}</strong> words deducted</> : null} → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
-          <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>{halfMistakeEnabled ? 'Count as 0.5' : 'Ignored (not counted)'}</strong></p>
-          <p>* Punctuation, Capital/Small letter and Extra-Space mistakes count as {halfMistakeEnabled ? 'Half Mistakes' : 'no mistake (ignored)'}; spelling mistakes count as Full Mistakes.</p>
+          <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>{halfMistakeEnabled ? 'Count as 0.5' : 'Count as Full (1)'}</strong></p>
+          <p>* Punctuation, Capital/Small letter and Extra-Space mistakes count as {halfMistakeEnabled ? 'Half Mistakes (0.5 each)' : 'Full Mistakes (1 each)'}; spelling mistakes count as Full Mistakes.</p>
         </div>
 
         {/* ── Repeated Lines Section ───────────────────── */}
