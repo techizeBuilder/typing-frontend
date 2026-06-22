@@ -152,7 +152,9 @@ const AdminStudents = () => {
       setLoading(true);
       setErrorMsg(null);
       const data = await userService.getUsers();
-      setStudents(data); 
+      // Newest students first
+      const sorted = [...data].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      setStudents(sorted);
     } catch (error) {
       console.error('Error fetching users:', error);
       setErrorMsg(error.message + ' (Check if Backend is running)');
@@ -271,7 +273,8 @@ const AdminStudents = () => {
     setLoadingTests(true);
     try {
       const results = await resultService.getUserResults(student.id);
-      setStudentTests(results);
+      // Most recent test first
+      setStudentTests([...results].sort((a, b) => new Date(b.date_taken || 0) - new Date(a.date_taken || 0)));
     } catch (err) {
       alert("Error fetching tests: " + err.message);
     } finally {

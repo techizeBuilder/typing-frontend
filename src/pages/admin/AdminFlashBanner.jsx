@@ -19,7 +19,9 @@ const AdminFlashBanner = () => {
     try {
       setLoading(true);
       const res = await flashBannerService.getBanners();
-      setBanners(res);
+      // Newest banners first
+      const list = Array.isArray(res) ? res : [];
+      setBanners([...list].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)));
     } catch (error) {
       console.error('Error fetching flash banners:', error);
     } finally {

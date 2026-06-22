@@ -1133,6 +1133,11 @@ const ResultScreen = () => {
   const passageFontFamily = fontFamilyForFontGroup(resultFontGroup);
 
   const handleReturn = () => {
+    // Honor the listing page the admin opened this result from (e.g. the
+    // Typing & Steno Results page) so Back returns there instead of always
+    // defaulting to Student Management.
+    const returnTo = location.state?.returnTo;
+    if (returnTo) { navigate(returnTo); return; }
     const role = localStorage.getItem('role');
     navigate(role === 'Admin' || role === 'SuperAdmin' || role === 'SubAdmin' ? '/admin/students' : '/dashboard');
   };

@@ -421,8 +421,12 @@ export const resultService = {
     const response = await api.get('/results');
     return response.data;
   },
-  getLeaderboard: async (period) => {
-    const response = await api.get('/results/leaderboard', { params: period ? { period } : {} });
+  getLeaderboard: async (period, range) => {
+    const params = {};
+    if (period) params.period = period;
+    if (range?.from) params.from = range.from;
+    if (range?.to) params.to = range.to;
+    const response = await api.get('/results/leaderboard', { params });
     return response.data;
   },
   getChapterRank: async (chapterId, studentId) => {
@@ -493,6 +497,12 @@ export const settingService = {
   },
   update: async (key, value) => {
     const res = await api.put(`/settings/${key}`, { value });
+    return res.data;
+  },
+  // Upload a new desktop application .exe (admin only). `formData` carries the
+  // file plus optional `version` and `release_date` fields.
+  uploadDesktopApp: async (formData) => {
+    const res = await api.post('/settings/desktop-app/upload', formData);
     return res.data;
   },
 };

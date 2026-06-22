@@ -1,19 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { resultService } from '../../services/api';
 
-// Admin "Top Performer of the Day" leaderboard. Shows today's Live Test results
-// ranked by Net Speed (NWPM), deduplicated to each student's best attempt, with an
-// optional exam filter (or overall). Mirrors the student leaderboard's ranking logic
-// but scoped to today and rendered with the admin panel styling.
+const TOP_N = 25;
+
+// Local YYYY-MM-DD for date inputs (en-CA formats as ISO, in local time).
+const todayStr = () => new Date().toLocaleDateString('en-CA');
+
+// Admin Live Test leaderboard. Shows Live Test results ranked by Net Speed (NWPM),
+// deduplicated to each student's best attempt, with an exam filter and a date-range
+// filter. Displays the Top 25 ranked students plus the total number of students who
+// appeared for the current filter selection.
 const AdminLeaderboard = () => {
   const [rawData, setRawData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [examFilter, setExamFilter] = useState('All');
+  const [dateFrom, setDateFrom] = useState(todayStr());
+  const [dateTo, setDateTo] = useState(todayStr());
 
   const fetchLeaderboard = async () => {
     try {
       setLoading(true);
-      const data = await resultService.getLeaderboard('today');
+      const range = {};
+      if (dateFrom) range.from = dateFrom;
+      if (dateTo) range.to = dateTo;
+      const useRange = range.from || range.to;
+      const data = await resultService.getLeaderboard(useRange ? undefined : 'today', useRange ? range : undefined);
       setRawData(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
@@ -23,54 +34,65 @@ const AdminLeaderboard = () => {
     }
   };
 
+  // Auto-refresh whenever the date range changes (and on first mount).
   useEffect(() => {
     fetchLeaderboard();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
 
   // Unique exam names for the dropdown
-  const examOptions = Array.from(
-    new Set(rawData.map(r => r.exam_name || 'Self Practice'))
-  ).sort();
+  const examOptions = useMemo(
+    () => Array.from(new Set(rawData.map(r => r.exam_name || 'Self Practice'))).sort(),
+    [rawData],
+  );
 
-  // Filter by exam → keep each student's best (rows arrive NWPM-desc) → top 10
-  const leaderboard = (() => {
+  // Filter by exam → keep each student's best (rows arrive NWPM-desc) → derive the
+  // total participant count and the Top 25.
+  const { ranked, participantCount } = useMemo(() => {
     const filtered = examFilter === 'All'
       ? rawData
       : rawData.filter(r => (r.exam_name || 'Self Practice') === examFilter);
     const seen = new Set();
-    const result = [];
+    const deduped = [];
     for (const row of filtered) {
       const key = row.user_id || row.username;
-      if (!seen.has(key)) {
+      if (key && !seen.has(key)) {
         seen.add(key);
-        result.push(row);
-        if (result.length >= 10) break;
+        deduped.push(row);
       }
     }
-    return result;
-  })();
+    return { ranked: deduped.slice(0, TOP_N), participantCount: deduped.length };
+  }, [rawData, examFilter]);
 
-  const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  const fmt = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  const rangeLabel = dateFrom && dateTo
+    ? (dateFrom === dateTo ? fmt(dateFrom) : `${fmt(dateFrom)} – ${fmt(dateTo)}`)
+    : (dateFrom ? `from ${fmt(dateFrom)}` : dateTo ? `until ${fmt(dateTo)}` : 'all dates');
 
   const th = { padding: '13px 18px', fontWeight: 'bold', color: '#475569', textAlign: 'left' };
   const td = { padding: '13px 18px' };
+  const dateInput = { padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', color: '#334155', background: '#fff' };
 
   return (
     <div className="admin-card">
       <header className="admin-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h2 style={{ margin: 0 }}>🏆 Top Performer of the Day</h2>
+            <h2 style={{ margin: 0 }}>🏆 Live Test Leaderboard</h2>
             <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.85rem' }}>
-              Live Test rankings by Net Speed · {today}
+              Top {TOP_N} by Net Speed · {rangeLabel}
             </p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>From:</label>
+            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} style={dateInput} />
+            <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>To:</label>
+            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} style={dateInput} />
             <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Exam:</label>
             <select
               value={examFilter}
               onChange={(e) => setExamFilter(e.target.value)}
-              style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', color: '#334155', background: '#fff', minWidth: '180px' }}
+              style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', color: '#334155', background: '#fff', minWidth: '160px' }}
             >
               <option value="All">All Exams (Overall)</option>
               {examOptions.map(name => (
@@ -85,13 +107,24 @@ const AdminLeaderboard = () => {
             </button>
           </div>
         </div>
+
+        {/* Total participants for the current exam + date selection */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 16px' }}>
+          <span style={{ fontSize: '0.85rem', color: '#1e40af' }}>
+            {examFilter === 'All' ? 'Total students appeared' : `Students appeared for "${examFilter}"`}:
+          </span>
+          <strong style={{ fontSize: '1.05rem', color: '#0b4bcc' }}>{participantCount}</strong>
+          {participantCount > TOP_N && (
+            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>(showing top {TOP_N})</span>
+          )}
+        </div>
       </header>
 
       {loading ? (
         <p style={{ padding: '20px' }}>Loading leaderboard...</p>
-      ) : leaderboard.length === 0 ? (
+      ) : ranked.length === 0 ? (
         <p style={{ padding: '20px', color: '#64748b' }}>
-          No Live Test records found for today{examFilter !== 'All' ? ` for "${examFilter}"` : ''} yet.
+          No Live Test records found for {rangeLabel}{examFilter !== 'All' ? ` for "${examFilter}"` : ''} yet.
         </p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -107,9 +140,9 @@ const AdminLeaderboard = () => {
               </tr>
             </thead>
             <tbody>
-              {leaderboard.map((row, index) => (
+              {ranked.map((row, index) => (
                 <tr
-                  key={index}
+                  key={row.user_id || row.username || index}
                   style={{
                     borderBottom: '1px solid #e2e8f0',
                     backgroundColor: index === 0 ? '#fefce8' : index === 1 ? '#f8fafc' : index === 2 ? '#fff7ed' : 'white',

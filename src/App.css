@@ -7,9 +7,14 @@
 
 .landing-container {
   flex: 1;
+  min-height: 0; /* allow this flex child to shrink so overflow-y can scroll */
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* "safe center" keeps the content vertically centred when it fits, but falls
+     back to top-aligned (instead of clipping the top) when it's taller than the
+     viewport — then overflow-y lets the user scroll to the hidden portion. */
+  justify-content: safe center;
+  overflow-y: auto;
   max-width: 1400px !important;
   width: 100%;
   margin: 0 auto;
@@ -21,6 +26,58 @@
   justify-content: space-between;
   gap: 25px;
   margin-bottom: 30px;
+}
+
+/* ── Desktop application download banner ──────────────────────────────────── */
+.desktop-download-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, #0b4bcc 0%, #1e40af 100%);
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 14px rgba(11, 75, 204, 0.22);
+}
+
+.desktop-download-banner .ddb-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.desktop-download-banner .ddb-sub {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.92;
+}
+
+.desktop-download-banner .ddb-meta {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.desktop-download-banner .ddb-btn {
+  flex-shrink: 0;
+  display: inline-block;
+  background: #ffffff;
+  color: #0b4bcc;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-decoration: none;
+  padding: 9px 18px;
+  border-radius: 8px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.desktop-download-banner .ddb-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
 }
 
 /* Ensure responsiveness for smaller desktop windows */
@@ -44,5 +101,14 @@
   .cards-wrapper {
     flex-direction: column;
     gap: 15px;
+  }
+  .desktop-download-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .desktop-download-banner .ddb-btn {
+    width: 100%;
+    text-align: center;
   }
 }

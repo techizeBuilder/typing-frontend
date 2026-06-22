@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { resultService } from '../../services/api';
+import { computeResultMetrics } from '../../utils/resultMetrics';
 import Pagination from '../../components/Pagination';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -40,7 +41,11 @@ const AdminResults = () => {
     try {
       setLoading(true);
       const data = await resultService.getAllResults();
-      setResults(Array.isArray(data) ? data : []);
+      // Newest results first. Recompute NWPM/GWPM/accuracy from the stored raw data
+      // using the canonical formula so the table matches the result detail view
+      // (the engine-stored values can drift for typing results — see resultMetrics.js).
+      const list = (Array.isArray(data) ? data : []).map((r) => ({ ...r, _metrics: computeResultMetrics(r) }));
+      setResults([...list].sort((a, b) => new Date(b.date_taken || 0) - new Date(a.date_taken || 0)));
     } catch (err) {
       console.error('Error fetching results:', err);
     } finally {
@@ -75,6 +80,7 @@ const AdminResults = () => {
     const fullPassage = r.chapter?.content_text || (r.reference_words ? r.reference_words.join(' ') : '');
     navigate('/result', {
       state: {
+        returnTo: '/admin/results',
         gwpm: r.gwpm,
         nwpm: r.nwpm,
         accuracy: r.accuracy,
@@ -140,11 +146,11 @@ const AdminResults = () => {
       'Test Type': r.test_type === 'Live Test' ? 'Live' : r.test_type === 'Pre-load Test' ? 'Preloaded' : '—',
       Exam: r.exam?.name || 'Practice',
       'Chapter No.': r.chapter?.chapter_no ? `#${r.chapter.chapter_no}` : '—',
-      NWPM: r.nwpm,
-      GWPM: r.gwpm,
-      'Accuracy (%)': r.accuracy,
-      'Full Errors': r.full_errors || 0,
-      'Half Errors': r.half_errors || 0,
+      NWPM: r._metrics ? r._metrics.nwpm : r.nwpm,
+      GWPM: r._metrics ? r._metrics.gwpm : r.gwpm,
+      'Accuracy (%)': r._metrics ? r._metrics.accuracy : r.accuracy,
+      'Full Errors': r._metrics ? r._metrics.fullErrors : (r.full_errors || 0),
+      'Half Errors': r._metrics ? r._metrics.halfErrors : (r.half_errors || 0),
     }));
 
   const exportExcel = () => {
@@ -374,10 +380,10 @@ const AdminResults = () => {
                     ? <span style={{ fontWeight: 700, color: '#1e40af' }}>#{r.chapter.chapter_no}</span>
                     : <span style={{ color: '#94a3b8' }}>—</span>}
                 </td>
-                <td><strong>{r.nwpm}</strong></td>
-                <td>{r.gwpm}</td>
-                <td>{r.accuracy}%</td>
-                <td style={{ whiteSpace: 'nowrap' }}>{r.full_errors || 0}F / {r.half_errors || 0}H</td>
+                <td><strong>{r._metrics ? r._metrics.nwpm : r.nwpm}</strong></td>
+                <td>{r._metrics ? r._metrics.gwpm : r.gwpm}</td>
+                <td>{r._metrics ? r._metrics.accuracy : r.accuracy}%</td>
+                <td style={{ whiteSpace: 'nowrap' }}>{r._metrics ? r._metrics.fullErrors : (r.full_errors || 0)}F / {r._metrics ? r._metrics.halfErrors : (r.half_errors || 0)}H</td>
                 <td>
                   <button
                     className="btn-primary"

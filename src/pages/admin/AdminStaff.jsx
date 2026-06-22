@@ -45,7 +45,9 @@ const AdminStaff = () => {
     try {
       setLoading(true);
       const data = await userService.getUsers();
-      const staffMembers = data.filter(u => u.role === 'Sub-Admin' || u.role === 'Admin' || u.role === 'SuperAdmin');
+      const staffMembers = data
+        .filter(u => u.role === 'Sub-Admin' || u.role === 'Admin' || u.role === 'SuperAdmin')
+        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)); // newest first
       setStaff(staffMembers);
     } catch (error) {
       console.error('Error fetching staff:', error);

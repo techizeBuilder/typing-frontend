@@ -138,14 +138,16 @@ const AdminExams = () => {
       examService.getExams(),
     ]);
 
+    const byNewest = (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0);
+
     if (patternsResult.status === 'fulfilled') {
-      setPatterns(patternsResult.value);
+      setPatterns([...patternsResult.value].sort(byNewest));
     } else {
       console.error('Error fetching patterns:', patternsResult.reason);
     }
 
     if (examsResult.status === 'fulfilled') {
-      setExams(examsResult.value);
+      setExams([...examsResult.value].sort(byNewest));
     } else {
       console.error('Error fetching exams:', examsResult.reason);
     }
