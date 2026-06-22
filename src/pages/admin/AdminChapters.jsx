@@ -42,7 +42,8 @@ const AdminChapters = () => {
   const fetchChapters = async () => {
     try {
       const data = await chapterService.getChapters();
-      setChapters(data);
+      // Newest chapters first
+      setChapters([...data].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)));
     } catch (error) {
       console.error('Error fetching chapters:', error);
     } finally {

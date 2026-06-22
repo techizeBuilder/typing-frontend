@@ -19,7 +19,9 @@ const AdminMessages = () => {
     try {
       setLoading(true);
       const res = await api.get('/messages');
-      setMessages(res.data);
+      // Newest broadcasts first
+      const list = Array.isArray(res.data) ? res.data : [];
+      setMessages([...list].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)));
     } catch (error) {
       console.error('Error fetching messages:', error);
     } finally {
