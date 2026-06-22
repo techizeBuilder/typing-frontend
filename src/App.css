@@ -10,22 +10,22 @@
   min-height: 0; /* allow this flex child to shrink so overflow-y can scroll */
   display: flex;
   flex-direction: column;
-  /* "safe center" keeps the content vertically centred when it fits, but falls
-     back to top-aligned (instead of clipping the top) when it's taller than the
-     viewport — then overflow-y lets the user scroll to the hidden portion. */
+  /* Center the content when it fits, but always fall back to top-aligned so the
+     top is never clipped; overflow-y then lets the user scroll to any overflow. */
   justify-content: safe center;
   overflow-y: auto;
   max-width: 1400px !important;
   width: 100%;
   margin: 0 auto;
-  padding: 20px 40px 40px;
+  padding: 24px 40px 48px;
+  gap: 24px; /* consistent vertical rhythm between banner, cards and about */
 }
 
 .cards-wrapper {
   display: flex;
   justify-content: space-between;
+  align-items: stretch;
   gap: 25px;
-  margin-bottom: 30px;
 }
 
 /* ── Desktop application download banner ──────────────────────────────────── */
@@ -38,8 +38,7 @@
   background: linear-gradient(135deg, #0b4bcc 0%, #1e40af 100%);
   color: #fff;
   border-radius: 10px;
-  padding: 10px 20px;
-  margin-bottom: 16px;
+  padding: 12px 22px;
   box-shadow: 0 4px 14px rgba(11, 75, 204, 0.22);
 }
 
