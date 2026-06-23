@@ -50,24 +50,33 @@ const chapterNoSort = (a, b) =>
 // Map a font group to the language label shown in the exam/chapter lists.
 const fontLang = (fontGroup) => (String(fontGroup || '').toLowerCase().includes('hindi') ? 'Hindi' : 'English');
 
-// Group a flat list of Pre-load chapters into exams. A chapter can belong to
-// several exams (exam_ids / exams[]), so it appears under each. Returns an array
-// of { exam, chapters } sorted by exam name, chapters sorted by chapter_no.
+// Group a flat list of Pre-load chapters into exams, split by language. A chapter
+// can belong to several exams (exam_ids / exams[]), so it appears under each, and
+// a single exam usually holds BOTH English and Hindi chapters. Grouping by
+// exam + language keeps the displayed chapter count and the Language column in
+// sync (previously the count combined both languages while the label showed only
+// one), and matches how Available Tests unlocks chapters per language/mode.
+// Returns an array of { key, exam, language, chapters }, sorted by exam name then
+// language, with chapters sorted by chapter_no.
 const groupChaptersByExam = (chapters) => {
-  const byExam = new Map(); // examId -> { exam, chapters: [] }
+  const groups = new Map(); // `${examId}::${language}` -> { key, exam, language, chapters: [] }
   for (const ch of chapters) {
     const exams = (Array.isArray(ch.exams) && ch.exams.length > 0)
       ? ch.exams
       : (ch.exam ? [ch.exam] : []);
+    const language = fontLang(ch.font_group);
     for (const exam of exams) {
       if (!exam?.id) continue;
-      if (!byExam.has(exam.id)) byExam.set(exam.id, { exam, chapters: [] });
-      byExam.get(exam.id).chapters.push(ch);
+      const key = `${exam.id}::${language}`;
+      if (!groups.has(key)) groups.set(key, { key, exam, language, chapters: [] });
+      groups.get(key).chapters.push(ch);
     }
   }
-  const list = Array.from(byExam.values());
+  const list = Array.from(groups.values());
   list.forEach((e) => e.chapters.sort(chapterNoSort));
-  list.sort((a, b) => String(a.exam?.name || '').localeCompare(String(b.exam?.name || '')));
+  list.sort((a, b) =>
+    String(a.exam?.name || '').localeCompare(String(b.exam?.name || '')) ||
+    a.language.localeCompare(b.language));
   return list;
 };
 
@@ -448,7 +457,7 @@ const StudentProfile = () => {
   // (locked ones are skipped) into the offline store, grouped by font group / mode
   // so the Available Tests screen finds them while offline. Steno chapters also get
   // their dictation audio cached so the dictation plays with no internet.
-  const handleDownloadExam = async (kind, exam, chapters) => {
+  const handleDownloadExam = async (kind, exam, chapters, rowKey) => {
     const unlocked = chapters.slice(0, unlockedCountFor(kind));
     if (unlocked.length === 0) {
       setDownloadOk(false);
@@ -456,7 +465,7 @@ const StudentProfile = () => {
       return;
     }
     try {
-      setDownloadingExamId(exam.id);
+      setDownloadingExamId(rowKey ?? exam.id);
       setDownloadNotice('');
       const testType = 'Pre-load Test';
 
@@ -735,21 +744,21 @@ const StudentProfile = () => {
                 <tbody>
                   {typingExams.length === 0 ? (
                     <tr><td colSpan="4" className="sp-table-empty">No preloaded typing exams available</td></tr>
-                  ) : typingExams.map(({ exam, chapters }) => {
+                  ) : typingExams.map(({ key, exam, language, chapters }) => {
                     const downloaded = isExamDownloaded('typing', exam, chapters);
-                    const busy = downloadingExamId === exam.id;
+                    const busy = downloadingExamId === key;
                     return (
-                    <tr key={exam.id} style={{ cursor: 'pointer' }} onClick={() => setModalExam({ exam, chapters, kind: 'typing' })}>
+                    <tr key={key} style={{ cursor: 'pointer' }} onClick={() => setModalExam({ key, exam, language, chapters, kind: 'typing' })}>
                       <td>
                         <span className="sp-file-icon">📄</span>
                         {exam.name}
                       </td>
                       <td>{chapters.length}</td>
-                      <td>{fontLang(chapters[0]?.font_group)}</td>
+                      <td>{language}</td>
                       <td>
                         <button
                           className="sp-dl-btn"
-                          onClick={(e) => { e.stopPropagation(); setModalExam({ exam, chapters, kind: 'typing' }); }}
+                          onClick={(e) => { e.stopPropagation(); setModalExam({ key, exam, language, chapters, kind: 'typing' }); }}
                           disabled={busy}
                           title="View chapters and download this exam for offline use"
                           style={downloaded ? { background: '#f0fdf4', color: '#16a34a' } : undefined}
@@ -781,21 +790,21 @@ const StudentProfile = () => {
                 <tbody>
                   {stenoExams.length === 0 ? (
                     <tr><td colSpan="4" className="sp-table-empty">No preloaded steno exams available</td></tr>
-                  ) : stenoExams.map(({ exam, chapters }) => {
+                  ) : stenoExams.map(({ key, exam, language, chapters }) => {
                     const downloaded = isExamDownloaded('steno', exam, chapters);
-                    const busy = downloadingExamId === exam.id;
+                    const busy = downloadingExamId === key;
                     return (
-                    <tr key={exam.id} style={{ cursor: 'pointer' }} onClick={() => setModalExam({ exam, chapters, kind: 'steno' })}>
+                    <tr key={key} style={{ cursor: 'pointer' }} onClick={() => setModalExam({ key, exam, language, chapters, kind: 'steno' })}>
                       <td>
                         <span className="sp-file-icon">🎧</span>
                         {exam.name}
                       </td>
                       <td>{chapters.length}</td>
-                      <td>{fontLang(chapters[0]?.font_group)}</td>
+                      <td>{language}</td>
                       <td>
                         <button
                           className="sp-dl-btn"
-                          onClick={(e) => { e.stopPropagation(); setModalExam({ exam, chapters, kind: 'steno' }); }}
+                          onClick={(e) => { e.stopPropagation(); setModalExam({ key, exam, language, chapters, kind: 'steno' }); }}
                           disabled={busy}
                           title="View chapters and download this dictation exam for offline use"
                           style={downloaded ? { background: '#f0fdf4', color: '#16a34a' } : undefined}
@@ -823,7 +832,9 @@ const StudentProfile = () => {
               >
                 <div style={{ padding: '18px 22px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>{modalExam.exam.name}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>
+                      {modalExam.exam.name}{modalExam.language ? ` — ${modalExam.language}` : ''}
+                    </div>
                     <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
                       {modalExam.chapters.length} chapter{modalExam.chapters.length !== 1 ? 's' : ''} · first {unlockedCountFor(modalExam.kind)} unlocked
                     </div>
@@ -863,11 +874,11 @@ const StudentProfile = () => {
                   <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Locked chapters are skipped. Contact your administrator to unlock more.</span>
                   <button
                     className="sp-dl-btn"
-                    disabled={downloadingExamId === modalExam.exam.id || isExamDownloaded(modalExam.kind, modalExam.exam, modalExam.chapters)}
-                    onClick={() => handleDownloadExam(modalExam.kind, modalExam.exam, modalExam.chapters)}
+                    disabled={downloadingExamId === modalExam.key || isExamDownloaded(modalExam.kind, modalExam.exam, modalExam.chapters)}
+                    onClick={() => handleDownloadExam(modalExam.kind, modalExam.exam, modalExam.chapters, modalExam.key)}
                     style={{ whiteSpace: 'nowrap' }}
                   >
-                    {downloadingExamId === modalExam.exam.id
+                    {downloadingExamId === modalExam.key
                       ? 'Downloading…'
                       : isExamDownloaded(modalExam.kind, modalExam.exam, modalExam.chapters)
                         ? '✓ Downloaded'
