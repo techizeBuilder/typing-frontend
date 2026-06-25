@@ -79,6 +79,26 @@
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
 }
 
+/* Container holding the Desktop + Mobile download buttons side by side. */
+.desktop-download-banner .ddb-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+/* Each button stacked above its optional version/date meta line. */
+.desktop-download-banner .ddb-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.desktop-download-banner .ddb-action .ddb-meta {
+  text-align: center;
+}
+
 /* Ensure responsiveness for smaller desktop windows */
 @media (max-width: 1024px) {
   .app-container {
@@ -109,5 +129,13 @@
   .desktop-download-banner .ddb-btn {
     width: 100%;
     text-align: center;
+  }
+  .desktop-download-banner .ddb-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+  .desktop-download-banner .ddb-action {
+    width: 100%;
+    align-items: stretch;
   }
 }

@@ -31,6 +31,7 @@ const AdminChapters = () => {
     test_type: 'Pre-load Test',
     exam_ids: [],
     content_text: '',
+    steno_speed: 100, // default Steno dictation speed (WPM); only sent for Steno chapters
   });
   const [examDropdownOpen, setExamDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -123,9 +124,12 @@ const AdminChapters = () => {
         cleanData.hindi_font_type = cleanData.font_group === 'Steno Hindi'
           ? (cleanData.hindi_font_type || 'Mangal')
           : null;
+        // Persist the admin-selected default dictation speed (WPM) for Steno chapters.
+        cleanData.steno_speed = parseInt(cleanData.steno_speed, 10) || 100;
       } else {
         delete cleanData.language_type;
         delete cleanData.hindi_font_type;
+        delete cleanData.steno_speed;
       }
 
       let savedId = currentChapter?.id;
@@ -149,6 +153,7 @@ const AdminChapters = () => {
         chapter_no: '', name: '',
         test_date: new Date().toISOString().split('T')[0],
         font_group: 'English Typing', test_type: 'Pre-load Test', exam_ids: [], content_text: '',
+        steno_speed: 100,
       });
       fetchChapters();
     } catch (error) {
@@ -450,6 +455,26 @@ const AdminChapters = () => {
                   required
                 />
               </div>
+
+              {isSteno && (
+                <div className="input-group">
+                  <label style={{ fontWeight: 600, color: '#166534' }}>🎙 Default Steno Speed (WPM)</label>
+                  <select
+                    value={formData.steno_speed ?? 100}
+                    onChange={(e) => setFormData({ ...formData, steno_speed: parseInt(e.target.value, 10) })}
+                    style={{ fontSize: '0.9rem' }}
+                  >
+                    {[40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150].map(s => (
+                      <option key={s} value={s}>{s} WPM</option>
+                    ))}
+                  </select>
+                  <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
+                    Students will see three choices centred on this speed: <strong>{(formData.steno_speed ?? 100) - 10}</strong>,{' '}
+                    <strong>{formData.steno_speed ?? 100} (default)</strong> and <strong>{(formData.steno_speed ?? 100) + 10}</strong> WPM.
+                    The audio plays at normal speed for the default and is scaled for the ±10 options.
+                  </p>
+                </div>
+              )}
 
               {isSteno && (
                 <div className="input-group">

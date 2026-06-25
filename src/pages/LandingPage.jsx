@@ -3,34 +3,32 @@ import Header from '../components/Header';
 import ModuleCard from '../components/ModuleCard';
 import AboutSection from '../components/AboutSection';
 import { settingService } from '../services/api';
-import { API_BASE_URL } from '../config';
 import '../App.css';
 
 const LandingPage = () => {
-  // Desktop-app download info is managed from the Admin Panel (Settings), so the
-  // button/version here update automatically whenever a new build is uploaded.
-  const [appInfo, setAppInfo] = useState(null);
+  // Desktop & mobile download links are managed from the Admin Panel (Settings),
+  // so the buttons/versions here update automatically whenever the admin saves a
+  // new URL — no code change or redeploy required.
+  const [apps, setApps] = useState({ desktop: null, mobile: null });
 
   useEffect(() => {
     (async () => {
       try {
         const all = await settingService.getAll();
-        if (all && all.desktop_app_url) {
-          setAppInfo({
-            version: all.desktop_app_version || '',
-            releaseDate: all.desktop_app_release_date || '',
-          });
-        }
+        setApps({
+          desktop: all?.desktop_app_url
+            ? { url: all.desktop_app_url, version: all.desktop_app_version || '', releaseDate: all.desktop_app_release_date || '' }
+            : null,
+          mobile: all?.mobile_app_url
+            ? { url: all.mobile_app_url, version: all.mobile_app_version || '', releaseDate: all.mobile_app_release_date || '' }
+            : null,
+        });
       } catch (err) {
-        // Non-critical: if settings can't load we simply hide the button.
-        console.warn('Could not load desktop app info:', err);
+        // Non-critical: if settings can't load we simply hide the buttons.
+        console.warn('Could not load app download info:', err);
       }
     })();
   }, []);
-
-  // Hit the backend download route so the .exe streams as an attachment and
-  // begins downloading immediately (with its friendly filename).
-  const downloadHref = `${API_BASE_URL}/settings/desktop-app/download`;
 
   const formatDate = (d) => {
     if (!d) return '';
@@ -38,29 +36,50 @@ const LandingPage = () => {
     return isNaN(dt) ? d : dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
+  const meta = (app) =>
+    (app.version || app.releaseDate) ? (
+      <p className="ddb-meta">
+        {app.version && <span>Version <strong>{app.version}</strong></span>}
+        {app.version && app.releaseDate && <span> · </span>}
+        {app.releaseDate && <span>Released {formatDate(app.releaseDate)}</span>}
+      </p>
+    ) : null;
+
+  const hasAny = apps.desktop || apps.mobile;
+
   return (
     <div className="app-container">
       <Header />
 
       <main className="landing-container">
-        {appInfo && (
+        {hasAny && (
           <section className="desktop-download-banner">
             <div className="ddb-text">
-              <h2 className="ddb-title">Get the Desktop Application</h2>
+              <h2 className="ddb-title">Get the App</h2>
               <p className="ddb-sub">
-                Install the Windows app to practise typing &amp; steno offline — no internet required.
+                Install our app to practise typing &amp; steno offline — anytime, anywhere.
               </p>
-              {(appInfo.version || appInfo.releaseDate) && (
-                <p className="ddb-meta">
-                  {appInfo.version && <span>Version <strong>{appInfo.version}</strong></span>}
-                  {appInfo.version && appInfo.releaseDate && <span> · </span>}
-                  {appInfo.releaseDate && <span>Released {formatDate(appInfo.releaseDate)}</span>}
-                </p>
+            </div>
+
+            <div className="ddb-actions">
+              {apps.desktop && (
+                <div className="ddb-action">
+                  {/* External link configured by the admin; opens in a new tab. */}
+                  <a className="ddb-btn" href={apps.desktop.url} target="_blank" rel="noopener noreferrer">
+                    🖥️ Download Desktop App
+                  </a>
+                  {meta(apps.desktop)}
+                </div>
+              )}
+              {apps.mobile && (
+                <div className="ddb-action">
+                  <a className="ddb-btn" href={apps.mobile.url} target="_blank" rel="noopener noreferrer">
+                    📱 Download Mobile App
+                  </a>
+                  {meta(apps.mobile)}
+                </div>
               )}
             </div>
-            <a className="ddb-btn" href={downloadHref} download>
-              ⬇ Download Desktop Application
-            </a>
           </section>
         )}
 

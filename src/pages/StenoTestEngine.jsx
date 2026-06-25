@@ -56,6 +56,15 @@ const StenoTestEngine = () => {
   // Resolved font_group string so the result screen's existing font logic applies.
   const resolvedFontGroup = fontGroupForHindiType(hindiFontType);
 
+  // ─── Dictation speed ─────────────────────────────────────────────────────────
+  // The admin sets a default speed (WPM) per Steno chapter. The student picks one of
+  // three values centred on it (default-10 / default / default+10). The audio's native
+  // recording corresponds to the default speed, so playback is scaled by selected/default
+  // (the default plays at normal 1.0×). Legacy chapters with no steno_speed fall back to
+  // 100, preserving the original 90/100/110 behaviour exactly.
+  const defaultSpeed  = Number(chapter?.steno_speed) || 100;
+  const speedOptions  = [defaultSpeed - 10, defaultSpeed, defaultSpeed + 10];
+
   // ─── Audio state ────────────────────────────────────────────────────────────
   const audioRef           = useRef(null);
   const [showAudioModal, setShowAudioModal]   = useState(true);
@@ -63,7 +72,8 @@ const StenoTestEngine = () => {
   const [audioDuration, setAudioDuration]     = useState(0);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const [audioEnded, setAudioEnded]           = useState(false);
-  const [audioSpeed, setAudioSpeed]           = useState(100); // in WPM (base 100)
+  // Selected dictation speed (WPM); starts at the admin-selected default.
+  const [audioSpeed, setAudioSpeed]           = useState(defaultSpeed);
 
   // ─── Timer state ────────────────────────────────────────────────────────────
   const [timeLeft,    setTimeLeft]    = useState(exam?.test_time_minutes * 60 || 600);
@@ -183,7 +193,7 @@ const StenoTestEngine = () => {
       return;
     }
     if (!audioRef.current) return;
-    audioRef.current.playbackRate = audioSpeed / 100;
+    audioRef.current.playbackRate = audioSpeed / defaultSpeed;
     audioRef.current.play().then(() => {
       setAudioPlaying(true);
     }).catch((err) => {
@@ -201,7 +211,7 @@ const StenoTestEngine = () => {
   const handleSpeedChange = (speed) => {
     setAudioSpeed(speed);
     if (audioRef.current) {
-      audioRef.current.playbackRate = speed / 100;
+      audioRef.current.playbackRate = speed / defaultSpeed;
     }
   };
 
@@ -658,13 +668,14 @@ const StenoTestEngine = () => {
             <div className="steno-speed-wrap">
               <span className="steno-speed-label">Dictation Speed:</span>
               <div className="steno-speed-selector">
-                {[90, 100, 110].map(s => (
+                {speedOptions.map(s => (
                   <button
                     key={s}
                     className={`steno-speed-btn ${audioSpeed === s ? 'active' : ''}`}
                     onClick={() => handleSpeedChange(s)}
+                    title={s === defaultSpeed ? 'Default speed set by admin' : `${s > defaultSpeed ? 'Faster' : 'Slower'} than default`}
                   >
-                    {s} WPM
+                    {s} WPM{s === defaultSpeed ? ' (Default)' : ''}
                   </button>
                 ))}
               </div>

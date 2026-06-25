@@ -499,12 +499,6 @@ export const settingService = {
     const res = await api.put(`/settings/${key}`, { value });
     return res.data;
   },
-  // Upload a new desktop application .exe (admin only). `formData` carries the
-  // file plus optional `version` and `release_date` fields.
-  uploadDesktopApp: async (formData) => {
-    const res = await api.post('/settings/desktop-app/upload', formData);
-    return res.data;
-  },
 };
 
 export default api;
