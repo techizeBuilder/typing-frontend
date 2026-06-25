@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { settingService } from '../../services/api';
-import { API_BASE_URL } from '../../config';
 
-// Admin settings panel. Exposes the Live Test rank-update time and the desktop
-// application download managed on the public landing page.
+// Admin settings panel. Exposes the Live Test rank-update time and the external
+// Desktop / Mobile application download links advertised on the public landing page.
 const LIVE_RANK_KEY = 'live_rank_update_time';
 
 // "21:00" → "9:00 PM" for a friendly display next to the 24h input.
@@ -17,18 +16,18 @@ const to12h = (hhmm) => {
   return `${h}:${min} ${ampm}`;
 };
 
+const isValidUrl = (u) => !u || /^https?:\/\/.+/i.test(u.trim());
+
 const AdminSettings = () => {
   const [rankTime, setRankTime] = useState('21:00');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null); // { type: 'success'|'error', msg }
 
-  // ── Desktop application ──
-  const [appInfo, setAppInfo] = useState({ url: '', filename: '', version: '', release_date: '' });
-  const [appFile, setAppFile] = useState(null);
-  const [appVersion, setAppVersion] = useState('');
-  const [appReleaseDate, setAppReleaseDate] = useState('');
-  const [appUploading, setAppUploading] = useState(false);
+  // ── App download links (external URLs, e.g. Google Drive) ──
+  const [desktop, setDesktop] = useState({ url: '', version: '', release_date: '' });
+  const [mobile, setMobile] = useState({ url: '', version: '', release_date: '' });
+  const [appSaving, setAppSaving] = useState(false);
   const [appStatus, setAppStatus] = useState(null);
 
   useEffect(() => {
@@ -37,14 +36,16 @@ const AdminSettings = () => {
         const all = await settingService.getAll();
         if (all && all[LIVE_RANK_KEY]) setRankTime(all[LIVE_RANK_KEY]);
         if (all) {
-          setAppInfo({
+          setDesktop({
             url: all.desktop_app_url || '',
-            filename: all.desktop_app_filename || '',
             version: all.desktop_app_version || '',
             release_date: all.desktop_app_release_date || '',
           });
-          setAppVersion(all.desktop_app_version || '');
-          setAppReleaseDate(all.desktop_app_release_date || '');
+          setMobile({
+            url: all.mobile_app_url || '',
+            version: all.mobile_app_version || '',
+            release_date: all.mobile_app_release_date || '',
+          });
         }
       } catch (err) {
         console.error('Error loading settings:', err);
@@ -55,37 +56,30 @@ const AdminSettings = () => {
     })();
   }, []);
 
-  const handleUploadApp = async () => {
-    if (!appFile) {
-      setAppStatus({ type: 'error', msg: 'Choose a .exe file to upload.' });
+  const handleSaveLinks = async () => {
+    if (!isValidUrl(desktop.url) || !isValidUrl(mobile.url)) {
+      setAppStatus({ type: 'error', msg: 'Download URLs must start with http:// or https://' });
       return;
     }
-    if (!appFile.name.toLowerCase().endsWith('.exe')) {
-      setAppStatus({ type: 'error', msg: 'Only .exe files are allowed.' });
-      return;
-    }
-    setAppUploading(true);
+    setAppSaving(true);
     setAppStatus(null);
     try {
-      const fd = new FormData();
-      fd.append('file', appFile);
-      fd.append('version', appVersion.trim());
-      fd.append('release_date', appReleaseDate.trim());
-      const res = await settingService.uploadDesktopApp(fd);
-      setAppInfo({
-        url: res.url || '',
-        filename: res.filename || appFile.name,
-        version: res.version || '',
-        release_date: res.release_date || '',
-      });
-      setAppFile(null);
-      setAppStatus({ type: 'success', msg: 'Desktop application updated. The landing page now offers this version.' });
+      // Save each field; empty values clear the link / metadata.
+      await Promise.all([
+        settingService.update('desktop_app_url', desktop.url.trim()),
+        settingService.update('desktop_app_version', desktop.version.trim()),
+        settingService.update('desktop_app_release_date', desktop.release_date.trim()),
+        settingService.update('mobile_app_url', mobile.url.trim()),
+        settingService.update('mobile_app_version', mobile.version.trim()),
+        settingService.update('mobile_app_release_date', mobile.release_date.trim()),
+      ]);
+      setAppStatus({ type: 'success', msg: 'Download links saved. The landing page now uses these URLs.' });
     } catch (err) {
-      console.error('Error uploading desktop app:', err);
-      const msg = err?.response?.data?.message || 'Upload failed. Please try again.';
+      console.error('Error saving download links:', err);
+      const msg = err?.response?.data?.message || 'Could not save the download links.';
       setAppStatus({ type: 'error', msg: Array.isArray(msg) ? msg.join(', ') : msg });
     } finally {
-      setAppUploading(false);
+      setAppSaving(false);
     }
   };
 
@@ -111,6 +105,45 @@ const AdminSettings = () => {
   const label = { display: 'block', fontWeight: 600, color: '#334155', marginBottom: '6px' };
   const input = { padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.95rem', color: '#1e293b' };
 
+  // Renders one platform's URL + optional version/date fields.
+  const renderAppFields = (titleIcon, titleText, helpText, state, setState) => (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px' }}>
+      <h4 style={{ margin: '0 0 4px', fontSize: '0.98rem', color: '#0f172a' }}>{titleIcon} {titleText}</h4>
+      <p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '0.82rem', lineHeight: 1.5 }}>{helpText}</p>
+
+      <label style={label}>Download URL</label>
+      <input
+        type="url"
+        placeholder="https://drive.google.com/..."
+        value={state.url}
+        onChange={(e) => setState({ ...state, url: e.target.value })}
+        style={{ ...input, width: '100%', boxSizing: 'border-box', marginBottom: '14px' }}
+      />
+
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+        <div>
+          <label style={label}>Version (optional)</label>
+          <input
+            type="text"
+            placeholder="e.g. 1.2.0"
+            value={state.version}
+            onChange={(e) => setState({ ...state, version: e.target.value })}
+            style={input}
+          />
+        </div>
+        <div>
+          <label style={label}>Release date (optional)</label>
+          <input
+            type="date"
+            value={state.release_date}
+            onChange={(e) => setState({ ...state, release_date: e.target.value })}
+            style={input}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="admin-card">
       <header className="admin-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
@@ -121,7 +154,7 @@ const AdminSettings = () => {
       {loading ? (
         <p style={{ padding: '20px' }}>Loading settings…</p>
       ) : (
-        <div style={{ padding: '20px', maxWidth: '560px' }}>
+        <div style={{ padding: '20px', maxWidth: '620px' }}>
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px' }}>
             <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: '#0f172a' }}>Live Test Rank Update Time</h3>
             <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '0.85rem', lineHeight: 1.5 }}>
@@ -163,70 +196,40 @@ const AdminSettings = () => {
             </div>
           </div>
 
-          {/* ── Desktop Application ─────────────────────────────────────────── */}
+          {/* ── Application Download Links ──────────────────────────────────── */}
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', marginTop: '20px' }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: '#0f172a' }}>Desktop Application Download</h3>
+            <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: '#0f172a' }}>Application Download Links</h3>
             <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '0.85rem', lineHeight: 1.5 }}>
-              Upload the latest Windows installer (.exe). It is published immediately on the
-              landing page's "Download Desktop Application" button. Uploading a new file replaces
-              the current one.
+              Paste the external download links (e.g. Google Drive share links) for the Desktop and
+              Mobile apps. The landing page's download buttons use these URLs automatically — update a
+              link here to publish a new version without any code change. Leave a URL blank to hide its
+              button.
             </p>
 
-            {appInfo.url ? (
-              <div style={{ marginBottom: '16px', padding: '12px 14px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', fontSize: '0.85rem', color: '#065f46' }}>
-                <div><strong>Current:</strong> {appInfo.filename || '—'}</div>
-                <div>Version: <strong>{appInfo.version || '—'}</strong> · Released: <strong>{appInfo.release_date || '—'}</strong></div>
-                <a href={`${API_BASE_URL}/settings/desktop-app/download`} target="_blank" rel="noreferrer" style={{ color: '#0b4bcc', fontWeight: 600 }}>
-                  Download current file
-                </a>
-              </div>
-            ) : (
-              <div style={{ marginBottom: '16px', padding: '12px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '0.85rem', color: '#9a3412' }}>
-                No desktop application uploaded yet. The landing-page button is hidden until you upload one.
-              </div>
-            )}
-
-            <label style={label}>Installer file (.exe)</label>
-            <input
-              type="file"
-              accept=".exe,application/x-msdownload"
-              onChange={(e) => setAppFile(e.target.files?.[0] || null)}
-              style={{ ...input, padding: '7px 10px', display: 'block', marginBottom: '14px' }}
-            />
-
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '14px' }}>
-              <div>
-                <label style={label}>Version</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 1.2.0"
-                  value={appVersion}
-                  onChange={(e) => setAppVersion(e.target.value)}
-                  style={input}
-                />
-              </div>
-              <div>
-                <label style={label}>Release date</label>
-                <input
-                  type="date"
-                  value={appReleaseDate}
-                  onChange={(e) => setAppReleaseDate(e.target.value)}
-                  style={input}
-                />
-              </div>
+            <div style={{ display: 'grid', gap: '16px' }}>
+              {renderAppFields(
+                '🖥️', 'Desktop App',
+                'Windows installer link. Shown as "Download Desktop App" on the landing page.',
+                desktop, setDesktop,
+              )}
+              {renderAppFields(
+                '📱', 'Mobile App',
+                'Android/iOS app link (APK or store URL). Shown as "Download Mobile App" on the landing page.',
+                mobile, setMobile,
+              )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ marginTop: '18px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <button
-                onClick={handleUploadApp}
-                disabled={appUploading}
+                onClick={handleSaveLinks}
+                disabled={appSaving}
                 style={{
-                  padding: '9px 18px', background: appUploading ? '#94a3b8' : '#0b4bcc', color: '#fff',
-                  border: 'none', borderRadius: '6px', cursor: appUploading ? 'not-allowed' : 'pointer',
+                  padding: '9px 18px', background: appSaving ? '#94a3b8' : '#0b4bcc', color: '#fff',
+                  border: 'none', borderRadius: '6px', cursor: appSaving ? 'not-allowed' : 'pointer',
                   fontSize: '0.9rem', fontWeight: 600,
                 }}
               >
-                {appUploading ? 'Uploading…' : 'Upload / Update'}
+                {appSaving ? 'Saving…' : 'Save Download Links'}
               </button>
               {appStatus && (
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: appStatus.type === 'success' ? '#16a34a' : '#dc2626' }}>
