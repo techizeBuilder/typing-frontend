@@ -297,8 +297,16 @@ const AvailableTests = () => {
 
   const isLiveTest = testType === 'Live Test';
 
+  // Natural/numeric sort so tests appear in sequential order (CH-4, CH-5 … CH-34,
+  // CH-35) instead of lexicographically shuffled (CH-34, CH-4, CH-40, CH-5 …).
+  const sortByChapterNo = (a, b) =>
+    String(a.chapter_no ?? '').localeCompare(String(b.chapter_no ?? ''), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+
   // Date filter applies ONLY for Live Tests
-  const filteredChapters = isLiveTest
+  const filteredChapters = (isLiveTest
     ? chapters.filter((chapter) => {
         if (!chapter.test_date) return true;
         const cDate = new Date(chapter.test_date);
@@ -308,7 +316,8 @@ const AvailableTests = () => {
           cDate.getFullYear() === selectedDate.getFullYear()
         );
       })
-    : chapters; // Pre-load: show all, no date filter
+    : [...chapters] // Pre-load: show all, no date filter
+  ).sort(sortByChapterNo);
 
   // Determine how many tests are unlocked for the user. Default is 1 if not set by admin.
   const unlockedCount = userProfile?.live_tests_limit ?? 1;

@@ -173,6 +173,25 @@ const AdminStudents = () => {
     }
   };
 
+  const handleDeleteStudent = async (student) => {
+    const ok = window.confirm(
+      `Delete the account for "${student.name}" (${student.user_id || student.phone})?\n\n` +
+      `This permanently removes the student and ALL their test results. This cannot be undone.`
+    );
+    if (!ok) return;
+    try {
+      await userService.deleteUser(student.id);
+      setSelectedStudentIds(prev => {
+        const next = new Set(prev);
+        next.delete(student.id);
+        return next;
+      });
+      fetchStudents();
+    } catch (error) {
+      alert('Error deleting student: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
   const openEditModal = (student) => {
     setCurrentStudent(student);
     const existingCats = student.category
@@ -861,6 +880,7 @@ const AdminStudents = () => {
                   <button className="btn-action btn-edit" onClick={() => openEditModal(s)}>Edit</button>
                   <button className="btn-action btn-edit" onClick={() => handleStatusToggle(s)}>Toggle</button>
                   <button className="btn-action btn-edit" style={{ background: '#3b82f6', color: 'white' }} onClick={() => openTestsModal(s)}>View Tests</button>
+                  <button className="btn-action btn-delete" style={{ background: '#dc2626', color: 'white' }} onClick={() => handleDeleteStudent(s)}>Delete</button>
                 </div>
               </td>
             </tr>

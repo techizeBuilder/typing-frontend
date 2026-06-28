@@ -5,6 +5,13 @@ import Header from '../components/Header';
 import api, { chapterService, offlineTestService } from '../services/api';
 import './StenoDictations.css';
 
+// Resolve a dictation's word count: prefer the admin-set value, otherwise count
+// the transcript so every card shows a real number (no hardcoded placeholder).
+const wordCountFor = (chapter) => {
+  if (chapter?.word_count != null && chapter.word_count !== '') return chapter.word_count;
+  return (chapter?.content_text || '').trim().split(/\s+/).filter(Boolean).length;
+};
+
 const StenoDictations = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -163,6 +170,15 @@ const StenoDictations = () => {
     : selectedMode === 'Steno Hindi' ? 'Hindi Steno'
     : selectedMode;
 
+  // Natural/numeric sort so dictations appear in sequential order rather than
+  // shuffled lexicographically (CH-4, CH-5 … CH-34 instead of CH-34, CH-4 …).
+  const sortedChapters = [...chapters].sort((a, b) =>
+    String(a.chapter_no ?? '').localeCompare(String(b.chapter_no ?? ''), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    })
+  );
+
   return (
     <div className="sd-page">
       <Header />
@@ -238,7 +254,7 @@ const StenoDictations = () => {
             </div>
           ) : (
             <div className="sd-cards-grid">
-              {chapters.map((chapter, index) => (
+              {sortedChapters.map((chapter, index) => (
                 <div className="sd-card" key={chapter.id}>
                   {/* Card header */}
                   <div className="sd-card-head">
@@ -267,15 +283,15 @@ const StenoDictations = () => {
                   {/* Divider */}
                   <hr className="sd-divider" />
 
-                  {/* Feature list */}
+                  {/* Feature list — kept uniform across every card */}
                   <ul className="sd-features">
                     <li>
                       <span className="sd-check">✓</span>
-                      <span>Topic — {chapter.name || '—'}</span>
+                      <span>Topic — {chapter.name || `Dictation ${chapter.chapter_no || index + 1}`}</span>
                     </li>
                     <li>
                       <span className="sd-check">✓</span>
-                      <span>{chapter.word_count || 1018} Words</span>
+                      <span>{wordCountFor(chapter)} Words</span>
                     </li>
                     <li>
                       <span className="sd-check">✓</span>
