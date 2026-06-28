@@ -6,6 +6,10 @@ import mammoth from 'mammoth';
 import Pagination from '../../components/Pagination';
 import './Admin.css';
 
+// Count words in a transcript: collapse whitespace and count non-empty tokens.
+const countWords = (text) =>
+  (text || '').trim().split(/\s+/).filter(Boolean).length;
+
 const AdminChapters = () => {
   const [chapters, setChapters] = useState([]);
   const [exams, setExams] = useState([]);
@@ -31,6 +35,7 @@ const AdminChapters = () => {
     test_type: 'Pre-load Test',
     exam_ids: [],
     content_text: '',
+    word_count: '', // auto-calculated from content_text; admin may override
     steno_speed: 100, // default Steno dictation speed (WPM); only sent for Steno chapters
   });
   const [examDropdownOpen, setExamDropdownOpen] = useState(false);
@@ -65,7 +70,8 @@ const AdminChapters = () => {
     if (file.name.endsWith('.txt')) {
       const reader = new FileReader();
       reader.onload = (event) => {
-        setFormData(prev => ({ ...prev, content_text: event.target.result }));
+        const text = event.target.result;
+        setFormData(prev => ({ ...prev, content_text: text, word_count: countWords(text) }));
       };
       reader.readAsText(file);
     } else if (file.name.endsWith('.docx')) {
@@ -73,7 +79,7 @@ const AdminChapters = () => {
       reader.onload = async (event) => {
         try {
           const result = await mammoth.extractRawText({ arrayBuffer: event.target.result });
-          setFormData(prev => ({ ...prev, content_text: result.value }));
+          setFormData(prev => ({ ...prev, content_text: result.value, word_count: countWords(result.value) }));
         } catch (error) {
           console.error("Error reading Word document", error);
           alert("Could not extract text from Word document.");
@@ -94,6 +100,8 @@ const AdminChapters = () => {
     setFormData({
       ...chapter,
       exam_ids: existingIds,
+      // Fall back to the live count so legacy chapters (word_count null) show a value.
+      word_count: (chapter.word_count ?? '') === '' ? countWords(chapter.content_text) : chapter.word_count,
       test_date: new Date(chapter.test_date).toISOString().split('T')[0]
     });
     setShowForm(true);
@@ -115,6 +123,13 @@ const AdminChapters = () => {
       const ids = Array.isArray(cleanData.exam_ids) ? cleanData.exam_ids.filter(Boolean) : [];
       cleanData.exam_ids = ids;
       cleanData.exam_id = ids.length > 0 ? ids[0] : null;
+
+      // Word count: use the manual override when provided, otherwise auto-calculate
+      // from the transcript so the value is always populated.
+      const manualCount = parseInt(cleanData.word_count, 10);
+      cleanData.word_count = Number.isFinite(manualCount) && manualCount >= 0
+        ? manualCount
+        : countWords(cleanData.content_text);
 
       // The Hindi-Steno font columns are opt-in: only Steno chapters send them, so
       // existing English/Hindi typing chapters still save on databases where the
@@ -153,6 +168,7 @@ const AdminChapters = () => {
         chapter_no: '', name: '',
         test_date: new Date().toISOString().split('T')[0],
         font_group: 'English Typing', test_type: 'Pre-load Test', exam_ids: [], content_text: '',
+        word_count: '',
         steno_speed: 100,
       });
       fetchChapters();
@@ -439,7 +455,7 @@ const AdminChapters = () => {
                 <textarea
                   rows="10"
                   value={formData.content_text}
-                  onChange={(e) => setFormData({...formData, content_text: e.target.value})}
+                  onChange={(e) => setFormData({...formData, content_text: e.target.value, word_count: countWords(e.target.value)})}
                   placeholder={isSteno ? "Paste the dictation transcript here (hidden from student, used for scoring only)" : "Paste content here or upload a .txt/.docx file..."}
                   spellCheck={false}
                   lang={formData.font_group === 'Hindi Mangal' ? 'hi' : 'en'}
@@ -454,6 +470,36 @@ const AdminChapters = () => {
                   }}
                   required
                 />
+              </div>
+
+              <div className="input-group">
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Total Word Count</span>
+                  <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Auto-calculated: <strong>{countWords(formData.content_text)}</strong> words
+                  </span>
+                </label>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.word_count}
+                    onChange={(e) => setFormData({ ...formData, word_count: e.target.value })}
+                    placeholder="Auto-calculated from transcript"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setFormData({ ...formData, word_count: countWords(formData.content_text) })}
+                    style={{ padding: '0 14px', whiteSpace: 'nowrap' }}
+                  >
+                    Recalculate
+                  </button>
+                </div>
+                <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
+                  Updated automatically from the transcript above. You can override it manually if needed.
+                </p>
               </div>
 
               {isSteno && (

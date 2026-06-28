@@ -1234,7 +1234,7 @@ const TestEngine = () => {
       <div className="tcs-top-header">
         <div className="tcs-top-header-left">
           <button className="tcs-exit-btn" onClick={() => navigate('/dashboard')}>← Exit</button>
-          BSEDC English Typing Test
+          {exam?.name || mode || 'English Typing Test'}
         </div>
         <div className="tcs-top-header-right">
           <span className="tcs-info-icon">i</span> Instructions
