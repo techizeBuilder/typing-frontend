@@ -29,7 +29,9 @@ const AvailableTests = () => {
   const { selectedMode, testType, selectedExam } = location.state || {};
   const [chapters, setChapters] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  // Live tests are only available on their scheduled date: the list is pinned to
+  // TODAY. Expired (past) and future live tests never appear.
+  const selectedDate = new Date();
   const [userProfile, setUserProfile] = useState(null);
   const [attemptsByChapter, setAttemptsByChapter] = useState({});
   const [resultsByChapter, setResultsByChapter] = useState({});
@@ -289,12 +291,6 @@ const AvailableTests = () => {
     });
   };
 
-  const shiftDate = (days) => {
-    const newDate = new Date(selectedDate);
-    newDate.setDate(newDate.getDate() + days);
-    setSelectedDate(newDate);
-  };
-
   const isLiveTest = testType === 'Live Test';
 
   // Natural/numeric sort so tests appear in sequential order (CH-4, CH-5 … CH-34,
@@ -393,10 +389,9 @@ const AvailableTests = () => {
             </div>
           )}
 
-          {/* Date selector — Live Test only */}
+          {/* Today's date — Live Tests are only available on their scheduled date */}
           {isLiveTest && (
             <div className="date-selector-bar">
-              <button className="date-btn" onClick={() => shiftDate(-1)}>&lt;</button>
               <div className="date-display">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -404,9 +399,8 @@ const AvailableTests = () => {
                   <line x1="8" y1="2" x2="8" y2="6"></line>
                   <line x1="3" y1="10" x2="21" y2="10"></line>
                 </svg>
-                {selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                Today — {selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
               </div>
-              <button className="date-btn" onClick={() => shiftDate(1)}>&gt;</button>
             </div>
           )}
 
@@ -474,7 +468,7 @@ const AvailableTests = () => {
                     {filteredChapters.length === 0 ? (
                       <tr>
                         <td colSpan={10}>
-                          No live chapters found for {selectedMode} on this date.
+                          No live tests are scheduled for {selectedMode} today. Live tests are only available on their scheduled date.
                         </td>
                       </tr>
                     ) : (

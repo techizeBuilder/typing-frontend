@@ -78,6 +78,8 @@ const TestEngine = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [s6ShowText, setS6ShowText] = useState(false);
+  // Show/Hide Content — lets the student hide the source passage on any screen.
+  const [showContent, setShowContent] = useState(true);
   const [profileImageUrl, setProfileImageUrl] = useState(null);
   // Brief "processing result" screen shown for 2s after submit before the result.
   const [isProcessing, setIsProcessing] = useState(false);
@@ -114,6 +116,28 @@ const TestEngine = () => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  // ─── Copy/Paste lockdown ────────────────────────────────────────────────────
+  // Copying the passage or pasting text into the typing box defeats the test, so
+  // all clipboard operations are blocked while the test screen is open. The only
+  // exception is any element marked data-allow-paste (the self-assessment custom
+  // passage box, where students legitimately paste their own practice text).
+  useEffect(() => {
+    const blockClipboard = (e) => {
+      if (e.target?.closest?.('[data-allow-paste]')) return;
+      e.preventDefault();
+    };
+    document.addEventListener('copy',  blockClipboard, true);
+    document.addEventListener('cut',   blockClipboard, true);
+    document.addEventListener('paste', blockClipboard, true);
+    document.addEventListener('drop',  blockClipboard, true); // dropping text = paste
+    return () => {
+      document.removeEventListener('copy',  blockClipboard, true);
+      document.removeEventListener('cut',   blockClipboard, true);
+      document.removeEventListener('paste', blockClipboard, true);
+      document.removeEventListener('drop',  blockClipboard, true);
+    };
   }, []);
 
   // ─── Chapter Initialisation ────────────────────────────────────────────────
@@ -1150,6 +1174,21 @@ const TestEngine = () => {
     </div>
   ) : null;
 
+  // ─── Show/Hide Content toggle ────────────────────────────────────────────────
+  // Rendered on every screen layout; intentionally NOT settings-locked so the
+  // student can hide/reveal the passage at any point during the test.
+  const contentToggleBtn = (className, style) => (
+    <button
+      type="button"
+      className={className}
+      style={style}
+      onClick={() => setShowContent(v => !v)}
+      title={showContent ? 'Hide the passage content' : 'Show the passage content'}
+    >
+      {showContent ? 'Hide Content' : 'Show Content'}
+    </button>
+  );
+
   // ─── TCS Screen 5 Render ─────────────────────────────────────────────────────
   if (screenType === 'Screen-5') {
     const tcsTextarea = (
@@ -1172,7 +1211,7 @@ const TestEngine = () => {
       />
     );
 
-    const tcsPassage = settings.paperMode ? null : (
+    const tcsPassage = (settings.paperMode || !showContent) ? null : (
       <div className="source-text-container tcs-passage" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
         <div className="text-display">{renderWords()}</div>
       </div>
@@ -1261,6 +1300,7 @@ const TestEngine = () => {
         <div className="tcs-th-left">
           <span className="tcs-th-title">TCS Interface</span>
           <button className="tcs-grey-btn" onClick={cycleTcsInterface}>Change Interface</button>
+          {contentToggleBtn('tcs-grey-btn')}
         </div>
         <div className="tcs-th-line"></div>
         {withFontControls && !isFullscreen && (
@@ -1308,7 +1348,7 @@ const TestEngine = () => {
         <div className="tcs-purple-header"></div>
         {tcsThirdHeader(true)}
         <div className="tcs-content tcs-content-full">
-          {!settings.paperMode && (
+          {!settings.paperMode && showContent && (
             <div className="tcs-fullwidth-passage" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
               <div className="text-display">{renderWords()}</div>
             </div>
@@ -1424,6 +1464,13 @@ const TestEngine = () => {
               >
                 {isPaused ? '▶' : '⏸'}
               </button>
+              <button
+                className="s2new-action-btn"
+                onClick={() => setShowContent(v => !v)}
+                title={showContent ? 'Hide Content' : 'Show Content'}
+              >
+                {showContent ? '🙈' : '👁'}
+              </button>
               <button className="s2new-action-btn" onClick={toggleFullScreen} title="Fullscreen">⛶</button>
               <button className="s2new-action-btn" onClick={() => setMobileSettingsOpen(true)} title="Settings">⚙</button>
               <button className="s2new-submit-btn" onClick={() => handleFinish()}>Submit</button>
@@ -1433,7 +1480,7 @@ const TestEngine = () => {
 
         {/* ── Passage + Typing Areas ────────────────────────────────── */}
         <div className="s2new-body">
-          {!settings.paperMode && (
+          {!settings.paperMode && showContent && (
             <div className="s2new-passage" style={{ position: 'relative' }}>
               {s2Passage}
               {isPaused && (
@@ -1549,6 +1596,7 @@ const TestEngine = () => {
               <div className="s1new-toolbar-timer">{formatTime(timeLeft)} Time Left</div>
             )}
             <div className="s1new-toolbar-right">
+              {contentToggleBtn('s1new-blue-btn')}
               <button
                 className="s1new-blue-btn"
                 onClick={handlePause}
@@ -1562,7 +1610,7 @@ const TestEngine = () => {
             </div>
           </div>
 
-          {!settings.paperMode && (
+          {!settings.paperMode && showContent && (
             <div className="s1new-passage-box" style={{ position: 'relative' }}>
               {s1Passage}
               {isPaused && (
@@ -1704,6 +1752,7 @@ const TestEngine = () => {
               >
                 How To Type This
               </button>
+              {contentToggleBtn('s3new-blue-btn')}
               <label className="s3new-radio">
                 <input
                   type="radio"
@@ -1744,7 +1793,7 @@ const TestEngine = () => {
           </div>
 
           {/* Passage card */}
-          {!settings.paperMode && (
+          {!settings.paperMode && showContent && (
             <div className="s3new-card s3new-passage-card" style={{ position: 'relative' }}>
               {s3Passage}
               {isPaused && (
@@ -1821,7 +1870,7 @@ const TestEngine = () => {
           <button className="s6-btn s6-btn-exit" onClick={() => navigate('/dashboard')}>Exit</button>
         </div>
 
-        {/* ── Sub Bar: Show Text toggle + warning ── */}
+        {/* ── Sub Bar: Show Text toggle + font size + warning ── */}
         <div className="s6-subbar">
           <label className="s6-show-text-label">
             <input
@@ -1832,6 +1881,11 @@ const TestEngine = () => {
             />
             Show Text
           </label>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '14px' }}>
+            <button className="s6-btn" type="button" onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 2), testFontSize: Math.max(10, s.testFontSize - 2) }))}>A-</button>
+            <span style={{ fontWeight: 700, minWidth: '22px', textAlign: 'center' }}>{settings.fontSize}</span>
+            <button className="s6-btn" type="button" onClick={() => setSettings(s => ({ ...s, fontSize: s.fontSize + 2, testFontSize: s.testFontSize + 2 }))}>A+</button>
+          </span>
           <span className="s6-repeat-notice">
             Passage Repetition Is Available Here For Pratice. In The Real Exam, It Is Allowed Only If Specified In the Exam Notification
           </span>
@@ -1951,9 +2005,11 @@ const TestEngine = () => {
           <div className="s4-read-label">
             Read Line no {currentLineIndex + 1} / {totalLines}
           </div>
-          <div className="s4-passage-box" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
-            {renderS4Line()}
-          </div>
+          {showContent && (
+            <div className="s4-passage-box" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
+              {renderS4Line()}
+            </div>
+          )}
 
           <div className="s4-type-label-row">
             <div className="s4-type-label-left">Type Line no {currentLineIndex + 1} / {totalLines}</div>
@@ -1983,6 +2039,7 @@ const TestEngine = () => {
                 <button className="s4-btn-font" onClick={() => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize - 2), testFontSize: s.sameSize ? Math.max(10, s.fontSize - 2) : s.testFontSize }))}>A-</button>
                 <button className="s4-btn-font" onClick={() => setSettings(s => ({ ...s, fontSize: s.fontSize + 2, testFontSize: s.sameSize ? s.fontSize + 2 : s.testFontSize }))}>A+</button>
               </div>
+              {!isFullscreen && contentToggleBtn('s4-btn-font', { pointerEvents: 'auto', opacity: 1 })}
             </div>
 
             <div className="s4-dpad-col">
@@ -2064,11 +2121,16 @@ const TestEngine = () => {
             </div>
           )}
 
-          {!settings.paperMode && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
+            {contentToggleBtn(undefined, { padding: '5px 12px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f1f5f9', color: '#334155', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' })}
+          </div>
+
+          {!settings.paperMode && (showContent || (isSelfAssessment && timeElapsed === 0 && !passedChapter?.content_text)) && (
             <div className="source-text-container" style={{ fontSize: `${settings.testFontSize}px`, fontFamily: hindiFontFamily }}>
               {isSelfAssessment && timeElapsed === 0 && !passedChapter?.content_text ? (
                 <textarea
                    className="typing-input"
+                   data-allow-paste="true"
                    placeholder="Paste your custom text here before typing begins..."
                    value={chapter?.content_text || ''}
                    onChange={(e) => {

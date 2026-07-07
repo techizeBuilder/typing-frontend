@@ -1,10 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { resultService } from '../../services/api';
 
 const TOP_N = 25;
 
 // Local YYYY-MM-DD for date inputs (en-CA formats as ISO, in local time).
 const todayStr = () => new Date().toLocaleDateString('en-CA');
+
+// The leaderboard only ever shows data up to the current date — never future dates.
+const clampToToday = (d) => {
+  const today = todayStr();
+  return d && d > today ? today : d;
+};
 
 // Admin Live Test leaderboard. Shows Live Test results ranked by Net Speed (NWPM),
 // deduplicated to each student's best attempt, with an exam filter and a date-range
@@ -21,8 +29,8 @@ const AdminLeaderboard = () => {
     try {
       setLoading(true);
       const range = {};
-      if (dateFrom) range.from = dateFrom;
-      if (dateTo) range.to = dateTo;
+      if (dateFrom) range.from = clampToToday(dateFrom);
+      if (dateTo) range.to = clampToToday(dateTo);
       const useRange = range.from || range.to;
       const data = await resultService.getLeaderboard(useRange ? undefined : 'today', useRange ? range : undefined);
       setRawData(Array.isArray(data) ? data : []);
@@ -49,9 +57,13 @@ const AdminLeaderboard = () => {
   // Filter by exam → keep each student's best (rows arrive NWPM-desc) → derive the
   // total participant count and the Top 25.
   const { ranked, participantCount } = useMemo(() => {
+    // Safety net: never show results dated after today, whatever the API returns.
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    const upToToday = rawData.filter(r => !r.date_taken || new Date(r.date_taken) <= endOfToday);
     const filtered = examFilter === 'All'
-      ? rawData
-      : rawData.filter(r => (r.exam_name || 'Self Practice') === examFilter);
+      ? upToToday
+      : upToToday.filter(r => (r.exam_name || 'Self Practice') === examFilter);
     const seen = new Set();
     const deduped = [];
     for (const row of filtered) {
@@ -69,6 +81,38 @@ const AdminLeaderboard = () => {
     ? (dateFrom === dateTo ? fmt(dateFrom) : `${fmt(dateFrom)} – ${fmt(dateTo)}`)
     : (dateFrom ? `from ${fmt(dateFrom)}` : dateTo ? `until ${fmt(dateTo)}` : 'all dates');
 
+  // Export the currently visible (filtered + ranked) leaderboard as a PDF.
+  const handleDownloadPdf = () => {
+    if (ranked.length === 0) {
+      alert('No leaderboard data to download for the current selection.');
+      return;
+    }
+    const doc = new jsPDF();
+    doc.setFontSize(15);
+    doc.text('Live Test Leaderboard', 14, 16);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(
+      `${examFilter === 'All' ? 'All Exams (Overall)' : examFilter} · ${rangeLabel} · Students appeared: ${participantCount}`,
+      14, 23,
+    );
+    autoTable(doc, {
+      startY: 28,
+      head: [['Rank', 'Student Name', 'Exam', 'Gross Speed (GWPM)', 'Net Speed (NWPM)', 'Accuracy']],
+      body: ranked.map((row, index) => [
+        `#${index + 1}`,
+        row.username || '-',
+        row.exam_name || 'Self Practice',
+        `${Math.round(row.max_gwpm)} WPM`,
+        `${Math.round(row.max_nwpm)} WPM`,
+        `${parseFloat(row.max_accuracy).toFixed(2)}%`,
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [11, 75, 204] },
+    });
+    doc.save(`leaderboard-${dateFrom || 'all'}_${dateTo || todayStr()}.pdf`);
+  };
+
   const th = { padding: '13px 18px', fontWeight: 'bold', color: '#475569', textAlign: 'left' };
   const td = { padding: '13px 18px' };
   const dateInput = { padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', color: '#334155', background: '#fff' };
@@ -85,9 +129,9 @@ const AdminLeaderboard = () => {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>From:</label>
-            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} style={dateInput} />
+            <input type="date" value={dateFrom} max={clampToToday(dateTo) || todayStr()} onChange={(e) => setDateFrom(clampToToday(e.target.value))} style={dateInput} />
             <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>To:</label>
-            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} style={dateInput} />
+            <input type="date" value={dateTo} min={dateFrom || undefined} max={todayStr()} onChange={(e) => setDateTo(clampToToday(e.target.value))} style={dateInput} />
             <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Exam:</label>
             <select
               value={examFilter}
@@ -104,6 +148,14 @@ const AdminLeaderboard = () => {
               style={{ padding: '7px 12px', background: '#0b4bcc', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
             >
               ⟳ Refresh
+            </button>
+            <button
+              onClick={handleDownloadPdf}
+              disabled={loading || ranked.length === 0}
+              title="Download the current leaderboard as a PDF"
+              style={{ padding: '7px 12px', background: loading || ranked.length === 0 ? '#94a3b8' : '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: loading || ranked.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+            >
+              ⬇ Download PDF
             </button>
           </div>
         </div>

@@ -89,6 +89,24 @@ const StenoTestEngine = () => {
   const [totalStrokes,  setTotalStrokes]  = useState(0);
   const [stats, setStats] = useState({ gwpm: 0, nwpm: 0, accuracy: 100 });
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
+  // Font size (px) of the typing area — adjustable via the A- / A+ controls.
+  const [fontSize, setFontSize] = useState(Math.max(14, exam?.font_size_user_screen || 18));
+
+  // Block all clipboard operations (copy / cut / paste / text drop) during the
+  // dictation test — pasting a transcript would defeat the examination.
+  useEffect(() => {
+    const blockClipboard = (e) => e.preventDefault();
+    document.addEventListener('copy',  blockClipboard, true);
+    document.addEventListener('cut',   blockClipboard, true);
+    document.addEventListener('paste', blockClipboard, true);
+    document.addEventListener('drop',  blockClipboard, true);
+    return () => {
+      document.removeEventListener('copy',  blockClipboard, true);
+      document.removeEventListener('cut',   blockClipboard, true);
+      document.removeEventListener('paste', blockClipboard, true);
+      document.removeEventListener('drop',  blockClipboard, true);
+    };
+  }, []);
 
   // ─── Passage (Text/PDF) view + offline-audio download state ──────────────────
   const [showPassageModal, setShowPassageModal] = useState(false);
@@ -802,14 +820,22 @@ const StenoTestEngine = () => {
               autoCorrect="off"
               autoCapitalize="off"
               disabled={timeLeft === 0 || showAudioModal}
-              style={stenoFontFamily ? { fontFamily: stenoFontFamily } : undefined}
+              style={{ fontSize: `${fontSize}px`, ...(stenoFontFamily ? { fontFamily: stenoFontFamily } : {}) }}
             />
           </div>
 
-          {/* Word count live */}
-          <div className="steno-wordcount">
-            Words typed: <strong>{typedText.trim() ? typedText.trim().split(/\s+/).length : 0}</strong>
-            &nbsp;|&nbsp; Strokes: <strong>{typedText.length}</strong>
+          {/* Word count live + font size controls */}
+          <div className="steno-wordcount" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+            <span>
+              Words typed: <strong>{typedText.trim() ? typedText.trim().split(/\s+/).length : 0}</strong>
+              &nbsp;|&nbsp; Strokes: <strong>{typedText.length}</strong>
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Font Size:</span>
+              <button type="button" onClick={() => setFontSize(f => Math.max(10, f - 2))} style={{ padding: '3px 10px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f1f5f9', cursor: 'pointer', fontWeight: 700 }}>A-</button>
+              <strong style={{ minWidth: '22px', textAlign: 'center' }}>{fontSize}</strong>
+              <button type="button" onClick={() => setFontSize(f => f + 2)} style={{ padding: '3px 10px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#f1f5f9', cursor: 'pointer', fontWeight: 700 }}>A+</button>
+            </span>
           </div>
           <button className="steno-btn-submit mobile-only mobile-submit-test" onClick={handleFinish} disabled={!isStarted}>Submit Test</button>
         </div>
