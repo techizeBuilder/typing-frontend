@@ -152,8 +152,26 @@ const AdminChapters = () => {
       if (currentChapter) {
         await chapterService.updateChapter(currentChapter.id, cleanData);
       } else {
-        const created = await chapterService.createChapter(cleanData);
-        savedId = created.id;
+        try {
+          const created = await chapterService.createChapter(cleanData);
+          savedId = created.id;
+        } catch (createErr) {
+          // Some hosting proxies/WAFs reject the response of a chapter create that
+          // carries large Hindi (e.g. Mangal) content with a 403 — AFTER the backend
+          // has already saved the row. Before surfacing an error, check whether the
+          // chapter actually exists now; if it does, continue as a normal success.
+          if (createErr.response?.status !== 403) throw createErr;
+          const existing = await chapterService.getChapters();
+          existing.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+          const match = existing.find(c =>
+            String(c.chapter_no) === String(cleanData.chapter_no) &&
+            c.font_group === cleanData.font_group &&
+            c.test_type === cleanData.test_type &&
+            new Date(c.test_date).toISOString().split('T')[0] === cleanData.test_date
+          );
+          if (!match) throw createErr;
+          savedId = match.id;
+        }
       }
 
       // Upload audio file separately if one was selected

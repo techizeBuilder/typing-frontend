@@ -569,10 +569,19 @@
     letter-spacing: 0.3px;
   }
 
-  /* ── Flash Banner ─────────────────────────────────── */
+  /* ── Flash / Announcement Banner ──────────────────── */
+  /* The white content card below pulls itself up by 28px (margin-top: -28px on
+     .dashboard-layout), which used to cover this banner entirely on mobile.
+     Reserve that 28px below the banner and keep it above the card so it is
+     always fully visible on small screens. */
   .dashboard-red-banner {
     font-size: 0.82rem;
-    padding: 9px 0;
+    padding: 10px 12px;
+    margin-bottom: 28px;
+    position: relative;
+    z-index: 11;
+    white-space: normal;
+    word-break: break-word;
   }
 
   /* ── White Card Container (lifts from blue) ───────── */
@@ -615,32 +624,28 @@
     margin-bottom: 14px;
   }
 
-  /* ── Mode selector: horizontal scroll pills ──────── */
+  /* ── Mode selector: 2-column grid so ALL categories fit on one screen
+        (no left-right scrolling) ─────────────────────── */
   .custom-tabs {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    overflow-x: visible;
     gap: 10px;
     padding-bottom: 6px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .custom-tabs::-webkit-scrollbar {
-    display: none;
   }
 
   .custom-tab-btn {
-    flex-shrink: 0;
-    width: auto;
+    width: 100%;
     min-width: unset;
-    padding: 9px 18px;
-    border-radius: 20px;
-    font-size: 0.82rem;
+    padding: 10px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
     font-weight: 600;
     background-color: #ffffff;
     color: #475569;
     border: 1.5px solid #e2e8f0;
-    white-space: nowrap;
+    white-space: normal;
+    line-height: 1.25;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
 

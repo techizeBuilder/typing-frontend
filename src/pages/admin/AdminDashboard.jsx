@@ -16,7 +16,6 @@ const AdminDashboard = () => {
     stenoChapters: 0
   });
   
-  const [topPerformers, setTopPerformers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Raw data to perform filtering
@@ -92,29 +91,6 @@ const AdminDashboard = () => {
       : 0;
 
     setStats({ total, active, pending, inactive, totalTests, avgSpeed, typingChapters, stenoChapters });
-
-    // Top Performers (Filtered, Unique Users, Top 10)
-    const userMaxMap = {};
-    filteredResults.forEach(r => {
-      if (!userMaxMap[r.student_id] || r.nwpm > userMaxMap[r.student_id].nwpm) {
-        userMaxMap[r.student_id] = r;
-      }
-    });
-
-    const uniqueTopResults = Object.values(userMaxMap)
-      .sort((a, b) => b.nwpm - a.nwpm)
-      .slice(0, 10);
-
-    const performersWithNames = uniqueTopResults.map(r => {
-      const user = users.find(u => u.id === r.student_id);
-      return {
-        ...r,
-        user_name: user ? user.name : 'Unknown Student',
-        exam_name: r.exam ? r.exam.name : 'Practice Test'
-      };
-    });
-
-    setTopPerformers(performersWithNames);
   };
 
   if (loading) return <div style={{ padding: '40px' }}>Loading Data...</div>;
@@ -192,22 +168,6 @@ const AdminDashboard = () => {
               <span className="kpi-label">Avg. WPM</span>
             </div>
           </div>
-        </div>
-
-        <div className="kpi-card top-performers">
-           <h4>Top Performers ({filter === 'daily' ? 'Today' : filter === 'weekly' ? 'This Week' : filter === 'monthly' ? 'This Month' : 'This Year'})</h4>
-           {topPerformers.length === 0 ? (
-             <p style={{ color: '#64748b', marginTop: '20px' }}>No tests taken in this period.</p>
-           ) : (
-             <ul className="performer-list">
-               {topPerformers.map((p, idx) => (
-                 <li key={p.id}>
-                    <span>{idx + 1}. {p.user_name} ({p.exam_name})</span> 
-                    <strong>{p.nwpm} WPM</strong>
-                 </li>
-               ))}
-             </ul>
-           )}
         </div>
       </div>
     </div>
