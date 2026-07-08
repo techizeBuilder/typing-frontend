@@ -36,10 +36,13 @@ const AdminDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      // The dashboard only aggregates counts and stored metrics, so request the
+      // lean results list (no raw grading data) and chapter summaries (no
+      // passage text) — a fraction of the full payloads.
       const [usersResponse, resultsResponse, chaptersResponse] = await Promise.all([
         userService.getUsers(),
-        resultService.getAllResults(),
-        chapterService.getChapters() // Fetches all if no param passed
+        resultService.getAllResults(true),
+        chapterService.getChapters(undefined, undefined, undefined, true)
       ]);
 
       setAllUsers(usersResponse);
