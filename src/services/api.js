@@ -75,7 +75,11 @@ api.interceptors.response.use(
     if (response.config.method === 'get') {
       const url = response.config.url;
       const params = response.config.params || {};
-      if (params.testType !== 'Live Test') {
+      // Admin-only bulk endpoints can be several MB; stringifying them here
+      // blocks the UI thread and they never fit the cache quota anyway. The
+      // offline cache only exists for student flows, so skip them entirely.
+      const skipCache = url === '/results' || url === '/users' || /^\/results\/[0-9a-f-]{36}$/i.test(url);
+      if (params.testType !== 'Live Test' && !skipCache) {
         const cacheKey = `offline_cache_${url}_${JSON.stringify(params)}`;
         safeCacheSet(cacheKey, JSON.stringify(response.data));
       }
@@ -284,11 +288,14 @@ export const resultPatternService = {
 };
 
 export const chapterService = {
-  getChapters: async (fontGroup, testType, examId) => {
+  // summary=true omits each chapter's full passage text — use it when only
+  // chapter metadata is needed (e.g. admin dashboard counts).
+  getChapters: async (fontGroup, testType, examId, summary = false) => {
     const params = {};
     if (fontGroup) params.fontGroup = fontGroup;
     if (testType) params.testType = testType;
     if (examId) params.examId = examId;
+    if (summary) params.summary = 1;
     const response = await api.get('/chapters', { params });
     return response.data;
   },
@@ -417,8 +424,28 @@ export const resultService = {
     const response = await api.get(`/results/user/${userId}`);
     return response.data;
   },
-  getAllResults: async () => {
-    const response = await api.get('/results');
+  // lean=true drops the raw grading fields (typed text, word statuses, pattern
+  // data) — use it when only the stored metrics are needed (admin dashboard).
+  getAllResults: async (lean = false) => {
+    const response = await api.get('/results', { params: lean ? { lean: 1 } : {} });
+    return response.data;
+  },
+  // Server-side paged + filtered admin results list → { rows, total }.
+  // Pass pageSize: 0 to fetch ALL rows matching the filters (exports).
+  getResultsPage: async ({ page = 1, pageSize = 25, search, from, to, course, testType, examName } = {}) => {
+    const params = { page, pageSize };
+    if (search) params.search = search;
+    if (from) params.from = from;
+    if (to) params.to = to;
+    if (course) params.course = course;
+    if (testType) params.testType = testType;
+    if (examName) params.examName = examName;
+    const response = await api.get('/results', { params });
+    return response.data;
+  },
+  // Full single-result detail including the chapter's complete passage text.
+  getResultById: async (id) => {
+    const response = await api.get(`/results/${id}`);
     return response.data;
   },
   getLeaderboard: async (period, range) => {

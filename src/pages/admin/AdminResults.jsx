@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { resultService } from '../../services/api';
+import { resultService, examService } from '../../services/api';
 import { computeResultMetrics } from '../../utils/resultMetrics';
 import Pagination from '../../components/Pagination';
 import jsPDF from 'jspdf';
@@ -30,26 +30,61 @@ const AdminResults = () => {
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [examOptions, setExamOptions] = useState([]);
+  // Guards against out-of-order responses when filters/page change quickly.
+  const fetchIdRef = useRef(0);
 
   useEffect(() => { setPage(1); }, [usernameSearch, dateFrom, dateTo, courseFilter, testTypeFilter, examFilter]);
 
+  // Exam names for the filter dropdown (small list, fetched once).
   useEffect(() => {
-    fetchResults();
+    examService.getExams()
+      .then((exams) => {
+        const names = Array.from(new Set((exams || []).map((e) => e.name).filter(Boolean))).sort();
+        setExamOptions(['Practice', ...names]);
+      })
+      .catch(() => setExamOptions(['Practice']));
   }, []);
 
+  const filterParams = () => ({
+    search: usernameSearch || undefined,
+    from: dateFrom || undefined,
+    to: dateTo || undefined,
+    course: courseFilter !== 'All' ? courseFilter : undefined,
+    testType:
+      testTypeFilter === 'Preloaded' ? 'Pre-load Test'
+      : testTypeFilter === 'Live' ? 'Live Test'
+      : undefined,
+    examName: examFilter !== 'All' ? examFilter : undefined,
+  });
+
+  // Filtering + pagination happen SERVER-SIDE: only the visible page of rows is
+  // downloaded (the old code pulled every result ever recorded — tens of MB).
+  // The username search is debounced so we don't fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(fetchResults, usernameSearch ? 350 : 0);
+    return () => clearTimeout(timer);
+  }, [page, pageSize, usernameSearch, dateFrom, dateTo, courseFilter, testTypeFilter, examFilter]);
+
+  const withMetrics = (rows) =>
+    // Recompute NWPM/GWPM/accuracy from the stored raw data using the canonical
+    // formula so the table matches the result detail view (the engine-stored
+    // values can drift for typing results — see resultMetrics.js).
+    (rows || []).map((r) => ({ ...r, _metrics: computeResultMetrics(r) }));
+
   const fetchResults = async () => {
+    const fetchId = ++fetchIdRef.current;
     try {
       setLoading(true);
-      const data = await resultService.getAllResults();
-      // Newest results first. Recompute NWPM/GWPM/accuracy from the stored raw data
-      // using the canonical formula so the table matches the result detail view
-      // (the engine-stored values can drift for typing results — see resultMetrics.js).
-      const list = (Array.isArray(data) ? data : []).map((r) => ({ ...r, _metrics: computeResultMetrics(r) }));
-      setResults([...list].sort((a, b) => new Date(b.date_taken || 0) - new Date(a.date_taken || 0)));
+      const data = await resultService.getResultsPage({ page, pageSize, ...filterParams() });
+      if (fetchId !== fetchIdRef.current) return; // a newer request superseded this one
+      setResults(withMetrics(data?.rows));
+      setTotal(Number(data?.total) || 0);
     } catch (err) {
       console.error('Error fetching results:', err);
     } finally {
-      setLoading(false);
+      if (fetchId === fetchIdRef.current) setLoading(false);
     }
   };
 
@@ -64,12 +99,17 @@ const AdminResults = () => {
 
   const hasActiveFilter = usernameSearch || dateFrom || dateTo || courseFilter !== 'All' || testTypeFilter !== 'All' || examFilter !== 'All';
 
-  // Unique exam names derived from loaded results for the exam dropdown
-  const examOptions = Array.from(
-    new Set(results.map(r => r.exam?.name || 'Practice'))
-  ).sort();
-
-  const handleViewResult = (r) => {
+  const handleViewResult = async (row) => {
+    // The results list is fetched without the chapter's full passage text (it
+    // would bloat every row); pull the complete record for the detail view.
+    let r = row;
+    try {
+      const full = await resultService.getResultById(row.id);
+      if (full) r = full;
+    } catch {
+      // Offline / fetch failure — fall back to the list row; the passage then
+      // falls back to reference_words below.
+    }
     // Only steno results use the StenoDiff view (driven by typedText + referenceText).
     // For typing results these must stay unset so ResultScreen renders the full
     // TypingPassageReview with its Test Analysis / Mistake / Compare tabs — matching
@@ -105,39 +145,16 @@ const AdminResults = () => {
     });
   };
 
-  const filtered = results.filter((r) => {
-    // Username / name search
-    const uName = (r.user?.name || '').toLowerCase();
-    const uId   = (r.user?.user_id || '').toLowerCase();
-    const matchUsername =
-      !usernameSearch ||
-      uName.includes(usernameSearch.toLowerCase()) ||
-      uId.includes(usernameSearch.toLowerCase());
+  // Exports cover ALL rows matching the current filters, not just the visible
+  // page — fetched on demand so the heavy raw data is only downloaded when the
+  // admin actually exports.
+  const fetchAllFiltered = async () => {
+    const data = await resultService.getResultsPage({ page: 1, pageSize: 0, ...filterParams() });
+    return withMetrics(data?.rows);
+  };
 
-    // Date range
-    const taken = r.date_taken ? new Date(r.date_taken) : null;
-    const matchFrom = !dateFrom || (taken && taken >= new Date(dateFrom));
-    const matchTo   = !dateTo   || (taken && taken <= new Date(dateTo + 'T23:59:59'));
-
-    // Course (student category)
-    const matchCourse =
-      courseFilter === 'All' || (r.user?.category || '') === courseFilter;
-
-    // Test Type (Preloaded / Live)
-    const matchTestType =
-      testTypeFilter === 'All' ||
-      (testTypeFilter === 'Preloaded' && r.test_type === 'Pre-load Test') ||
-      (testTypeFilter === 'Live'      && r.test_type === 'Live Test');
-
-    // Exam
-    const resultExamName = r.exam?.name || 'Practice';
-    const matchExam = examFilter === 'All' || resultExamName === examFilter;
-
-    return matchUsername && matchFrom && matchTo && matchCourse && matchTestType && matchExam;
-  });
-
-  const getExportRows = () =>
-    filtered.map((r) => ({
+  const getExportRows = (rows) =>
+    rows.map((r) => ({
       Date: r.date_taken ? new Date(r.date_taken).toLocaleDateString('en-IN') : '—',
       'Student Name': r.user?.name || '—',
       Username: r.user?.user_id || '—',
@@ -153,16 +170,16 @@ const AdminResults = () => {
       'Half Errors': r._metrics ? r._metrics.halfErrors : (r.half_errors || 0),
     }));
 
-  const exportExcel = () => {
-    const rows = getExportRows();
+  const exportExcel = async () => {
+    const rows = getExportRows(await fetchAllFiltered());
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Results');
     XLSX.writeFile(wb, `results_export_${Date.now()}.xlsx`);
   };
 
-  const exportPDF = () => {
-    const rows = getExportRows();
+  const exportPDF = async () => {
+    const rows = getExportRows(await fetchAllFiltered());
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
     doc.setFontSize(13);
     doc.text('Typing & Steno Results', 40, 36);
@@ -214,15 +231,15 @@ const AdminResults = () => {
             )}
             <button
               onClick={exportExcel}
-              disabled={filtered.length === 0}
-              style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 600, opacity: filtered.length === 0 ? 0.5 : 1 }}
+              disabled={total === 0}
+              style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: total === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 600, opacity: total === 0 ? 0.5 : 1 }}
             >
               ⬇ Excel
             </button>
             <button
               onClick={exportPDF}
-              disabled={filtered.length === 0}
-              style={{ padding: '6px 12px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 600, opacity: filtered.length === 0 ? 0.5 : 1 }}
+              disabled={total === 0}
+              style={{ padding: '6px 12px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', cursor: total === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 600, opacity: total === 0 ? 0.5 : 1 }}
             >
               ⬇ PDF
             </button>
@@ -317,12 +334,11 @@ const AdminResults = () => {
       </header>
 
       {(() => {
-        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-        const pagedResults = filtered.slice((page - 1) * pageSize, page * pageSize);
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
         return (
       <>
       <div style={{ margin: '10px 0', fontSize: '0.85rem', color: '#475569' }}>
-        Showing <strong>{filtered.length}</strong> of <strong>{results.length}</strong> results
+        Showing <strong>{results.length}</strong> of <strong>{total}</strong> results
         {hasActiveFilter && <span style={{ marginLeft: '10px', color: '#2563eb', fontWeight: 600 }}>(filtered)</span>}
       </div>
 
@@ -347,10 +363,10 @@ const AdminResults = () => {
         <tbody>
           {loading ? (
             <tr><td colSpan="13">Loading results...</td></tr>
-          ) : filtered.length === 0 ? (
+          ) : results.length === 0 ? (
             <tr><td colSpan="13" style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>No results found matching the selected filters.</td></tr>
           ) : (
-            pagedResults.map((r) => (
+            results.map((r) => (
               <tr key={r.id}>
                 <td>{r.date_taken ? new Date(r.date_taken).toLocaleDateString('en-IN') : '—'}</td>
                 <td><strong>{r.user ? (r.user.name || '—') : '—'}</strong></td>
@@ -399,7 +415,7 @@ const AdminResults = () => {
         </tbody>
       </table>
       <Pagination
-        page={page} totalPages={totalPages} totalItems={filtered.length}
+        page={page} totalPages={totalPages} totalItems={total}
         pageSize={pageSize} onPageChange={setPage} onPageSizeChange={p => { setPageSize(p); setPage(1); }}
       />
       </>

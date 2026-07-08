@@ -9,6 +9,9 @@ import './AvailableTests.css';
 
 const MAX_REATTEMPTS = 3;
 
+// Live tests stay accessible for this many days after their scheduled date.
+const LIVE_TEST_PAST_DAYS = 3;
+
 // Default number of unlocked tests when the admin hasn't set a per-student limit.
 const DEFAULT_PRELOAD_LIMIT = 10;
 const DEFAULT_STENO_LIMIT = 10;
@@ -29,8 +32,8 @@ const AvailableTests = () => {
   const { selectedMode, testType, selectedExam } = location.state || {};
   const [chapters, setChapters] = useState([]);
   const [loading, setLoading] = useState(true);
-  // Live tests are only available on their scheduled date: the list is pinned to
-  // TODAY. Expired (past) and future live tests never appear.
+  // Live tests are available from their scheduled date up to LIVE_TEST_PAST_DAYS
+  // days after it. Future live tests never appear.
   const selectedDate = new Date();
   const [userProfile, setUserProfile] = useState(null);
   const [attemptsByChapter, setAttemptsByChapter] = useState({});
@@ -301,16 +304,16 @@ const AvailableTests = () => {
       sensitivity: 'base',
     });
 
-  // Date filter applies ONLY for Live Tests
+  // Date filter applies ONLY for Live Tests: a test is accessible from its
+  // scheduled date until LIVE_TEST_PAST_DAYS days later. Future tests are hidden.
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today = startOfDay(selectedDate);
   const filteredChapters = (isLiveTest
     ? chapters.filter((chapter) => {
         if (!chapter.test_date) return true;
-        const cDate = new Date(chapter.test_date);
-        return (
-          cDate.getDate()     === selectedDate.getDate()     &&
-          cDate.getMonth()    === selectedDate.getMonth()    &&
-          cDate.getFullYear() === selectedDate.getFullYear()
-        );
+        const testDay = startOfDay(new Date(chapter.test_date));
+        const diffDays = Math.round((today - testDay) / (24 * 60 * 60 * 1000));
+        return diffDays >= 0 && diffDays <= LIVE_TEST_PAST_DAYS;
       })
     : [...chapters] // Pre-load: show all, no date filter
   ).sort(sortByChapterNo);
@@ -389,7 +392,7 @@ const AvailableTests = () => {
             </div>
           )}
 
-          {/* Today's date — Live Tests are only available on their scheduled date */}
+          {/* Today's date — Live Tests stay available for LIVE_TEST_PAST_DAYS days after their scheduled date */}
           {isLiveTest && (
             <div className="date-selector-bar">
               <div className="date-display">
@@ -399,7 +402,7 @@ const AvailableTests = () => {
                   <line x1="8" y1="2" x2="8" y2="6"></line>
                   <line x1="3" y1="10" x2="21" y2="10"></line>
                 </svg>
-                Today — {selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                Today — {selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} (showing tests from the last {LIVE_TEST_PAST_DAYS} days)
               </div>
             </div>
           )}
@@ -468,7 +471,7 @@ const AvailableTests = () => {
                     {filteredChapters.length === 0 ? (
                       <tr>
                         <td colSpan={10}>
-                          No live tests are scheduled for {selectedMode} today. Live tests are only available on their scheduled date.
+                          No live tests are available for {selectedMode}. Live tests are accessible from their scheduled date up to {LIVE_TEST_PAST_DAYS} days after it — upcoming tests appear on their scheduled date.
                         </td>
                       </tr>
                     ) : (
