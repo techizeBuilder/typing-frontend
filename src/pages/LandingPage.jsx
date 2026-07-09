@@ -3,30 +3,38 @@ import Header from '../components/Header';
 import ModuleCard from '../components/ModuleCard';
 import AboutSection from '../components/AboutSection';
 import { settingService } from '../services/api';
+import { resolveAppUrl, resolveAppMeta, isSameOrigin } from '../config/appDownloads';
 import '../App.css';
 
 const LandingPage = () => {
-  // Desktop & mobile download links are managed from the Admin Panel (Settings),
-  // so the buttons/versions here update automatically whenever the admin saves a
-  // new URL — no code change or redeploy required.
+  // Version & release date are managed from the Admin Panel (Settings) and update
+  // without a redeploy. The file itself is served from our own /downloads/ folder
+  // (see config/appDownloads.js); the admin URL is only a fallback for apps we
+  // don't host ourselves yet.
   const [apps, setApps] = useState({ desktop: null, mobile: null });
 
   useEffect(() => {
+    const build = (kind, all) => {
+      const url = resolveAppUrl(kind, all?.[`${kind}_app_url`]);
+      if (!url) return null;
+      const { version, releaseDate } = resolveAppMeta(
+        kind,
+        all?.[`${kind}_app_version`],
+        all?.[`${kind}_app_release_date`],
+      );
+      return { url, version, releaseDate };
+    };
+
     (async () => {
+      let all = null;
       try {
-        const all = await settingService.getAll();
-        setApps({
-          desktop: all?.desktop_app_url
-            ? { url: all.desktop_app_url, version: all.desktop_app_version || '', releaseDate: all.desktop_app_release_date || '' }
-            : null,
-          mobile: all?.mobile_app_url
-            ? { url: all.mobile_app_url, version: all.mobile_app_version || '', releaseDate: all.mobile_app_release_date || '' }
-            : null,
-        });
+        all = await settingService.getAll();
       } catch (err) {
-        // Non-critical: if settings can't load we simply hide the buttons.
+        // Non-critical: the locally hosted apps still download, we just lose the
+        // version/date captions for them.
         console.warn('Could not load app download info:', err);
       }
+      setApps({ desktop: build('desktop', all), mobile: build('mobile', all) });
     })();
   }, []);
 
@@ -44,6 +52,23 @@ const LandingPage = () => {
         {app.releaseDate && <span>Released {formatDate(app.releaseDate)}</span>}
       </p>
     ) : null;
+
+  // Files we host get `download` so the browser saves them without leaving the
+  // page. Anything else is an external page and still needs a new tab.
+  const downloadButton = (app, label) => {
+    const local = isSameOrigin(app.url);
+    return (
+      <a
+        className="ddb-btn"
+        href={app.url}
+        {...(local
+          ? { download: '' }
+          : { target: '_blank', rel: 'noopener noreferrer' })}
+      >
+        {label}
+      </a>
+    );
+  };
 
   const hasAny = apps.desktop || apps.mobile;
 
@@ -64,18 +89,13 @@ const LandingPage = () => {
             <div className="ddb-actions">
               {apps.desktop && (
                 <div className="ddb-action">
-                  {/* External link configured by the admin; opens in a new tab. */}
-                  <a className="ddb-btn" href={apps.desktop.url} target="_blank" rel="noopener noreferrer">
-                    🖥️ Download Desktop App
-                  </a>
+                  {downloadButton(apps.desktop, '🖥️ Download Desktop App')}
                   {meta(apps.desktop)}
                 </div>
               )}
               {apps.mobile && (
                 <div className="ddb-action">
-                  <a className="ddb-btn" href={apps.mobile.url} target="_blank" rel="noopener noreferrer">
-                    📱 Download Mobile App
-                  </a>
+                  {downloadButton(apps.mobile, '📱 Download Mobile App')}
                   {meta(apps.mobile)}
                 </div>
               )}

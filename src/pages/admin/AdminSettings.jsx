@@ -113,8 +113,10 @@ const AdminSettings = () => {
 
       <label style={label}>Download URL</label>
       <input
-        type="url"
-        placeholder="https://drive.google.com/..."
+        // Plain text, not type="url": a path we host ourselves ("/downloads/app.exe")
+        // is a valid value here but fails the browser's URL validation.
+        type="text"
+        placeholder="/downloads/app.exe"
         value={state.url}
         onChange={(e) => setState({ ...state, url: e.target.value })}
         style={{ ...input, width: '100%', boxSizing: 'border-box', marginBottom: '14px' }}
