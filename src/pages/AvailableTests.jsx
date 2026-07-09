@@ -32,9 +32,9 @@ const AvailableTests = () => {
   const { selectedMode, testType, selectedExam } = location.state || {};
   const [chapters, setChapters] = useState([]);
   const [loading, setLoading] = useState(true);
-  // Live tests are available from their scheduled date up to LIVE_TEST_PAST_DAYS
-  // days after it. Future live tests never appear.
-  const selectedDate = new Date();
+  // Live tests are viewed one date at a time: today back to LIVE_TEST_PAST_DAYS
+  // days ago. Future dates are never reachable.
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [userProfile, setUserProfile] = useState(null);
   const [attemptsByChapter, setAttemptsByChapter] = useState({});
   const [resultsByChapter, setResultsByChapter] = useState({});
@@ -304,16 +304,32 @@ const AvailableTests = () => {
       sensitivity: 'base',
     });
 
-  // Date filter applies ONLY for Live Tests: a test is accessible from its
-  // scheduled date until LIVE_TEST_PAST_DAYS days later. Future tests are hidden.
+  // Date filter applies ONLY for Live Tests: students browse one date at a time,
+  // from today back to LIVE_TEST_PAST_DAYS days ago. Each date shows only the
+  // tests scheduled on that exact date; future dates are unreachable.
   const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const today = startOfDay(selectedDate);
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const today = startOfDay(new Date());
+  const selectedDay = startOfDay(selectedDate);
+  // How many days behind today the currently viewed date is (0 = today).
+  const daysBack = Math.round((today - selectedDay) / MS_PER_DAY);
+  const canGoPrev = daysBack < LIVE_TEST_PAST_DAYS;
+  const canGoNext = daysBack > 0; // never navigate into the future
+  const isViewingToday = daysBack === 0;
+
+  const shiftDate = (deltaDays) => {
+    const next = new Date(selectedDay.getTime() + deltaDays * MS_PER_DAY);
+    const nextDaysBack = Math.round((today - startOfDay(next)) / MS_PER_DAY);
+    if (nextDaysBack < 0 || nextDaysBack > LIVE_TEST_PAST_DAYS) return;
+    setSelectedDate(next);
+  };
+
   const filteredChapters = (isLiveTest
     ? chapters.filter((chapter) => {
-        if (!chapter.test_date) return true;
+        // Undated tests are treated as "today's" tests.
+        if (!chapter.test_date) return isViewingToday;
         const testDay = startOfDay(new Date(chapter.test_date));
-        const diffDays = Math.round((today - testDay) / (24 * 60 * 60 * 1000));
-        return diffDays >= 0 && diffDays <= LIVE_TEST_PAST_DAYS;
+        return testDay.getTime() === selectedDay.getTime();
       })
     : [...chapters] // Pre-load: show all, no date filter
   ).sort(sortByChapterNo);
@@ -392,9 +408,19 @@ const AvailableTests = () => {
             </div>
           )}
 
-          {/* Today's date — Live Tests stay available for LIVE_TEST_PAST_DAYS days after their scheduled date */}
+          {/* Date navigation — browse Live Tests one date at a time, from today
+              back to LIVE_TEST_PAST_DAYS days ago. Future dates are unreachable. */}
           {isLiveTest && (
             <div className="date-selector-bar">
+              <button
+                className="date-btn"
+                onClick={() => shiftDate(-1)}
+                disabled={!canGoPrev}
+                title={canGoPrev ? 'Previous day' : `Only the last ${LIVE_TEST_PAST_DAYS} days are available`}
+                style={!canGoPrev ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+              >
+                &lt;
+              </button>
               <div className="date-display">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -402,8 +428,18 @@ const AvailableTests = () => {
                   <line x1="8" y1="2" x2="8" y2="6"></line>
                   <line x1="3" y1="10" x2="21" y2="10"></line>
                 </svg>
-                Today — {selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} (showing tests from the last {LIVE_TEST_PAST_DAYS} days)
+                {isViewingToday ? 'Today — ' : daysBack === 1 ? 'Yesterday — ' : ''}
+                {selectedDay.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
               </div>
+              <button
+                className="date-btn"
+                onClick={() => shiftDate(1)}
+                disabled={!canGoNext}
+                title={canGoNext ? 'Next day' : 'Future dates are not available'}
+                style={!canGoNext ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+              >
+                &gt;
+              </button>
             </div>
           )}
 
@@ -471,7 +507,7 @@ const AvailableTests = () => {
                     {filteredChapters.length === 0 ? (
                       <tr>
                         <td colSpan={10}>
-                          No live tests are available for {selectedMode}. Live tests are accessible from their scheduled date up to {LIVE_TEST_PAST_DAYS} days after it — upcoming tests appear on their scheduled date.
+                          No live tests are scheduled for {selectedMode} on {isViewingToday ? 'today' : selectedDay.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}. Use the arrows above to view tests from the last {LIVE_TEST_PAST_DAYS} days.
                         </td>
                       </tr>
                     ) : (

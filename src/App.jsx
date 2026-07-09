@@ -29,10 +29,12 @@ import AdminLeaderboard from './pages/admin/AdminLeaderboard';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import SelfAssessmentSetup from './pages/SelfAssessmentSetup';
+import FullscreenToggle from './components/FullscreenToggle';
 
 function App() {
   return (
     <HashRouter>
+        <FullscreenToggle />
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
