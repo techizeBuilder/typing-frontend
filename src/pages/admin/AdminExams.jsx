@@ -264,7 +264,9 @@ const AdminExams = () => {
         await examService.deleteExam(id);
         fetchData();
       } catch (error) {
-        alert('Error deleting exam!');
+        const msg = error?.response?.data?.message || error?.message || 'Unknown error';
+        alert(`Error deleting exam: ${Array.isArray(msg) ? msg.join(', ') : msg}`);
+        console.error('Exam delete error:', error?.response?.data || error);
       }
     }
   };

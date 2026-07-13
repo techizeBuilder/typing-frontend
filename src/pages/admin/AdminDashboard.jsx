@@ -96,6 +96,21 @@ const AdminDashboard = () => {
     setStats({ total, active, pending, inactive, totalTests, avgSpeed, typingChapters, stenoChapters });
   };
 
+  const handleClearOldResults = async () => {
+    if (!window.confirm('This will permanently delete all result records older than the last 10 days. Continue?')) {
+      return;
+    }
+    try {
+      const { deleted } = await resultService.clearOldResults(10);
+      alert(`Cleared ${deleted} old result(s). The last 10 days of data have been kept.`);
+      fetchDashboardData();
+    } catch (error) {
+      const msg = error?.response?.data?.message || error?.message || 'Unknown error';
+      alert(`Error clearing results: ${Array.isArray(msg) ? msg.join(', ') : msg}`);
+      console.error('Clear results error:', error?.response?.data || error);
+    }
+  };
+
   if (loading) return <div style={{ padding: '40px' }}>Loading Data...</div>;
 
   return (
@@ -106,11 +121,11 @@ const AdminDashboard = () => {
             <h1>Overview Dashboard</h1>
             <p>Real-time statistics and student performance metrics.</p>
           </div>
-          <div className="filter-group">
+          <div className="filter-group" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ marginRight: '10px', color: '#64748b', fontWeight: 'bold' }}>Date Filter:</span>
-            <select 
-              value={filter} 
-              onChange={(e) => setFilter(e.target.value)} 
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
               style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
             >
               <option value="daily">Daily (Today)</option>
@@ -118,6 +133,13 @@ const AdminDashboard = () => {
               <option value="monthly">Monthly (This Month)</option>
               <option value="yearly">Yearly (This Year)</option>
             </select>
+            <button
+              onClick={handleClearOldResults}
+              title="Delete all result records older than the last 10 days"
+              style={{ padding: '8px 14px', borderRadius: '4px', border: 'none', background: '#ef4444', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              Clear Results
+            </button>
           </div>
         </div>
       </header>
