@@ -459,7 +459,13 @@ export const resultService = {
   getChapterRank: async (chapterId, studentId) => {
     const response = await api.get('/results/rank', { params: { chapterId, studentId } });
     return response.data;
-  }
+  },
+  // Deletes result rows older than `days` (default 10), keeping the most
+  // recent window of data. Returns { deleted: number }.
+  clearOldResults: async (days = 10) => {
+    const response = await api.delete('/results/cleanup', { params: { days } });
+    return response.data;
+  },
 };
 
 export const userService = {
