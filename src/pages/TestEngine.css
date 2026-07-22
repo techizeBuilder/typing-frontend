@@ -814,6 +814,10 @@
   min-height: 0;
   border: 1px solid #d1d5db;
   border-radius: 6px;
+  /* Extra clearance below the text so the active (last) line is never flush
+     against — or clipped by — the bottom edge while typing. */
+  padding-bottom: 3em;
+  scroll-behavior: smooth;
 }
 
 /* Interface 2 full-width input */
@@ -828,6 +832,8 @@
   min-height: 0;
   border: 1px solid #d1d5db;
   border-radius: 6px;
+  padding-bottom: 3em;
+  scroll-behavior: smooth;
 }
 
 /* ── Sound label ── */

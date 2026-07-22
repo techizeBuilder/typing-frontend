@@ -103,6 +103,7 @@ const TestEngine = () => {
   const scrollRef = useRef([]);
   const maxLockedIndexRef = useRef(0);
   const s4InputRef = useRef(null);
+  const tcsTextareaRef = useRef(null);
   // Stores the original (pre-re-type-extension) passage word count so repeat
   // detection in handleFinish is limited to within the original passage only.
   const baseWordCountRef = useRef(0);
@@ -262,6 +263,21 @@ const TestEngine = () => {
       scrollRef.current[currentWordIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [currentWordIndex, settings.autoScroll]);
+
+  // ─── TCS typing box auto-scroll ─────────────────────────────────────────────
+  // Textareas jump-scroll the caret into view natively, but only just enough to
+  // reveal it — the active line can still end up flush against (or clipped by)
+  // the bottom edge. Once the caret sits at the end of the text (the normal
+  // forward-typing case), smoothly scroll all the way to the bottom instead so
+  // the current line always has clear room above the edge.
+  useEffect(() => {
+    const el = tcsTextareaRef.current;
+    if (!el) return;
+    const atEnd = el.selectionStart === userInput.length && el.selectionEnd === userInput.length;
+    if (atEnd) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+  }, [userInput]);
 
   // ─── Live WPM Calculation ───────────────────────────────────────────────────
   useEffect(() => {
@@ -1193,6 +1209,7 @@ const TestEngine = () => {
   if (screenType === 'Screen-5') {
     const tcsTextarea = (
       <textarea
+        ref={tcsTextareaRef}
         className="typing-input"
         style={{ fontFamily: hindiFontFamily, width: '100%', height: '100%', boxSizing: 'border-box', fontSize: `${settings.fontSize}px` }}
         autoFocus
