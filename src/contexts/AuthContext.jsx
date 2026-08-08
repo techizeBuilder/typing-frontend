@@ -68,7 +68,8 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('userId');
     localStorage.removeItem('permissions');
     localStorage.removeItem('validity_end');
-    
+    localStorage.removeItem('premium_expired');
+
     setIsAuthenticated(false);
     setUser(null);
   };

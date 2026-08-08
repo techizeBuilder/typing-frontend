@@ -5,6 +5,17 @@ import { settingService } from '../../services/api';
 // Desktop / Mobile application download links advertised on the public landing page.
 const LIVE_RANK_KEY = 'live_rank_update_time';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3012/api';
+// Strip trailing /api so we can prepend host to /uploads/...
+const ASSETS_BASE = API_BASE_URL.replace(/\/api\/?$/, '');
+
+const resolveAssetUrl = (url) => {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return `${ASSETS_BASE}${url}`;
+  return url;
+};
+
 // "21:00" → "9:00 PM" for a friendly display next to the 24h input.
 const to12h = (hhmm) => {
   const m = /^(\d{1,2}):(\d{2})$/.exec((hhmm || '').trim());
@@ -30,6 +41,13 @@ const AdminSettings = () => {
   const [appSaving, setAppSaving] = useState(false);
   const [appStatus, setAppStatus] = useState(null);
 
+  // ── Institute branding (name + logo shown on downloaded PDFs/passages) ──
+  const [instituteName, setInstituteName] = useState('');
+  const [instituteLogoUrl, setInstituteLogoUrl] = useState('');
+  const [instituteLogoFile, setInstituteLogoFile] = useState(null);
+  const [brandSaving, setBrandSaving] = useState(false);
+  const [brandStatus, setBrandStatus] = useState(null);
+
   useEffect(() => {
     (async () => {
       try {
@@ -46,6 +64,8 @@ const AdminSettings = () => {
             version: all.mobile_app_version || '',
             release_date: all.mobile_app_release_date || '',
           });
+          setInstituteName(all.institute_name || '');
+          setInstituteLogoUrl(all.institute_logo_url || '');
         }
       } catch (err) {
         console.error('Error loading settings:', err);
@@ -80,6 +100,31 @@ const AdminSettings = () => {
       setAppStatus({ type: 'error', msg: Array.isArray(msg) ? msg.join(', ') : msg });
     } finally {
       setAppSaving(false);
+    }
+  };
+
+  const handleSaveBranding = async () => {
+    setBrandSaving(true);
+    setBrandStatus(null);
+    try {
+      let logoUrl = instituteLogoUrl;
+      if (instituteLogoFile) {
+        const { url } = await settingService.uploadInstituteLogo(instituteLogoFile);
+        logoUrl = url;
+      }
+      await Promise.all([
+        settingService.update('institute_name', instituteName.trim()),
+        settingService.update('institute_logo_url', logoUrl || ''),
+      ]);
+      setInstituteLogoUrl(logoUrl);
+      setInstituteLogoFile(null);
+      setBrandStatus({ type: 'success', msg: 'Institute branding saved. It now appears on downloaded PDFs/passages.' });
+    } catch (err) {
+      console.error('Error saving institute branding:', err);
+      const msg = err?.response?.data?.message || 'Could not save institute branding.';
+      setBrandStatus({ type: 'error', msg: Array.isArray(msg) ? msg.join(', ') : msg });
+    } finally {
+      setBrandSaving(false);
     }
   };
 
@@ -234,6 +279,65 @@ const AdminSettings = () => {
               {appStatus && (
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: appStatus.type === 'success' ? '#16a34a' : '#dc2626' }}>
                   {appStatus.msg}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* ── Institute Branding ──────────────────────────────────────────── */}
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', marginTop: '20px' }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: '#0f172a' }}>Institute Branding</h3>
+            <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '0.85rem', lineHeight: 1.5 }}>
+              Shown on downloaded PDFs/passages (e.g. the Steno dictation passage download) so
+              students see your institute's name and logo on the document.
+            </p>
+
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ flex: '1 1 260px' }}>
+                <label style={label}>Institute Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. ABC Typing Institute"
+                  value={instituteName}
+                  onChange={(e) => setInstituteName(e.target.value)}
+                  style={{ ...input, width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={label}>Institute Logo</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {(instituteLogoFile || instituteLogoUrl) && (
+                    <img
+                      src={instituteLogoFile ? URL.createObjectURL(instituteLogoFile) : resolveAssetUrl(instituteLogoUrl)}
+                      alt="Institute logo"
+                      style={{ width: '44px', height: '44px', objectFit: 'contain', border: '1px solid #ddd', borderRadius: '6px', background: '#fff' }}
+                    />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setInstituteLogoFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '18px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleSaveBranding}
+                disabled={brandSaving}
+                style={{
+                  padding: '9px 18px', background: brandSaving ? '#94a3b8' : '#0b4bcc', color: '#fff',
+                  border: 'none', borderRadius: '6px', cursor: brandSaving ? 'not-allowed' : 'pointer',
+                  fontSize: '0.9rem', fontWeight: 600,
+                }}
+              >
+                {brandSaving ? 'Saving…' : 'Save Branding'}
+              </button>
+              {brandStatus && (
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: brandStatus.type === 'success' ? '#16a34a' : '#dc2626' }}>
+                  {brandStatus.msg}
                 </span>
               )}
             </div>

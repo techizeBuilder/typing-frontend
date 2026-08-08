@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { resultService } from '../services/api';
+import { resultService, settingService } from '../services/api';
 import { API_BASE_URL } from '../config';
 import { fontFamilyForHindiType, fontGroupForHindiType } from '../utils/hindiFonts';
 import './StenoTestEngine.css';
@@ -25,6 +25,14 @@ const _isSpellingErr = (r, t) => {
 };
 // PDF 1h: all-caps word → full mistake
 const _isAllCaps = (w) => { const l = w.replace(/[^a-zA-Z]/g, ''); return l.length > 1 && l === l.toUpperCase(); };
+
+// Strip trailing /api so relative /uploads/... paths can be prepended with the host.
+const resolveAssetUrl = (url) => {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  const assetsBase = API_BASE_URL.replace(/\/api\/?$/, '');
+  return url.startsWith('/') ? `${assetsBase}${url}` : url;
+};
 
 // ─── Steno Test Engine ───────────────────────────────────────────────────────
 // Rules:
@@ -112,6 +120,18 @@ const StenoTestEngine = () => {
   const [showPassageModal, setShowPassageModal] = useState(false);
   // idle | downloading | saved | nofile | error
   const [audioDownloadStatus, setAudioDownloadStatus] = useState('idle');
+
+  // Institute branding (name + logo) stamped on the downloaded passage PDF. Fetched
+  // once, best-effort — if offline or unset, the passage still downloads without it.
+  const [instituteBrand, setInstituteBrand] = useState({ name: '', logoUrl: '' });
+  useEffect(() => {
+    settingService.getAll()
+      .then((all) => setInstituteBrand({
+        name: all?.institute_name || '',
+        logoUrl: all?.institute_logo_url || '',
+      }))
+      .catch(() => {/* offline or not configured — passage downloads without branding */});
+  }, []);
   // Brief "processing result" screen shown for 2s after submit before the result.
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -226,6 +246,26 @@ const StenoTestEngine = () => {
     setAudioPlaying(false);
   };
 
+  // Jump to a specific point in the audio — click/drag anywhere on the progress bar.
+  const handleSeek = (e) => {
+    if (!audioRef.current || !audioDuration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const newTime = ratio * audioDuration;
+    audioRef.current.currentTime = newTime;
+    setAudioCurrentTime(newTime);
+    if (audioEnded && newTime < audioDuration) setAudioEnded(false);
+  };
+
+  // ±5s skip buttons for fine-grained forward/backward control.
+  const handleSkipSeconds = (delta) => {
+    if (!audioRef.current || !audioDuration) return;
+    const newTime = Math.min(audioDuration, Math.max(0, audioRef.current.currentTime + delta));
+    audioRef.current.currentTime = newTime;
+    setAudioCurrentTime(newTime);
+    if (audioEnded && newTime < audioDuration) setAudioEnded(false);
+  };
+
   const handleSpeedChange = (speed) => {
     setAudioSpeed(speed);
     if (audioRef.current) {
@@ -261,18 +301,29 @@ const StenoTestEngine = () => {
     const passage = chapter?.content_text || '';
     const fontCss = stenoFontFamily ? `font-family: ${stenoFontFamily};` : '';
     const title = `${exam?.name || 'Steno Practice'} — Chapter ${chapter?.chapter_no ?? ''}`;
+    const instituteLogo = resolveAssetUrl(instituteBrand.logoUrl);
+    const brandHeader = (instituteBrand.name || instituteLogo)
+      ? `<div class="brand-header">
+           ${instituteLogo ? `<img src="${escapeHtml(instituteLogo)}" alt="" class="brand-logo" />` : ''}
+           ${instituteBrand.name ? `<span class="brand-name">${escapeHtml(instituteBrand.name)}</span>` : ''}
+         </div>`
+      : '';
     return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8" /><title>${escapeHtml(title)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #fff; color: #111; font-family: 'Times New Roman', Times, serif; padding: 32px 40px; }
   ${cssText}
+  .brand-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #ccc; }
+  .brand-logo { width: 44px; height: 44px; object-fit: contain; }
+  .brand-name { font-size: 18px; font-weight: 700; }
   h1 { font-size: 20px; margin-bottom: 4px; }
   .meta { color: #555; font-size: 13px; margin-bottom: 18px; }
   .passage { ${fontCss} white-space: pre-wrap; font-size: 18px; line-height: 1.9; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 </style></head>
 <body>
+  ${brandHeader}
   <h1>${escapeHtml(title)}</h1>
   <div class="meta">Dictation Passage${mode ? ` · ${escapeHtml(mode)}` : ''}</div>
   <div class="passage">${escapeHtml(passage)}</div>
@@ -636,8 +687,8 @@ const StenoTestEngine = () => {
             </div>
 
             <div className="steno-controls">
-              <button className="steno-btn steno-btn-play" onClick={handlePrintPassage}>
-                🖨 Print / Save as PDF
+              <button className="steno-btn steno-btn-play" onClick={handlePrintPassage} title="Download this passage as a PDF">
+                ⬇ Download PDF
               </button>
               <button className="steno-btn steno-btn-close" onClick={() => setShowPassageModal(false)}>
                 ✕ Close
@@ -645,8 +696,9 @@ const StenoTestEngine = () => {
             </div>
 
             <p className="steno-modal-note">
-              Use this to review the passage during practice. In the print dialog choose
-              <strong> “Save as PDF” </strong> to download it. Not available for Live Steno tests.
+              Use this to review the passage during practice. Click <strong>Download PDF</strong> —
+              in the print dialog that opens, choose <strong>“Save as PDF”</strong> to download it
+              (or “Print” to print it directly). Not available for Live Steno tests.
             </p>
           </div>
         </div>
@@ -673,8 +725,17 @@ const StenoTestEngine = () => {
               )}
             </div>
 
-            {/* Progress bar */}
-            <div className="steno-progress-bar-wrap">
+            {/* Progress bar — click/drag anywhere to seek */}
+            <div
+              className="steno-progress-bar-wrap"
+              onClick={handleSeek}
+              role="slider"
+              aria-label="Seek audio"
+              aria-valuemin={0}
+              aria-valuemax={Math.floor(audioDuration) || 0}
+              aria-valuenow={Math.floor(audioCurrentTime)}
+              style={{ cursor: audioUrl ? 'pointer' : 'default' }}
+            >
               <div className="steno-progress-bar" style={{ width: `${progressPct}%` }} />
             </div>
             <div className="steno-time-row">
@@ -701,6 +762,14 @@ const StenoTestEngine = () => {
 
             {/* Controls */}
             <div className="steno-controls">
+              <button
+                className="steno-btn steno-btn-seek"
+                onClick={() => handleSkipSeconds(-5)}
+                disabled={!audioUrl}
+                title="Back 5 seconds"
+              >
+                ⏪ 5s
+              </button>
               {!audioPlaying ? (
                 <button
                   className="steno-btn steno-btn-play"
@@ -718,6 +787,14 @@ const StenoTestEngine = () => {
                   ⏸ Pause
                 </button>
               )}
+              <button
+                className="steno-btn steno-btn-seek"
+                onClick={() => handleSkipSeconds(5)}
+                disabled={!audioUrl}
+                title="Forward 5 seconds"
+              >
+                5s ⏩
+              </button>
               <button
                 className="steno-btn steno-btn-skip"
                 onClick={handleSkipOrClose}

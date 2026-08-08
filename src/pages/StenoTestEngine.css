@@ -96,20 +96,30 @@
   font-size: 0.85rem;
 }
 
-/* Progress bar */
+/* Progress bar — click/drag to seek (see handleSeek in StenoTestEngine.jsx) */
 .steno-progress-bar-wrap {
   height: 8px;
   background: #334155;
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 6px;
+  position: relative;
 }
+
+/* Taller invisible hit area so the bar is easy to click without visually growing it */
+.steno-progress-bar-wrap::before {
+  content: '';
+  position: absolute;
+  top: -6px; bottom: -6px; left: 0; right: 0;
+}
+
+.steno-progress-bar-wrap:hover { background: #3f4c63; }
 
 .steno-progress-bar {
   height: 100%;
   background: linear-gradient(90deg, #818cf8, #c084fc);
   border-radius: 4px;
-  transition: width 0.5s linear;
+  transition: width 0.2s linear;
 }
 
 .steno-time-row {
@@ -199,6 +209,7 @@
 .steno-btn-pause { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; }
 .steno-btn-skip  { background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; }
 .steno-btn-close { background: #334155; color: #cbd5e1; border: 1px solid #475569; }
+.steno-btn-seek  { background: #1e293b; color: #cbd5e1; border: 1px solid #475569; padding: 10px 14px; font-size: 0.85rem; }
 
 .steno-audio-done {
   padding: 10px 16px;
