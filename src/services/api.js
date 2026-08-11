@@ -170,6 +170,9 @@ export const authService = {
           if (payload.sub) localStorage.setItem('userId', payload.sub);
           if (!localStorage.getItem('role') && payload.role) localStorage.setItem('role', payload.role);
           if (payload.validity_end) localStorage.setItem('validity_end', payload.validity_end);
+          // Premium/validity expiry only gates premium features/content, never login itself —
+          // stored here so screens can show an "expired" banner without blocking access.
+          localStorage.setItem('premium_expired', payload.premium_expired ? 'true' : 'false');
           if (payload.permissions) localStorage.setItem('permissions', JSON.stringify(payload.permissions));
         } catch (e) {
           console.error('Error decoding token:', e);
@@ -238,6 +241,7 @@ export const authService = {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
     localStorage.removeItem('validity_end');
+    localStorage.removeItem('premium_expired');
     localStorage.removeItem('role');
     localStorage.removeItem('userId');
     localStorage.removeItem('permissions');
@@ -262,8 +266,8 @@ export const examService = {
     const response = await api.get(`/exams/${id}`);
     return response.data;
   },
-  deleteExam: async (id) => {
-    const response = await api.delete(`/exams/${id}`);
+  deleteExam: async (id, force = false) => {
+    const response = await api.delete(`/exams/${id}`, { params: force ? { force: true } : undefined });
     return response.data;
   },
 };
@@ -534,6 +538,15 @@ export const settingService = {
   },
   update: async (key, value) => {
     const res = await api.put(`/settings/${key}`, { value });
+    return res.data;
+  },
+  // Uploads the institute logo file and returns { url }. Callers still need to persist
+  // that url via update('institute_logo_url', url) — the key/value store stays the
+  // single source of truth (same two-step flow as exam images).
+  uploadInstituteLogo: async (file) => {
+    const data = new FormData();
+    data.append('logo', file);
+    const res = await api.post('/settings/institute-logo', data);
     return res.data;
   },
 };

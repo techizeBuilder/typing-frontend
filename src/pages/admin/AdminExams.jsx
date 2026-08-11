@@ -259,15 +259,33 @@ const AdminExams = () => {
   };
 
   const handleExamDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this exam?')) {
-      try {
-        await examService.deleteExam(id);
-        fetchData();
-      } catch (error) {
-        const msg = error?.response?.data?.message || error?.message || 'Unknown error';
-        alert(`Error deleting exam: ${Array.isArray(msg) ? msg.join(', ') : msg}`);
-        console.error('Exam delete error:', error?.response?.data || error);
+    if (!window.confirm('Are you sure you want to delete this exam?')) return;
+    try {
+      await examService.deleteExam(id);
+      fetchData();
+    } catch (error) {
+      const status = error?.response?.status;
+      const msg = error?.response?.data?.message || error?.message || 'Unknown error';
+      const msgText = Array.isArray(msg) ? msg.join(', ') : msg;
+
+      // 409 = exam has results and/or linked chapters blocking a normal delete.
+      // Offer a Force Delete that removes those results and unlinks chapters instead.
+      if (status === 409) {
+        if (window.confirm(`${msgText}\n\nForce delete anyway? This will permanently delete the exam and all its recorded results.`)) {
+          try {
+            await examService.deleteExam(id, true);
+            fetchData();
+          } catch (forceError) {
+            const forceMsg = forceError?.response?.data?.message || forceError?.message || 'Unknown error';
+            alert(`Error force deleting exam: ${Array.isArray(forceMsg) ? forceMsg.join(', ') : forceMsg}`);
+            console.error('Exam force delete error:', forceError?.response?.data || forceError);
+          }
+        }
+        return;
       }
+
+      alert(`Error deleting exam: ${msgText}`);
+      console.error('Exam delete error:', error?.response?.data || error);
     }
   };
 
