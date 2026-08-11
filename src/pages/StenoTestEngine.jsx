@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { resultService, settingService } from '../services/api';
 import { API_BASE_URL } from '../config';
 import { fontFamilyForHindiType, fontGroupForHindiType } from '../utils/hindiFonts';
+import { matchContractions, matchAlternateForms } from '../utils/stenoAlternateForms';
 import './StenoTestEngine.css';
 
 // ─── Steno error-classification helpers (module-level, pure functions) ────────
@@ -446,9 +447,12 @@ const StenoTestEngine = () => {
   const tokenize = (text) => text.trim().split(/\s+/).filter(Boolean);
 
   // ─── Bipartite word matching for Steno ──────────────────────────────────────
-  // Two-pass bipartite alignment per SSC PDF evaluation rules:
-  //   Pass 1 – exact normalized match (case/punct stripped)
-  //   Pass 2 – spelling match via Levenshtein (PDF 2a: wrong spelling = half)
+  // Bipartite alignment per SSC PDF evaluation rules + the "Accepted Alternate
+  // Forms" guideline:
+  //   Pass 1  – exact normalized match (case/punct stripped)
+  //   Pass 1b – accepted alternate forms (contractions, titles, spelling
+  //             variations) — NOT counted as an error per the guideline
+  //   Pass 2  – spelling match via Levenshtein (PDF 2a: wrong spelling = half)
   //
   // Error classification:
   //   fullErrors – omission (PDF 1a) · addition (PDF 1c) · all-caps (PDF 1h)
@@ -467,6 +471,7 @@ const StenoTestEngine = () => {
     const usedTyped  = new Set();
     const matchedRef = new Array(R).fill(-1);
     const isSpell    = new Array(R).fill(false);
+    const isAltForm  = new Array(R).fill(false);
 
     // Pass 1: exact normalized match
     for (let ri = 0; ri < R; ri++) {
@@ -476,6 +481,13 @@ const StenoTestEngine = () => {
         }
       }
     }
+
+    // Pass 1b: accepted alternate forms — contractions (e.g. "do not" ↔
+    // "don't"), titles (e.g. "Dr." ↔ "Doctor") and spelling variations
+    // (e.g. "Honour" ↔ "Honor"). Must run before Pass 2 so a legitimate
+    // alternate spelling isn't instead flagged as a fuzzy spelling mistake.
+    matchContractions(refNorm, typedNorm, matchedRef, isAltForm, usedTyped);
+    matchAlternateForms(refNorm, typedNorm, matchedRef, isAltForm, usedTyped);
 
     // Pass 2: spelling match for unmatched reference words (PDF 2a)
     for (let ri = 0; ri < R; ri++) {
@@ -493,6 +505,8 @@ const StenoTestEngine = () => {
       const ti = matchedRef[ri];
       if (ti === -1) {
         fullErrors++; // omission (PDF 1a)
+      } else if (isAltForm[ri]) {
+        // accepted alternate form — not counted as an error
       } else if (isSpell[ri]) {
         halfErrors++; // spelling error (PDF 2a)
       } else {

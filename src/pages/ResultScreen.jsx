@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 import { fontFamilyForFontGroup, fontGroupForHindiType } from '../utils/hindiFonts';
+import { matchContractions, matchAlternateForms } from '../utils/stenoAlternateForms';
 import './ResultScreen.css';
 
 // ─── PrintSheet — government exam format (visible only on print) ───────────────
@@ -465,7 +466,9 @@ const _stenoCorrectCount = (typedText, referenceText) => {
 };
 
 // ─── Bipartite alignment (used for Steno) ────────────────────────────────────
-// Two-pass: pass 1 matches exact normalized forms; pass 2 matches spelling
+// Pass 1 matches exact normalized forms; Pass 1b matches accepted alternate
+// forms (contractions/titles/spelling variations — never an error, per the
+// "Accepted Alternate Forms" exam guideline); Pass 2 matches spelling
 // variants (half mistake). Order-independent — a correctly heard word is
 // credited even if written in a different position.
 function bipartiteAlign(refNorm, typedNorm) {
@@ -474,6 +477,7 @@ function bipartiteAlign(refNorm, typedNorm) {
   const usedTyped  = new Set();
   const matchedRef = new Array(R).fill(-1);
   const isSpell    = new Array(R).fill(false);
+  const isAltForm  = new Array(R).fill(false);
 
   // Pass 1: exact normalized match
   for (let ri = 0; ri < R; ri++) {
@@ -483,6 +487,12 @@ function bipartiteAlign(refNorm, typedNorm) {
       }
     }
   }
+  // Pass 1b: accepted alternate forms — must run before Pass 2 so a
+  // legitimate alternate spelling isn't instead flagged as a fuzzy spelling
+  // mistake.
+  matchContractions(refNorm, typedNorm, matchedRef, isAltForm, usedTyped);
+  matchAlternateForms(refNorm, typedNorm, matchedRef, isAltForm, usedTyped);
+
   // Pass 2: spelling match for still-unmatched reference words (PDF 2a)
   for (let ri = 0; ri < R; ri++) {
     if (matchedRef[ri] !== -1) continue;
@@ -492,7 +502,7 @@ function bipartiteAlign(refNorm, typedNorm) {
       }
     }
   }
-  return { matchedRef, isSpell, usedTyped };
+  return { matchedRef, isSpell, isAltForm, usedTyped };
 }
 
 // ─── StenoDiff ────────────────────────────────────────────────────────────────
@@ -502,20 +512,26 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
   const typedNorm  = typedWords.map(normalizeWordResult);
   const refNorm    = refWords.map(normalizeWordResult);
 
-  const { matchedRef, isSpell, usedTyped } = bipartiteAlign(refNorm, typedNorm);
+  const { matchedRef, isSpell, isAltForm, usedTyped } = bipartiteAlign(refNorm, typedNorm);
 
-  // Token types per SSC PDF guidelines:
+  // Token types per SSC PDF guidelines + the Accepted Alternate Forms guideline:
   //   correct – exact match
+  //   alt     – accepted alternate form (contraction/title/spelling variant) → NOT an error
   //   half    – case / punctuation difference only (PDF 2c, 2d, 2e) → half mistake
   //   spell   – close spelling error          (PDF 2a)              → half mistake
   //   caps    – word typed in ALL CAPITALS    (PDF 1h)              → full mistake
   //   missed  – omission                      (PDF 1a)              → full mistake
   //   extra   – addition                      (PDF 1c)              → full mistake
   const tokens = [];
+  const shownAltTi = new Set(); // avoids double-labelling a 2-word↔1-word contraction match
   for (let ri = 0; ri < refWords.length; ri++) {
     const ti = matchedRef[ri];
     if (ti === -1) {
       tokens.push({ type: 'missed', typed: null, ref: refWords[ri] });
+    } else if (isAltForm[ri]) {
+      const showTyped = !shownAltTi.has(ti);
+      shownAltTi.add(ti);
+      tokens.push({ type: 'alt', typed: showTyped ? typedWords[ti] : null, ref: refWords[ri] });
     } else if (isSpell[ri]) {
       tokens.push({ type: 'spell', typed: typedWords[ti], ref: refWords[ri] });
     } else {
@@ -554,6 +570,7 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
   const styles = {
     wrap:    { fontFamily: "'Courier New', monospace", lineHeight: 2.2, wordSpacing: '4px', flexWrap: 'wrap', display: 'flex', gap: '6px', padding: '16px 0' },
     correct: { color: '#16a34a', display: 'inline-block' },
+    alt:     { display: 'inline-block', background: '#dcfce7', borderRadius: '4px', padding: '0 4px', color: '#166534' },
     half:    { display: 'inline-block', background: '#fef3c7', borderRadius: '4px', padding: '0 4px', color: '#92400e' },
     spell:   { display: 'inline-block', background: '#fde68a', borderRadius: '4px', padding: '0 4px', color: '#92400e', fontStyle: 'italic' },
     caps:    { display: 'inline-block', background: '#fee2e2', borderRadius: '4px', padding: '0 4px', color: '#b91c1c', fontWeight: 700, letterSpacing: '1px' },
@@ -603,6 +620,7 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
         <span>All-Caps: <strong style={{color:'#b91c1c'}}>{counts.caps || 0}</strong></span>
         <span>Spelling: <strong style={{color:'#d97706'}}>{counts.spell || 0}</strong></span>
         <span>Case/Punct: <strong style={{color:'#92400e'}}>{counts.half || 0}</strong></span>
+        <span>Accepted Alternate Forms: <strong style={{color:'#16a34a'}}>{counts.alt || 0}</strong></span>
         <span style={{marginLeft:'auto',fontStyle:'italic'}}>
           Master passage words: {masterWords}
           {pattern?.required_speed ? ` (${pattern.required_speed}wpm × ${testDurationMinutes}min)` : ' (ref length)'}
@@ -616,12 +634,20 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
         <span style={{background:'#fee2e2',padding:'1px 5px',borderRadius:'3px',color:'#b91c1c',fontWeight:700}}>ALL-CAPS</span>
         <span style={{background:'#fde68a',padding:'1px 5px',borderRadius:'3px',color:'#92400e',fontStyle:'italic'}}>speling</span>
         <span style={{background:'#fef3c7',padding:'1px 5px',borderRadius:'3px',color:'#92400e'}}>cAse/punct</span>
+        <span style={{background:'#dcfce7',padding:'1px 5px',borderRadius:'3px',color:'#166534'}}>alt-form (accepted)</span>
       </div>
 
       {/* ── Word diff tokens ──────────────────────────────────── */}
       <div style={passageFontFamily ? { ...styles.wrap, fontFamily: passageFontFamily } : styles.wrap}>
         {tokens.map((tok, idx) => {
           if (tok.type === 'correct') return <span key={idx} style={styles.correct}>{tok.typed}</span>;
+          if (tok.type === 'alt')     return (
+            <span key={idx} style={styles.alt} title="Accepted alternate form — not counted as an error">
+              {tok.typed !== null ? tok.typed : tok.ref}
+              {tok.typed !== null && tok.typed !== tok.ref
+                ? <span style={{ fontSize: '0.75em', color: '#15803d' }}>({tok.ref})</span> : null}
+            </span>
+          );
           if (tok.type === 'half')    return (
             <span key={idx} style={styles.half}>
               {tok.typed}<span style={{ fontSize: '0.75em', color: '#b45309' }}>({tok.ref})</span>
