@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import DashboardNav from '../components/DashboardNav';
 import Header from '../components/Header';
 import { resultService, settingService } from '../services/api';
+import { computeResultMetrics } from '../utils/resultMetrics';
 import './StudentDashboard.css';
 
 // "21:00" → "9:00 PM" for display.
@@ -55,16 +56,29 @@ const Leaderboard = () => {
     ? row.user_id === myUserId
     : (!!myName && row.username === myName);
 
-  // Filter → deduplicate per student (rows arrive NWPM-desc, so first seen = best).
+  // Filter → recompute the CANONICAL nwpm/gwpm/accuracy for each row (the engine-
+  // stored columns can drift from the true value for typing results — the same
+  // reason ResultScreen and the admin results table re-derive them; see
+  // resultMetrics.js) → re-sort by the recomputed metric → deduplicate per student
+  // (first seen = best, now that the sort is trustworthy).
   // Keep the FULL ranking so we can compute the logged-in student's rank even when
   // they fall outside the visible top 10.
   const fullRanking = (() => {
     const filtered = examFilter === 'All'
       ? rawData
       : rawData.filter(r => (r.exam_name || 'Self Practice') === examFilter);
+
+    const withMetrics = filtered.map(r => ({ ...r, _metrics: computeResultMetrics(r) }));
+
+    withMetrics.sort((a, b) => {
+      if (b._metrics.nwpm !== a._metrics.nwpm) return b._metrics.nwpm - a._metrics.nwpm;
+      if (b._metrics.accuracy !== a._metrics.accuracy) return b._metrics.accuracy - a._metrics.accuracy;
+      return new Date(a.date_taken) - new Date(b.date_taken);
+    });
+
     const seen = new Set();
     const result = [];
-    for (const row of filtered) {
+    for (const row of withMetrics) {
       const key = row.user_id || row.username;
       if (!seen.has(key)) {
         seen.add(key);
@@ -152,15 +166,15 @@ const Leaderboard = () => {
                   <div style={{ display: 'flex', gap: '22px', textAlign: 'center' }}>
                     <div>
                       <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>GWPM</div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#475569' }}>{Math.round(myEntry.max_gwpm)}</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#475569' }}>{Math.round(myEntry._metrics.gwpm)}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>NWPM</div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0b4bcc' }}>{Math.round(myEntry.max_nwpm)}</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0b4bcc' }}>{Math.round(myEntry._metrics.nwpm)}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>Accuracy</div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>{parseFloat(myEntry.max_accuracy).toFixed(2)}%</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>{myEntry._metrics.accuracy.toFixed(2)}%</div>
                     </div>
                   </div>
                 )}
@@ -206,9 +220,9 @@ const Leaderboard = () => {
                           {row.username}
                           {isMe && <span style={{ marginLeft: '8px', background: '#3b82f6', color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: '10px' }}>You</span>}
                         </td>
-                        <td style={{ padding: '15px 20px', color: '#475569', fontWeight: '600' }}>{Math.round(row.max_gwpm)} WPM</td>
-                        <td style={{ padding: '15px 20px', color: '#0b4bcc', fontWeight: 'bold' }}>{Math.round(row.max_nwpm)} WPM</td>
-                        <td style={{ padding: '15px 20px', color: '#0f172a' }}>{parseFloat(row.max_accuracy).toFixed(2)}%</td>
+                        <td style={{ padding: '15px 20px', color: '#475569', fontWeight: '600' }}>{Math.round(row._metrics.gwpm)} WPM</td>
+                        <td style={{ padding: '15px 20px', color: '#0b4bcc', fontWeight: 'bold' }}>{Math.round(row._metrics.nwpm)} WPM</td>
+                        <td style={{ padding: '15px 20px', color: '#0f172a' }}>{row._metrics.accuracy.toFixed(2)}%</td>
                       </tr>
                       );
                     })}
