@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { resultService } from '../../services/api';
+import { computeResultMetrics } from '../../utils/resultMetrics';
 
 const TOP_N = 25;
 
@@ -54,8 +55,11 @@ const AdminLeaderboard = () => {
     [rawData],
   );
 
-  // Filter by exam → keep each student's best (rows arrive NWPM-desc) → derive the
-  // total participant count and the Top 25.
+  // Filter by exam → recompute the CANONICAL nwpm/gwpm/accuracy for each row (the
+  // engine-stored columns can drift from the true value for typing results — the
+  // same reason ResultScreen and the admin results table re-derive them; see
+  // resultMetrics.js) → re-sort by the recomputed metric → keep each student's
+  // best → derive the total participant count and the Top 25.
   const { ranked, participantCount } = useMemo(() => {
     // Safety net: never show results dated after today, whatever the API returns.
     const endOfToday = new Date();
@@ -64,9 +68,17 @@ const AdminLeaderboard = () => {
     const filtered = examFilter === 'All'
       ? upToToday
       : upToToday.filter(r => (r.exam_name || 'Self Practice') === examFilter);
+
+    const withMetrics = filtered.map(r => ({ ...r, _metrics: computeResultMetrics(r) }));
+    withMetrics.sort((a, b) => {
+      if (b._metrics.nwpm !== a._metrics.nwpm) return b._metrics.nwpm - a._metrics.nwpm;
+      if (b._metrics.accuracy !== a._metrics.accuracy) return b._metrics.accuracy - a._metrics.accuracy;
+      return new Date(a.date_taken) - new Date(b.date_taken);
+    });
+
     const seen = new Set();
     const deduped = [];
-    for (const row of filtered) {
+    for (const row of withMetrics) {
       const key = row.user_id || row.username;
       if (key && !seen.has(key)) {
         seen.add(key);
@@ -103,9 +115,9 @@ const AdminLeaderboard = () => {
         `#${index + 1}`,
         row.username || '-',
         row.exam_name || 'Self Practice',
-        `${Math.round(row.max_gwpm)} WPM`,
-        `${Math.round(row.max_nwpm)} WPM`,
-        `${parseFloat(row.max_accuracy).toFixed(2)}%`,
+        `${Math.round(row._metrics.gwpm)} WPM`,
+        `${Math.round(row._metrics.nwpm)} WPM`,
+        `${row._metrics.accuracy.toFixed(2)}%`,
       ]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [11, 75, 204] },
@@ -205,9 +217,9 @@ const AdminLeaderboard = () => {
                   </td>
                   <td style={{ ...td, fontWeight: 600, color: '#1e293b' }}>{row.username || '—'}</td>
                   <td style={{ ...td, color: '#475569' }}>{row.exam_name || 'Self Practice'}</td>
-                  <td style={{ ...td, color: '#475569', fontWeight: 600 }}>{Math.round(row.max_gwpm)} WPM</td>
-                  <td style={{ ...td, color: '#0b4bcc', fontWeight: 'bold' }}>{Math.round(row.max_nwpm)} WPM</td>
-                  <td style={{ ...td, color: '#0f172a' }}>{parseFloat(row.max_accuracy).toFixed(2)}%</td>
+                  <td style={{ ...td, color: '#475569', fontWeight: 600 }}>{Math.round(row._metrics.gwpm)} WPM</td>
+                  <td style={{ ...td, color: '#0b4bcc', fontWeight: 'bold' }}>{Math.round(row._metrics.nwpm)} WPM</td>
+                  <td style={{ ...td, color: '#0f172a' }}>{row._metrics.accuracy.toFixed(2)}%</td>
                 </tr>
               ))}
             </tbody>
