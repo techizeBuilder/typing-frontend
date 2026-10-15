@@ -593,6 +593,27 @@ export const supportService = {
 };
 
 // Student reviews. Approved ones are public (landing page testimonials).
+// PDF magazines (KC / Progressive). Files come through an access-checked route.
+export const magazineService = {
+  list: async (collection) => (await api.get('/magazines', { params: { collection } })).data,
+  fileBlob: async (id) => {
+    const res = await api.get(`/magazines/${id}/file`, { responseType: 'blob' });
+    return new Blob([res.data], { type: 'application/pdf' });
+  },
+  adminList: async () => (await api.get('/magazines/admin')).data,
+  upload: async (fields, file, onProgress) => {
+    const data = new FormData();
+    Object.entries(fields).forEach(([k, v]) => data.append(k, String(v ?? '')));
+    data.append('pdf', file);
+    const res = await api.post('/magazines', data, {
+      onUploadProgress: (e) => onProgress && e.total && onProgress(Math.round((e.loaded / e.total) * 100)),
+    });
+    return res.data;
+  },
+  update: async (id, patch) => (await api.patch(`/magazines/${id}`, patch)).data,
+  remove: async (id) => (await api.delete(`/magazines/${id}`)).data,
+};
+
 // Built-in font groups: public list (active flags) + admin settings.
 export const fontGroupService = {
   list: async () => (await api.get('/font-groups')).data,

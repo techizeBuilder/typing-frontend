@@ -19,6 +19,7 @@ import StenoExams from './pages/student/StenoExams';
 import DictationList from './pages/student/DictationList';
 import StenoPractice from './pages/student/StenoPractice';
 import MyDictations from './pages/student/MyDictations';
+import Magazines from './pages/student/Magazines';
 import LiveTests from './pages/student/LiveTests';
 import LiveTestSlots from './pages/student/LiveTestSlots';
 import LegacyExamRedirect from './pages/student/LegacyExamRedirect';
@@ -37,6 +38,7 @@ import AdminExams from './pages/admin/AdminExams';
 import AdminChapters from './pages/admin/AdminChapters';
 import AdminFontGroups from './pages/admin/AdminFontGroups';
 import AdminScreenLayout from './pages/admin/AdminScreenLayout';
+import AdminMagazines from './pages/admin/AdminMagazines';
 import AdminStudents from './pages/admin/AdminStudents';
 import AdminMessages from './pages/admin/AdminMessages';
 import AdminFlashBanner from './pages/admin/AdminFlashBanner';
@@ -70,6 +72,8 @@ function App() {
               <Route path="/steno/:examId" element={<DictationList />} />
               <Route path="/steno/:examId/practice/:chapterId" element={<StenoPractice />} />
               <Route path="/my-dictations" element={<MyDictations />} />
+              <Route path="/pdf/kc-magazines" element={<Magazines key="kc" collection="kc" />} />
+              <Route path="/pdf/progressive-magazines" element={<Magazines key="progressive" collection="progressive" />} />
               <Route path="/live-test/typing" element={<LiveTests key="typing" kind="typing" />} />
               <Route path="/live-test/steno" element={<LiveTests key="steno" kind="steno" />} />
               <Route path="/live-test/exam/:examId" element={<LiveTestSlots />} />
@@ -100,6 +104,7 @@ function App() {
               <Route path="exams" element={<AdminExams />} />
               <Route path="font-groups" element={<AdminFontGroups />} />
               <Route path="screen-layout" element={<AdminScreenLayout />} />
+              <Route path="magazines" element={<AdminMagazines />} />
               <Route path="content" element={<AdminChapters />} />
               <Route path="students" element={<AdminStudents />} />
               <Route path="messages" element={<AdminMessages />} />

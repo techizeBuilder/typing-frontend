@@ -12,7 +12,8 @@ const AVAILABLE_MODULES = [
   { id: 'flash_banner', label: 'Flash Banner' },
   { id: 'staff', label: 'Staff Management' },
   { id: 'support', label: 'Support Tickets' },
-  { id: 'reviews', label: 'Student Reviews' }
+  { id: 'reviews', label: 'Student Reviews' },
+  { id: 'magazines', label: 'PDF Magazines' }
 ];
 
 const AdminStaff = () => {
