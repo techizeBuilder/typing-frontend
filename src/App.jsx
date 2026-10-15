@@ -21,6 +21,7 @@ import StenoPractice from './pages/student/StenoPractice';
 import MyDictations from './pages/student/MyDictations';
 import Magazines from './pages/student/Magazines';
 import PlanPricing from './pages/student/PlanPricing';
+import ReferEarn from './pages/student/ReferEarn';
 import LiveTests from './pages/student/LiveTests';
 import LiveTestSlots from './pages/student/LiveTestSlots';
 import LegacyExamRedirect from './pages/student/LegacyExamRedirect';
@@ -78,6 +79,7 @@ function App() {
               <Route path="/pdf/kc-magazines" element={<Magazines key="kc" collection="kc" />} />
               <Route path="/pdf/progressive-magazines" element={<Magazines key="progressive" collection="progressive" />} />
               <Route path="/plan-pricing" element={<PlanPricing />} />
+              <Route path="/refer-earn" element={<ReferEarn />} />
               <Route path="/live-test/typing" element={<LiveTests key="typing" kind="typing" />} />
               <Route path="/live-test/steno" element={<LiveTests key="steno" kind="steno" />} />
               <Route path="/live-test/exam/:examId" element={<LiveTestSlots />} />

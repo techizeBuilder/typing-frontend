@@ -21,6 +21,7 @@ export const studentNav = [
   { label: 'Leaderboard', icon: 'trophy', to: '/leaderboard', color: '#FACC15' },
   { label: 'Top Ranks', icon: 'trophy', to: '/top-ranks', color: '#2DD4BF' },
   { label: 'Plan & Pricing', icon: 'crown', to: '/plan-pricing', color: '#FBBF24' },
+  { label: 'Refer & Earn', icon: 'gift', to: '/refer-earn', color: '#34D399' },
   { label: 'Write a Review', icon: 'star', to: '/write-review', color: '#FBBF24' },
   { label: 'Support', icon: 'headphones', to: '/support', color: '#34D399' },
   { label: 'How to use?', icon: 'help', to: '/how-to-use', color: '#94A3B8' },

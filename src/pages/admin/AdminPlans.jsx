@@ -15,7 +15,7 @@ import {
   XCircleIcon,
   XIcon,
 } from 'lucide-react';
-import { planService, settingService } from '../../services/api';
+import { planService, referralService, settingService } from '../../services/api';
 import { PageHeading } from '../../ui/PageHeading';
 import { StatCard } from '../../ui/StatCard';
 import { LoadingState } from '../../features/exams/ExamUI';
@@ -120,7 +120,7 @@ function PaymentForm({ title, sub, plans, onClose, onDone }) {
   const [studentId, setStudentId] = useState('');
   const [planId, setPlanId] = useState(plans[0]?.id || '');
   const plan = sub ? null : plans.find((p) => p.id === planId);
-  const [amount, setAmount] = useState(sub ? sub.plan_price : '');
+  const [amount, setAmount] = useState(sub ? sub.plan_price - (sub.discount_amount || 0) : '');
   const [ref, setRef] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
@@ -137,7 +137,7 @@ function PaymentForm({ title, sub, plans, onClose, onDone }) {
   return (
     <Modal title={title} onClose={onClose}>
       {sub ?
-        <p className="mb-3 rounded-lg bg-slate-50 p-3 text-[12.5px] text-slate-700"><b>{sub.student?.name}</b> ({sub.student?.user_id}) · {sub.plan_name} · {rupees(sub.plan_price)} · {durationLabel(sub.duration_days)}{sub.student_note ? <><br /><span className="text-slate-500">Student: “{sub.student_note}”</span></> : null}</p> :
+        <p className="mb-3 rounded-lg bg-slate-50 p-3 text-[12.5px] text-slate-700"><b>{sub.student?.name}</b> ({sub.student?.user_id}) · {sub.plan_name} · {sub.discount_amount ? <><span className="line-through">{rupees(sub.plan_price)}</span> {rupees(sub.plan_price - sub.discount_amount)} ({sub.discount_pct}% referral discount)</> : rupees(sub.plan_price)} · {durationLabel(sub.duration_days)}{sub.student_note ? <><br /><span className="text-slate-500">Student: “{sub.student_note}”</span></> : null}</p> :
         <div className="mb-3 grid gap-3">
           <label className="block"><span className={labelCls}>Student login ID</span><input value={studentId} onChange={(e) => setStudentId(e.target.value)} placeholder="e.g. student01" className={inputCls} /></label>
           <label className="block"><span className={labelCls}>Plan</span>
@@ -186,6 +186,143 @@ function PaymentSettings() {
       </div>
       {status.text && <p role={status.kind === 'error' ? 'alert' : 'status'} className={`mt-2 text-[12.5px] ${status.kind === 'error' ? 'text-danger' : 'text-emerald-700'}`}>{status.text}</p>}
       <button type="button" onClick={save} className="mt-3 rounded-md bg-primary px-5 py-2 text-[12.5px] font-semibold text-white hover:bg-primary-700">Save Payment Details</button>
+    </section>
+  );
+}
+
+const PAYOUT_TONE = { Requested: 'bg-amber-50 text-amber-700', Paid: 'bg-emerald-50 text-emerald-700', Rejected: 'bg-rose-50 text-rose-700' };
+
+function ReferralsPanel() {
+  const [data, setData] = useState(null);
+  const [paying, setPaying] = useState(null);
+  const [ref, setRef] = useState('');
+  const [msg, setMsg] = useState({ kind: '', text: '' });
+  const load = () => referralService.adminOverview().then(setData).catch((err) => { setData({ overview: {}, commissions: [], payouts: [] }); setMsg({ kind: 'error', text: errorMessage(err, 'Could not load referrals.') }); });
+  useEffect(() => { load(); }, []);
+  if (!data) return <LoadingState>Loading referrals…</LoadingState>;
+  const ov = data.overview;
+  const pendingPayouts = data.payouts.filter((p) => p.status === 'Requested');
+  const markPaid = async () => {
+    try { await referralService.markPaid(paying.id, { payment_ref: ref }); setPaying(null); setRef(''); setMsg({ kind: 'ok', text: 'Payout marked as paid.' }); await load(); } catch (err) { setMsg({ kind: 'error', text: errorMessage(err, 'Could not update the payout.') }); }
+  };
+  const reject = async (p) => {
+    const note = window.prompt(`Reject the payout of ${rupees(p.amount)} to ${p.referrer?.name}? The amount goes back to their balance. Reason:`, '');
+    if (note === null) return;
+    try { await referralService.reject(p.id, { admin_note: note }); await load(); } catch (err) { setMsg({ kind: 'error', text: errorMessage(err, 'Could not reject.') }); }
+  };
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard icon={<UsersIcon className="h-5 w-5" />} iconBg="#0D6EFD" label="Referred Students" value={ov.referred_students} />
+        <StatCard icon={<CheckCircle2Icon className="h-5 w-5" />} iconBg="#198754" label="Bought a Plan" value={ov.converted} />
+        <StatCard icon={<IndianRupeeIcon className="h-5 w-5" />} iconBg="#6F42C1" label="Commission Earned" value={rupees(ov.commissions_total)} />
+        <StatCard icon={<HourglassIcon className="h-5 w-5" />} iconBg="#F59E0B" label="Payouts Pending" value={rupees(ov.pending_payouts)} />
+        <StatCard icon={<WalletIcon className="h-5 w-5" />} iconBg="#0EA5E9" label="Paid Out" value={rupees(ov.paid_out)} />
+      </div>
+      {msg.text && <p role={msg.kind === 'error' ? 'alert' : 'status'} className={`rounded-lg border px-3 py-2 text-[12.5px] ${msg.kind === 'error' ? 'border-rose-200 bg-rose-50 text-danger' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{msg.text}</p>}
+      <section className="rounded-xl border border-slate-200 bg-white shadow-card">
+        <h3 className="border-b border-slate-100 px-4 py-3 text-[13px] font-bold text-navy-800">Payout Requests</h3>
+        {pendingPayouts.length === 0 ? <p className="p-6 text-center text-[12.5px] text-slate-500">No payout requests waiting.</p> :
+          <ul className="divide-y divide-slate-100">
+            {pendingPayouts.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center gap-3 p-4 text-[12.5px]">
+                <span className="min-w-0 flex-1"><b className="text-navy-800">{p.referrer?.name}</b> <span className="text-slate-400">{p.referrer?.user_id}</span><br />{rupees(p.amount)} to <b>{p.upi_id}</b> · requested {fmtDate(p.created_at)}</span>
+                <button type="button" onClick={() => { setPaying(p); setRef(''); }} className="rounded-md bg-success px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#146c43]">Mark as Paid</button>
+                <button type="button" onClick={() => reject(p)} className="rounded-md border border-slate-300 px-3 py-1.5 text-[12px] font-semibold text-navy-800 hover:bg-slate-50">Reject</button>
+              </li>
+            ))}
+          </ul>
+        }
+      </section>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-card">
+        <h3 className="border-b border-slate-100 px-4 py-3 text-[13px] font-bold text-navy-800">Commissions</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-[12px]">
+            <thead className="bg-slate-50 text-[11.5px] font-semibold text-slate-600"><tr>{['Referrer', 'Referred Student', 'Plan', 'Paid', 'Rate', 'Commission', 'Date'].map((h) => <th key={h} scope="col" className="px-3 py-2.5">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {data.commissions.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-slate-500">No commissions yet.</td></tr>}
+              {data.commissions.map((c) => (
+                <tr key={c.id}>
+                  <td className="px-3 py-2.5"><b className="text-navy-800">{c.referrer?.name}</b> <span className="text-[10.5px] text-slate-400">{c.referrer?.user_id}</span></td>
+                  <td className="px-3 py-2.5 text-slate-700">{c.referred?.name}</td>
+                  <td className="px-3 py-2.5 text-slate-700">{c.plan_name}</td>
+                  <td className="px-3 py-2.5 text-slate-700">{rupees(c.base_amount)}</td>
+                  <td className="px-3 py-2.5 text-slate-700">{c.rate}%</td>
+                  <td className="px-3 py-2.5 font-semibold text-success">{rupees(c.amount)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{fmtDate(c.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {data.payouts.some((p) => p.status !== 'Requested') &&
+        <section className="rounded-xl border border-slate-200 bg-white shadow-card">
+          <h3 className="border-b border-slate-100 px-4 py-3 text-[13px] font-bold text-navy-800">Payout History</h3>
+          <ul className="divide-y divide-slate-100 text-[12px]">
+            {data.payouts.filter((p) => p.status !== 'Requested').map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                <b className="text-navy-800">{p.referrer?.name}</b> {rupees(p.amount)} to {p.upi_id}
+                <span className={`rounded px-2 py-[1px] text-[10.5px] font-semibold ${PAYOUT_TONE[p.status]}`}>{p.status}</span>
+                <span className="ml-auto text-slate-500">{fmtDate(p.processed_at)}{p.payment_ref ? ` · Ref ${p.payment_ref}` : ''}{p.admin_note ? ` · ${p.admin_note}` : ''}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      }
+      {paying &&
+        <Modal title="Mark Payout as Paid" onClose={() => setPaying(null)}>
+          <p className="mb-3 text-[12.5px] text-slate-700">Send <b>{rupees(paying.amount)}</b> to <b>{paying.upi_id}</b> ({paying.referrer?.name}), then record the UPI transaction ID.</p>
+          <label className="block"><span className={labelCls}>UPI transaction ID</span><input value={ref} maxLength={100} onChange={(e) => setRef(e.target.value)} className={inputCls} /></label>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={() => setPaying(null)} className="rounded-md border border-slate-300 px-4 py-2 text-[12.5px] text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button type="button" onClick={markPaid} disabled={!ref.trim()} className="rounded-md bg-success px-5 py-2 text-[12.5px] font-semibold text-white hover:bg-[#146c43] disabled:opacity-60">Mark as Paid</button>
+          </div>
+        </Modal>
+      }
+    </div>
+  );
+}
+
+const REFERRAL_FIELDS = [
+  ['referral_commission_pct', 'Commission (%)', 'Paid to the referrer on a referred student\'s first plan.'],
+  ['referral_premium_commission_pct', 'Commission with an active plan (%)', 'Higher rate for referrers who have an active plan themselves.'],
+  ['referral_discount_pct', 'Discount for the new student (%)', 'Taken off the referred student\'s first plan.'],
+  ['referral_min_payout', 'Minimum payout (₹)', 'Smallest balance a student can withdraw.'],
+];
+
+function ReferralSettings() {
+  const [form, setForm] = useState(null);
+  const [status, setStatus] = useState({ kind: '', text: '' });
+  useEffect(() => {
+    settingService.getAll().then((s) => setForm({
+      referral_enabled: s?.referral_enabled !== 'false',
+      ...Object.fromEntries(REFERRAL_FIELDS.map(([k]) => [k, s?.[k] ?? ''])),
+    })).catch(() => setForm(null));
+  }, []);
+  if (!form) return null;
+  const save = async () => {
+    setStatus({ kind: '', text: '' });
+    try {
+      await settingService.update('referral_enabled', form.referral_enabled ? 'true' : 'false');
+      for (const [k] of REFERRAL_FIELDS) await settingService.update(k, String(form[k]));
+      setStatus({ kind: 'ok', text: 'Refer & Earn settings saved.' });
+    } catch (err) { setStatus({ kind: 'error', text: errorMessage(err, 'Could not save.') }); }
+  };
+  return (
+    <section className={`${card} max-w-2xl`}>
+      <h3 className="mb-1 text-[13px] font-bold text-navy-800">Refer &amp; Earn</h3>
+      <p className="mb-3 text-[12px] text-slate-500">Students share a code; a new student gets a discount on their first plan and the referrer earns commission when it is activated.</p>
+      <label className="mb-3 flex items-center gap-2 text-[12.5px] text-slate-700"><input type="checkbox" checked={form.referral_enabled} onChange={(e) => setForm({ ...form, referral_enabled: e.target.checked })} className="h-4 w-4 accent-primary" /> Refer &amp; Earn is on</label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {REFERRAL_FIELDS.map(([k, label, help]) => (
+          <label key={k} className="block"><span className={labelCls}>{label}</span>
+            <input type="number" min="0" value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} className={inputCls} />
+            <span className="mt-0.5 block text-[10.5px] text-slate-500">{help}</span></label>
+        ))}
+      </div>
+      {status.text && <p role={status.kind === 'error' ? 'alert' : 'status'} className={`mt-2 text-[12.5px] ${status.kind === 'error' ? 'text-danger' : 'text-emerald-700'}`}>{status.text}</p>}
+      <button type="button" onClick={save} className="mt-3 rounded-md bg-primary px-5 py-2 text-[12.5px] font-semibold text-white hover:bg-primary-700">Save Refer &amp; Earn Settings</button>
     </section>
   );
 }
@@ -239,11 +376,11 @@ export default function AdminPlans() {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
   const done = async (r) => {
-    setStatus({ kind: 'ok', text: `Plan activated for ${r.student?.name || 'the student'}: valid ${fmtDate(r.starts_on)} – ${fmtDate(r.ends_on)}.${r.student?.status === 'Inactive' ? ' Note: this student account is marked Inactive in Students Management.' : ''}` });
+    setStatus({ kind: 'ok', text: `Plan activated for ${r.student?.name || 'the student'}: valid ${fmtDate(r.starts_on)} – ${fmtDate(r.ends_on)}.${r.referral_commission ? ` Referral commission of ${rupees(r.referral_commission)} credited to the referrer.` : ''}${r.student?.status === 'Inactive' ? ' Note: this student account is marked Inactive in Students Management.' : ''}` });
     await load();
   };
 
-  const tabs = [['requests', `Purchase Requests${pending.length ? ` (${pending.length})` : ''}`], ['subscriptions', 'Subscriptions'], ['plans', 'Plans'], ['settings', 'Payment Details']];
+  const tabs = [['requests', `Purchase Requests${pending.length ? ` (${pending.length})` : ''}`], ['subscriptions', 'Subscriptions'], ['plans', 'Plans'], ['referrals', 'Referrals'], ['settings', 'Payment Details']];
 
   return (
     <div className="nd">
@@ -284,7 +421,7 @@ export default function AdminPlans() {
                 <li key={s.id} className="flex flex-wrap items-center gap-4 p-4">
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-navy-800">{s.student?.name} <span className="text-[11.5px] font-normal text-slate-400">{s.student?.user_id} · {s.student?.phone}</span></p>
-                    <p className="text-[12.5px] text-slate-600">{s.plan_name} · {rupees(s.plan_price)} · {durationLabel(s.duration_days)} · requested {fmtDate(s.created_at)}</p>
+                    <p className="text-[12.5px] text-slate-600">{s.plan_name} · {s.discount_amount ? <>{rupees(s.plan_price - s.discount_amount)} <span className="text-emerald-700">({s.discount_pct}% referral discount)</span></> : rupees(s.plan_price)} · {durationLabel(s.duration_days)} · requested {fmtDate(s.created_at)}</p>
                     {s.student_note && <p className="mt-1 text-[12px] text-slate-500">“{s.student_note}”</p>}
                   </div>
                   <button type="button" onClick={() => setActivating(s)} className="inline-flex items-center gap-1 rounded-md bg-success px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#146c43]"><CheckCircle2Icon className="h-3.5 w-3.5" aria-hidden="true" /> Activate</button>
@@ -357,7 +494,8 @@ export default function AdminPlans() {
           </div>)
       }
 
-      {tab === 'settings' && <PaymentSettings />}
+      {tab === 'referrals' && <ReferralsPanel />}
+      {tab === 'settings' && <><PaymentSettings /><div className="mt-4"><ReferralSettings /></div></>}
 
       {editing !== undefined && <PlanEditor plan={editing} onClose={() => setEditing(undefined)} onSaved={load} />}
       {activating && <PaymentForm title="Activate Plan" sub={activating} plans={plans || []} onClose={() => setActivating(null)} onDone={done} />}

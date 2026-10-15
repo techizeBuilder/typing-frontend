@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { UserIcon, UsersIcon, SmartphoneIcon, MailIcon, MapPinIcon, MapIcon, LockIcon, EyeIcon, EyeOffIcon } from 'lucide-react';
-import { authService } from '../services/api';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { UserIcon, UsersIcon, SmartphoneIcon, MailIcon, MapPinIcon, MapIcon, LockIcon, EyeIcon, EyeOffIcon, GiftIcon } from 'lucide-react';
+import { authService, referralService } from '../services/api';
 import AuthShell, { AuthField, authInputClass } from '../layouts/AuthShell';
 
 const STATES = [
@@ -26,6 +26,14 @@ function PasswordToggle({ shown, onToggle, label }) {
 
 const Signup = () => {
   const navigate = useNavigate();
+  // Refer & Earn: /signup?ref=CODE from a friend's referral link.
+  const [params] = useSearchParams();
+  const refCode = (params.get('ref') || '').trim().toUpperCase();
+  const [referral, setReferral] = useState(null);
+  useEffect(() => {
+    if (!refCode) return;
+    referralService.check(refCode).then((r) => setReferral(r?.valid ? r : null)).catch(() => {});
+  }, [refCode]);
   const [formData, setFormData] = useState({
     name: '',
     father_name: '',
@@ -51,7 +59,7 @@ const Signup = () => {
       return;
     }
     try {
-      await authService.signup(formData);
+      await authService.signup(referral ? { ...formData, ref: refCode } : formData);
       navigate('/login');
     } catch (err) {
       setError(err.response?.data?.message || 'Signup failed. Please try again.');
@@ -63,6 +71,13 @@ const Signup = () => {
       <form onSubmit={handleSignup} className="rounded-xl border border-slate-200 bg-white p-5 shadow-card">
         <h2 className="font-display text-[17px] font-bold text-navy-800">Sign Up</h2>
         <p className="mt-0.5 text-[12px] text-slate-500">Create your student account</p>
+
+        {referral &&
+          <div className="mt-4 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800">
+            <GiftIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Invited by <b>{referral.referrer}</b>{referral.discount_pct ? <> — you get <b>{referral.discount_pct}% off</b> your first plan.</> : '.'}</span>
+          </div>
+        }
 
         {error &&
           <div role="alert" className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-center text-[12.5px] font-medium text-danger">

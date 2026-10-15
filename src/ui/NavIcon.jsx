@@ -26,6 +26,7 @@ import {
   ShieldCheckIcon,
   StarIcon,
   HeartIcon,
+  GiftIcon,
 } from 'lucide-react';
 
 const map = {
@@ -56,6 +57,7 @@ const map = {
   shield: ShieldCheckIcon,
   star: StarIcon,
   heart: HeartIcon,
+  gift: GiftIcon,
 };
 
 export function NavIcon({ name, className = 'h-4 w-4', style }) {

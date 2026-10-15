@@ -27,13 +27,15 @@ const FAQS = [
   ['My validity has ended and I cannot sign in to use tests. What now?', 'Contact the institute using the phone or WhatsApp number on this page. Your plan can be renewed straight away.'],
 ];
 
-function BuyModal({ plan, contact, onClose, onSent }) {
+function BuyModal({ plan, contact, referral, onClose, onSent }) {
   const [note, setNote] = useState('');
+  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const discount = referral?.enabled && referral.first_plan && (referral.referred || code.trim()) ? referral.discount_pct : 0;
   const send = async () => {
     setBusy(true); setError('');
-    try { await planService.request(plan.id, note); onSent(); } catch (err) { setError(errorMessage(err, 'Could not send your request.')); } finally { setBusy(false); }
+    try { await planService.request(plan.id, note, referral?.referred ? undefined : code.trim() || undefined); onSent(); } catch (err) { setError(errorMessage(err, 'Could not send your request.')); } finally { setBusy(false); }
   };
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-navy-900/50 p-4" role="dialog" aria-modal="true" aria-label={`Buy ${plan.name}`} onClick={onClose}>
@@ -41,7 +43,9 @@ function BuyModal({ plan, contact, onClose, onSent }) {
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 className="font-display text-[18px] font-bold text-navy-800">{plan.name}</h3>
-            <p className="text-[12.5px] text-slate-500">{rupees(plan.price)} · {durationLabel(plan.duration_days)}</p>
+            <p className="text-[12.5px] text-slate-500">
+              {discount ? <><span className="line-through">{rupees(plan.price)}</span> <b className="text-emerald-700">{rupees(plan.price - Math.round((plan.price * discount) / 100))}</b></> : rupees(plan.price)} · {durationLabel(plan.duration_days)}
+            </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-slate-400 hover:bg-slate-100"><XIcon className="h-4 w-4" aria-hidden="true" /></button>
         </div>
@@ -50,6 +54,14 @@ function BuyModal({ plan, contact, onClose, onSent }) {
           {contact.note ? <p className="whitespace-pre-wrap">{contact.note}</p> : <p>Pay the institute and mention your login ID. They will activate your plan.</p>}
           <ContactLinks contact={contact} className="mt-2" />
         </div>
+        {referral?.enabled && referral.first_plan &&
+          (referral.referred ?
+            <p className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">Referral discount applied: <b>{referral.discount_pct}% off</b> your first plan.</p> :
+            <label className="mb-3 block">
+              <span className="mb-1 block text-[12px] font-semibold text-navy-800">Referral code (optional — {referral.discount_pct}% off your first plan)</span>
+              <input value={code} maxLength={16} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. 7KQ2MXRA" className="w-full rounded-md border border-slate-300 px-3 py-2 text-[12.5px] uppercase outline-none focus:border-primary" />
+            </label>)
+        }
         <label className="block">
           <span className="mb-1 block text-[12px] font-semibold text-navy-800">Message for the institute (optional)</span>
           <textarea rows={3} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Paid by UPI, reference 4512…" className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-[12.5px] outline-none focus:border-primary" />
@@ -251,7 +263,7 @@ export default function PlanPricing({ publicView = false }) {
         </section>
       </div>
 
-      {buying && <BuyModal plan={buying} contact={contact} onClose={() => setBuying(null)}
+      {buying && <BuyModal plan={buying} contact={contact} referral={mine?.referral} onClose={() => setBuying(null)}
         onSent={() => { setBuying(null); setNotice(`Request sent for ${buying.name}. The institute will activate it after payment.`); loadMine(); }} />}
     </>
   );

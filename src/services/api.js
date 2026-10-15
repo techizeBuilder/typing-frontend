@@ -593,11 +593,21 @@ export const supportService = {
 };
 
 // Student reviews. Approved ones are public (landing page testimonials).
+// Refer & Earn.
+export const referralService = {
+  check: async (code) => (await api.get('/referrals/check', { params: { code } })).data,
+  mine: async () => (await api.get('/referrals/mine')).data,
+  requestPayout: async (body) => (await api.post('/referrals/payouts', body)).data,
+  adminOverview: async () => (await api.get('/referrals/admin')).data,
+  markPaid: async (id, body) => (await api.post(`/referrals/payouts/${id}/paid`, body)).data,
+  reject: async (id, body) => (await api.post(`/referrals/payouts/${id}/reject`, body)).data,
+};
+
 // Plans & pricing (manual activation).
 export const planService = {
   list: async () => (await api.get('/plans')).data,
   mine: async () => (await api.get('/plans/mine')).data,
-  request: async (id, note) => (await api.post(`/plans/${id}/request`, { note })).data,
+  request: async (id, note, referral_code) => (await api.post(`/plans/${id}/request`, { note, referral_code })).data,
   cancel: async (id) => (await api.post(`/plans/requests/${id}/cancel`)).data,
   adminList: async () => (await api.get('/plans/admin')).data,
   create: async (plan) => (await api.post('/plans', plan)).data,
