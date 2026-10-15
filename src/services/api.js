@@ -593,6 +593,18 @@ export const supportService = {
 };
 
 // Student reviews. Approved ones are public (landing page testimonials).
+// Student's favourite dictations and folders ("My Dictations").
+export const favouriteService = {
+  getMine: async () => (await api.get('/favourites')).data,
+  add: async (chapterId) => (await api.post(`/favourites/chapters/${chapterId}`)).data,
+  remove: async (chapterId) => (await api.delete(`/favourites/chapters/${chapterId}`)).data,
+  createFolder: async (name) => (await api.post('/favourites/folders', { name })).data,
+  renameFolder: async (id, name) => (await api.patch(`/favourites/folders/${id}`, { name })).data,
+  deleteFolder: async (id) => (await api.delete(`/favourites/folders/${id}`)).data,
+  addToFolder: async (id, chapterId) => (await api.post(`/favourites/folders/${id}/chapters/${chapterId}`)).data,
+  removeFromFolder: async (id, chapterId) => (await api.delete(`/favourites/folders/${id}/chapters/${chapterId}`)).data,
+};
+
 export const reviewService = {
   getPublic: async () => {
     const res = await api.get('/reviews/public');

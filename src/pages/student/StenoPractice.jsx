@@ -36,6 +36,7 @@ import {
   speedChoices,
 } from '../../features/steno/stenoPractice';
 import { CommonConfigModal, InterfacePicker, TranscriptModal, WordLengthSelect } from '../../features/steno/PracticeControls';
+import { FavouriteButton, FolderButton } from '../../features/favourites/FavouriteUI';
 
 const HINDI_FONT_NAMES = {
   Mangal: 'Mangal (Unicode Devanagari)',
@@ -261,6 +262,8 @@ export default function StenoPractice() {
             <p className="mt-0.5 text-[12.5px] text-slate-500">{exam.name} · {facts.join(' • ')}</p>
           </div>
           <div className="flex items-center gap-2">
+            <FavouriteButton chapterId={chapter.id} boxed />
+            <FolderButton chapterId={chapter.id} title={title} boxed />
             <span className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-[12.5px] font-medium text-slate-600">
               {seen ? <EyeIcon className="h-4 w-4" aria-hidden="true" /> : <EyeOffIcon className="h-4 w-4" aria-hidden="true" />} {seen ? 'Seen' : 'Unseen'}
             </span>

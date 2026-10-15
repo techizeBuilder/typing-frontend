@@ -11,6 +11,7 @@ export const studentNav = [
   { label: 'Typing Exam', icon: 'keyboard', to: '/typing-exam', color: '#34D399' },
   { label: 'English Steno Exam', icon: 'penLine', to: '/english-steno', matchMode: 'Steno English', color: '#FB923C' },
   { label: 'Hindi Steno Exam', icon: 'penLine', to: '/hindi-steno', matchMode: 'Steno Hindi', color: '#F472B6' },
+  { label: 'My Dictations', icon: 'heart', to: '/my-dictations', color: '#FB7185' },
   { label: 'Live Test (Typing)', icon: 'play', to: '/live-test/typing', badge: 'live', color: '#FB7185' },
   { label: 'Live Test (Steno)', icon: 'play', to: '/live-test/steno', badge: 'live', color: '#FBBF24' },
   { label: 'Self Assessment', icon: 'graduationCap', to: '/self-assessment', color: '#C084FC' },

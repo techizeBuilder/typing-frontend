@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { SearchIcon, LayersIcon, PlayIcon, RotateCcwIcon, CrownIcon, CheckIcon, PenLineIcon, CalendarIcon, EyeIcon } from 'lucide-react';
+import { SearchIcon, LayersIcon, PlayIcon, RotateCcwIcon, CrownIcon, CheckIcon, PenLineIcon, CalendarIcon, EyeIcon, HeartIcon } from 'lucide-react';
 import { Breadcrumbs } from '../../ui/PageHeading';
 import { STENO_MODES, PRELOAD, modeLabel, sortByChapterNo, wordCountFor, matchesDifficulty } from '../../features/exams/examData';
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
 import { OfflineBanner, SaveOfflineButton, EmptyState, LoadingState } from '../../features/exams/ExamUI';
 import { DifficultyTabs, DifficultyBadge } from '../../features/exams/ExamFilters';
 import { isSeen } from '../../features/steno/stenoPractice';
+import { useFavourites } from '../../features/favourites/favouritesStore';
+import { FavouriteButton, FolderButton } from '../../features/favourites/FavouriteUI';
 
 export default function DictationList() {
   const navigate = useNavigate();
@@ -16,6 +18,8 @@ export default function DictationList() {
   const listPath = mode === STENO_MODES.hindi.value ? '/hindi-steno' : '/english-steno';
   const [query, setQuery] = useState('');
   const [difficulty, setDifficulty] = useState('all');
+  const [favOnly, setFavOnly] = useState(false);
+  const favs = useFavourites();
   const { exams, loading: examsLoading } = useExamList();
   const exam = exams.find((e) => e.id === examId);
   const session = useChapterSession({ exam, mode, testType: PRELOAD });
@@ -25,6 +29,7 @@ export default function DictationList() {
   const rows = sorted
     .map((chapter, index) => ({ chapter, index }))
     .filter(({ chapter }) => matchesDifficulty(chapter, difficulty))
+    .filter(({ chapter }) => !favOnly || favs.favourites.includes(chapter.id))
     .filter(({ chapter, index }) =>
       `${index + 1} ${chapter.chapter_no} ${chapter.name || ''} ${wordCountFor(chapter)}`
         .toLowerCase()
@@ -65,7 +70,17 @@ export default function DictationList() {
             <h2 className="font-display text-[22px] font-bold leading-tight text-navy-800 sm:text-[26px]">{exam?.name}</h2>
             <p className="text-[12.5px] text-slate-500">{modeLabel(mode)} — Dictation List · {PRELOAD}</p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {favs.status === 'ready' &&
+              <button type="button" onClick={() => setFavOnly((v) => !v)} aria-pressed={favOnly}
+                className={`flex items-center gap-2 rounded-full border px-4 py-2 text-[12.5px] font-semibold transition-colors duration-150 ${
+                  favOnly ? 'border-rose-500 bg-rose-500 text-white' : 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'}`}>
+                <HeartIcon className="h-4 w-4 fill-current" aria-hidden="true" /> Favourite Dictations
+                <span className={`grid h-5 min-w-5 place-items-center rounded-full px-1 text-[10.5px] font-bold ${favOnly ? 'bg-white text-rose-600' : 'bg-rose-500 text-white'}`}>
+                  {chapters.filter((c) => favs.favourites.includes(c.id)).length}
+                </span>
+              </button>
+            }
             {!isOffline && chapters.length > 0 &&
               <SaveOfflineButton status={session.downloadStatus} onClick={session.downloadOffline} progress={session.audioProgress} />
             }
@@ -100,7 +115,7 @@ export default function DictationList() {
 
         {loading || examsLoading ? <LoadingState>Loading dictations…</LoadingState> :
           chapters.length === 0 ? <EmptyState>No dictations found for this exam pattern.</EmptyState> :
-            rows.length === 0 ? <EmptyState>No dictations match your filters.</EmptyState> :
+            rows.length === 0 ? <EmptyState>{favOnly ? 'No favourite dictations here yet. Tap the heart on a dictation to add it.' : 'No dictations match your filters.'}</EmptyState> :
               <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {rows.map(({ chapter, index }) => {
                   const last = latestByChapter[chapter.id];
@@ -111,6 +126,8 @@ export default function DictationList() {
                         <span className="flex items-center gap-1.5">
                           {isSeen(chapter.id) && <span title="Marked as seen" className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-[3px] text-[10.5px] font-medium text-slate-600"><EyeIcon className="h-3 w-3" aria-hidden="true" /> Seen</span>}
                           {chapter.difficulty && <DifficultyBadge value={chapter.difficulty} />}
+                          <FolderButton chapterId={chapter.id} title={chapter.name} />
+                          <FavouriteButton chapterId={chapter.id} />
                         </span>
                       </div>
                       {(chapter.test_date || chapter.created_at) &&
