@@ -22,6 +22,7 @@ import LiveTestSlots from './pages/student/LiveTestSlots';
 import LegacyExamRedirect from './pages/student/LegacyExamRedirect';
 import HowToUse from './pages/student/HowToUse';
 import PracticeWords from './pages/student/PracticeWords';
+import TopRanks from './pages/student/TopRanks';
 import ProtectedRoute from './components/ProtectedRoute';
 import StudentLayout from './layouts/StudentLayout';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -71,6 +72,7 @@ function App() {
               <Route path="/self-assessment" element={<SelfAssessmentSetup />} />
               <Route path="/how-to-use" element={<HowToUse />} />
               <Route path="/practice-words" element={<PracticeWords />} />
+              <Route path="/top-ranks" element={<TopRanks />} />
             </Route>
 
             {/* Full-screen pages: exam engines and the result sheet */}
