@@ -270,6 +270,16 @@ export const examService = {
     const response = await api.delete(`/exams/${id}`, { params: force ? { force: true } : undefined });
     return response.data;
   },
+  uploadRulesPdf: async (id, file) => {
+    const data = new FormData();
+    data.append('pdf', file);
+    const response = await api.post(`/exams/${id}/rules-pdf`, data);
+    return response.data;
+  },
+  removeRulesPdf: async (id) => {
+    const response = await api.delete(`/exams/${id}/rules-pdf`);
+    return response.data;
+  },
 };
 
 export const resultPatternService = {

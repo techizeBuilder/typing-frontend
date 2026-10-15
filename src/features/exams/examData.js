@@ -59,6 +59,11 @@ export const wordCountFor = (chapter) => {
   return (chapter?.content_text || '').trim().split(/\s+/).filter(Boolean).length;
 };
 
+// Optional admin-set test difficulty (chapters.difficulty).
+export const DIFFICULTIES = ['Easy', 'Moderate', 'Hard'];
+export const matchesDifficulty = (chapter, difficulty) =>
+  difficulty === 'all' || chapter.difficulty === difficulty;
+
 // Strip trailing /api so we can prepend host to /uploads/...
 const ASSETS_BASE = (api.defaults.baseURL || '').replace(/\/api\/?$/, '');
 export const resolveAssetUrl = (url) => {

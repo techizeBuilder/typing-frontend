@@ -19,11 +19,13 @@ import {
   isStenoMode,
   examMatchesMode,
   sortByChapterNo,
+  matchesDifficulty,
   startTestState,
   resultViewState,
 } from '../../features/exams/examData';
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
 import { ExamLogo, ModeChips, OfflineBanner, SaveOfflineButton, EmptyState, LoadingState } from '../../features/exams/ExamUI';
+import { DifficultyTabs, DifficultyBadge, RulesPdfCard } from '../../features/exams/ExamFilters';
 
 // Default number of unlocked tests when the admin hasn't set a per-student limit.
 const DEFAULT_PRELOAD_LIMIT = 10;
@@ -35,6 +37,7 @@ export default function ExamTests() {
   const [params, setParams] = useSearchParams();
   const mode = params.get('mode') || TYPING_MODES[0].value;
   const [query, setQuery] = useState('');
+  const [difficulty, setDifficulty] = useState('all');
   const { exams, loading: examsLoading } = useExamList();
   const exam = exams.find((e) => e.id === examId);
 
@@ -49,8 +52,10 @@ export default function ExamTests() {
   const sorted = useMemo(() => [...chapters].sort(sortByChapterNo), [chapters]);
   const rows = sorted
     .map((chapter, index) => ({ chapter, index }))
+    .filter(({ chapter }) => matchesDifficulty(chapter, difficulty))
     .filter(({ chapter }) =>
       `${chapter.chapter_no} ${chapter.name || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const hasDifficulty = chapters.some((c) => c.difficulty);
 
   const examModes = exam ? TYPING_MODES.filter((m) => examMatchesMode(exam, m.value)) : [];
 
@@ -94,7 +99,7 @@ export default function ExamTests() {
 
       {/* Exam banner */}
       <section className="mb-4 rounded-xl bg-navy-900 p-5">
-        <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+        <div className={`grid gap-5 ${exam?.rules_pdf_url ? 'lg:grid-cols-[1fr_340px_220px]' : 'lg:grid-cols-[1fr_340px]'}`}>
           <div className="flex items-start gap-4">
             <ExamLogo exam={exam} size="h-[72px] w-[72px]" className="bg-white/10 text-white" />
             <div className="min-w-0">
@@ -123,6 +128,8 @@ export default function ExamTests() {
               ))}
             </ul>
           </div>
+
+          {exam?.rules_pdf_url && <RulesPdfCard url={exam.rules_pdf_url} />}
         </div>
       </section>
 
@@ -136,6 +143,7 @@ export default function ExamTests() {
             value={mode}
             onChange={(value) => setParams({ mode: value }, { replace: true })} />
         }
+        <DifficultyTabs items={chapters} value={difficulty} onChange={setDifficulty} />
         <div className="ml-auto flex flex-wrap items-center gap-3">
           {!isOffline && chapters.length > 0 &&
             <SaveOfflineButton status={session.downloadStatus} onClick={session.downloadOffline} progress={session.audioProgress} />
@@ -157,7 +165,7 @@ export default function ExamTests() {
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         {loading || examsLoading ? <LoadingState>Loading available tests...</LoadingState> :
           rows.length === 0 ?
-            <EmptyState>{query ? 'No tests match your search.' : `No exercises found for ${mode}.`}</EmptyState> :
+            <EmptyState>{query || difficulty !== 'all' ? 'No tests match your filters.' : `No exercises found for ${mode}.`}</EmptyState> :
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left">
                 <thead className="bg-slate-50 text-[12px] font-semibold text-slate-600">
@@ -165,6 +173,7 @@ export default function ExamTests() {
                     <th scope="col" className="px-5 py-3">Test No.</th>
                     <th scope="col" className="px-5 py-3">Test Name</th>
                     <th scope="col" className="px-5 py-3 text-center">Time</th>
+                    {hasDifficulty && <th scope="col" className="px-5 py-3 text-center">Difficulty</th>}
                     <th scope="col" className="px-5 py-3 text-center">Access</th>
                     <th scope="col" className="px-5 py-3 text-center">Your Best</th>
                     <th scope="col" className="px-5 py-3 text-right">Action</th>
@@ -191,6 +200,7 @@ export default function ExamTests() {
                             {exam?.test_time_minutes} Min
                           </span>
                         </td>
+                        {hasDifficulty && <td className="px-5 py-3 text-center"><DifficultyBadge value={chapter.difficulty} /></td>}
                         <td className="px-5 py-3 text-center">
                           {isUnlocked ?
                             <span className="font-display text-[13px] font-bold text-success">Unlocked</span> :

@@ -14,6 +14,8 @@ const resolveAssetUrl = (url) => {
   return url;
 };
 
+const EXAM_REGIONS = ['Delhi', 'UP', 'MP', 'Rajasthan', 'Haryana', 'Bihar', 'Other State'];
+
 const FONT_GROUPS = [
   'English Typing',
   'Hindi Mangal',
@@ -103,6 +105,8 @@ const AdminExams = () => {
   const [examPageSize, setExamPageSize] = useState(10);
   useEffect(() => { setExamPage(1); }, [examSearch]);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [rulesPdf, setRulesPdf] = useState(null);
+  const [removeRulesPdf, setRemoveRulesPdf] = useState(false);
   const [examData, setExamData] = useState({
     name: '',
     test_time_minutes: 10,
@@ -121,7 +125,8 @@ const AdminExams = () => {
     auto_submit: false,
     test_re_type: false,
     max_words_strokes: 0,
-    no_of_words_strokes: 0
+    no_of_words_strokes: 0,
+    region: ''
   });
 
   const [loading, setLoading] = useState(true);
@@ -207,7 +212,8 @@ const AdminExams = () => {
     auto_submit: false,
     test_re_type: false,
     max_words_strokes: 0,
-    no_of_words_strokes: 0
+    no_of_words_strokes: 0,
+    region: ''
   };
 
   const handleExamSubmit = async (e) => {
@@ -240,15 +246,21 @@ const AdminExams = () => {
         data.append('image', selectedFile);
       }
 
-      if (currentExam) {
-        await examService.updateExam(currentExam.id, data);
-      } else {
-        await examService.createExam(data);
+      const saved = currentExam
+        ? await examService.updateExam(currentExam.id, data)
+        : await examService.createExam(data);
+      const savedId = saved?.id || currentExam?.id;
+      if (savedId && rulesPdf) {
+        await examService.uploadRulesPdf(savedId, rulesPdf);
+      } else if (savedId && removeRulesPdf && currentExam?.rules_pdf_url) {
+        await examService.removeRulesPdf(savedId);
       }
       
       setShowExamForm(false);
       setCurrentExam(null);
       setSelectedFile(null);
+      setRulesPdf(null);
+      setRemoveRulesPdf(false);
       setExamData(defaultExamData);
       fetchData();
     } catch (error) {
@@ -536,12 +548,16 @@ const AdminExams = () => {
                   setShowExamForm(false);
                   setCurrentExam(null);
                   setSelectedFile(null);
+                  setRulesPdf(null);
+                  setRemoveRulesPdf(false);
                   setExamData(defaultExamData);
                 } else {
                   // New form
                   setExamData(defaultExamData);
                   setCurrentExam(null);
                   setSelectedFile(null);
+                  setRulesPdf(null);
+                  setRemoveRulesPdf(false);
                   setShowExamForm(true);
                 }
               }}>
@@ -768,6 +784,38 @@ const AdminExams = () => {
                         <input type="file" accept="image/*" onChange={(e) => setSelectedFile(e.target.files[0])} />
                     </div>
                     <div className="input-group">
+                        <label>REGION</label>
+                        <select value={examData.region || ''} onChange={(e) => setExamData({...examData, region: e.target.value})}>
+                            <option value="">Not set (All India)</option>
+                            {EXAM_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                        <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '3px', display: 'block' }}>
+                            Used by the region filter on the student Typing Exam page.
+                        </small>
+                    </div>
+                    <div className="input-group">
+                        <label>OFFICIAL RULES PDF</label>
+                        {currentExam?.rules_pdf_url && !rulesPdf && !removeRulesPdf && (
+                          <span style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.78rem', marginBottom: '4px' }}>
+                            <a href={resolveAssetUrl(currentExam.rules_pdf_url)} target="_blank" rel="noreferrer">View current PDF</a>
+                            <button type="button" onClick={() => setRemoveRulesPdf(true)} style={{ color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '0.78rem' }}>Remove</button>
+                          </span>
+                        )}
+                        {removeRulesPdf && !rulesPdf && (
+                          <span style={{ display: 'block', fontSize: '0.78rem', color: '#dc2626', marginBottom: '4px' }}>
+                            PDF will be removed on submit. <button type="button" onClick={() => setRemoveRulesPdf(false)} style={{ background: 'none', border: 'none', color: '#0D6EFD', cursor: 'pointer', padding: 0, fontSize: '0.78rem' }}>Undo</button>
+                          </span>
+                        )}
+                        <input type="file" accept="application/pdf,.pdf" onChange={(e) => {
+                          const f = e.target.files[0];
+                          if (f && f.size > 10 * 1024 * 1024) { alert('The rules PDF must be 10 MB or smaller.'); e.target.value = ''; return; }
+                          setRulesPdf(f || null);
+                        }} />
+                        <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '3px', display: 'block' }}>
+                            Optional. Students can download it from the exam page (PDF, max 10 MB).
+                        </small>
+                    </div>
+                    <div className="input-group">
                         <label>Auto Submit (Y/N)</label>
                         <select value={examData.auto_submit ? "Yes" : "No"} onChange={(e) => setExamData({...examData, auto_submit: e.target.value === "Yes"})}>
                             <option value="Yes">Yes</option>
@@ -857,6 +905,8 @@ const AdminExams = () => {
                                        font_groups: getExamFontGroups(e),
                                    });
                                    setSelectedFile(null);
+                                   setRulesPdf(null);
+                                   setRemoveRulesPdf(false);
                                    setShowExamForm(true);
                                }}>Edit</button>
                                <button className="btn-action btn-delete" onClick={() => handleExamDelete(e.id)} style={{ marginLeft: '10px' }}>Delete</button>

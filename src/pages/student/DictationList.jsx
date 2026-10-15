@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { SearchIcon, LayersIcon, PlayIcon, RotateCcwIcon, CrownIcon, CheckIcon, PenLineIcon, CalendarIcon } from 'lucide-react';
 import { Breadcrumbs } from '../../ui/PageHeading';
-import { STENO_MODES, PRELOAD, modeLabel, sortByChapterNo, wordCountFor, startTestState } from '../../features/exams/examData';
+import { STENO_MODES, PRELOAD, modeLabel, sortByChapterNo, wordCountFor, startTestState, matchesDifficulty } from '../../features/exams/examData';
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
 import { OfflineBanner, SaveOfflineButton, EmptyState, LoadingState } from '../../features/exams/ExamUI';
+import { DifficultyTabs, DifficultyBadge } from '../../features/exams/ExamFilters';
 
 export default function DictationList() {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export default function DictationList() {
   const mode = params.get('mode') === STENO_MODES.hindi.value ? STENO_MODES.hindi.value : STENO_MODES.english.value;
   const listPath = mode === STENO_MODES.hindi.value ? '/hindi-steno' : '/english-steno';
   const [query, setQuery] = useState('');
+  const [difficulty, setDifficulty] = useState('all');
   const { exams, loading: examsLoading } = useExamList();
   const exam = exams.find((e) => e.id === examId);
   const session = useChapterSession({ exam, mode, testType: PRELOAD });
@@ -21,6 +23,7 @@ export default function DictationList() {
   const sorted = useMemo(() => [...chapters].sort(sortByChapterNo), [chapters]);
   const rows = sorted
     .map((chapter, index) => ({ chapter, index }))
+    .filter(({ chapter }) => matchesDifficulty(chapter, difficulty))
     .filter(({ chapter, index }) =>
       `${index + 1} ${chapter.chapter_no} ${chapter.name || ''} ${wordCountFor(chapter)}`
         .toLowerCase()
@@ -67,7 +70,8 @@ export default function DictationList() {
           </div>
         </div>
 
-        <div className="relative mt-3">
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div className="relative w-full sm:w-auto">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="search"
@@ -76,6 +80,8 @@ export default function DictationList() {
             placeholder="Search topic / number / words..."
             aria-label="Search topic, number or words"
             className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-[13px] outline-none transition-colors duration-150 focus:border-primary sm:w-[320px]" />
+        </div>
+        <DifficultyTabs items={chapters} value={difficulty} onChange={setDifficulty} />
         </div>
       </section>
 
@@ -92,13 +98,16 @@ export default function DictationList() {
 
         {loading || examsLoading ? <LoadingState>Loading dictations…</LoadingState> :
           chapters.length === 0 ? <EmptyState>No dictations found for this exam pattern.</EmptyState> :
-            rows.length === 0 ? <EmptyState>No dictations match your search.</EmptyState> :
+            rows.length === 0 ? <EmptyState>No dictations match your filters.</EmptyState> :
               <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {rows.map(({ chapter, index }) => {
                   const last = latestByChapter[chapter.id];
                   return (
                     <li key={chapter.id} className="flex flex-col rounded-lg border border-slate-200 bg-white p-3.5 shadow-card">
-                      <h4 className="font-display text-[15px] font-semibold text-navy-800">Dictation No. {index + 1}</h4>
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="font-display text-[15px] font-semibold text-navy-800">Dictation No. {index + 1}</h4>
+                        {chapter.difficulty && <DifficultyBadge value={chapter.difficulty} />}
+                      </div>
                       {(chapter.test_date || chapter.created_at) &&
                         <p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-slate-500">
                           <CalendarIcon className="h-3 w-3" aria-hidden="true" />

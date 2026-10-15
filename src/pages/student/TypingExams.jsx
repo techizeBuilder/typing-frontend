@@ -5,6 +5,7 @@ import { PageHeading } from '../../ui/PageHeading';
 import { TYPING_MODES, PRELOAD, examMatchesMode, chapterInExam } from '../../features/exams/examData';
 import { useExamList, useChapterSummary, useExamOfflineSave, useOnlineStatus } from '../../features/exams/useExamData';
 import { ExamLogo, ModeChips, CardSaveButton, EmptyState, LoadingState, OfflineBanner } from '../../features/exams/ExamUI';
+import { RegionChips } from '../../features/exams/ExamFilters';
 
 const tones = [
   { card: 'bg-rose-50', logo: 'bg-rose-100 text-rose-600' },
@@ -20,6 +21,7 @@ export default function TypingExams() {
   const [params, setParams] = useSearchParams();
   const mode = TYPING_MODES.some((m) => m.value === params.get('mode')) ? params.get('mode') : TYPING_MODES[0].value;
   const [query, setQuery] = useState('');
+  const [region, setRegion] = useState('all');
   const { exams, loading } = useExamList();
   const summary = useChapterSummary(mode, PRELOAD);
   const offline = useExamOfflineSave(mode);
@@ -28,9 +30,13 @@ export default function TypingExams() {
   const visible = useMemo(
     () => exams
       .filter((e) => examMatchesMode(e, mode))
+      .filter((e) => region === 'all' || e.region === region)
       .filter((e) => e.name.toLowerCase().includes(query.trim().toLowerCase())),
-    [exams, mode, query],
+    [exams, mode, region, query],
   );
+
+  // Region chips appear once the admin has tagged at least one exam.
+  const hasRegions = exams.some((e) => e.region);
 
   const testCount = (examId) => summary.filter((c) => chapterInExam(c, examId)).length;
 
@@ -51,6 +57,7 @@ export default function TypingExams() {
           onChange={(value) => setParams({ mode: value }, { replace: true })} />
 
         <h3 className="mt-5 font-display text-[16px] font-semibold text-navy-800">Select Exam Pattern</h3>
+        {hasRegions && <RegionChips value={region} onChange={setRegion} />}
         <div className="relative mt-3">
           <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
@@ -103,7 +110,7 @@ export default function TypingExams() {
 
         {!loading && visible.length === 0 &&
           <EmptyState>
-            {query ? 'No exams match your search.' : `No exams available for ${mode}.`}
+            {query ? 'No exams match your search.' : region !== 'all' ? `No ${region} exams available for ${mode}.` : `No exams available for ${mode}.`}
           </EmptyState>
         }
       </section>

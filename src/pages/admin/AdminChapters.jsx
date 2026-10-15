@@ -37,6 +37,7 @@ const AdminChapters = () => {
     content_text: '',
     word_count: '', // auto-calculated from content_text; admin may override
     steno_speed: 100, // default Steno dictation speed (WPM); only sent for Steno chapters
+    difficulty: '',
   });
   const [examDropdownOpen, setExamDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -188,6 +189,7 @@ const AdminChapters = () => {
         font_group: 'English Typing', test_type: 'Pre-load Test', exam_ids: [], content_text: '',
         word_count: '',
         steno_speed: 100,
+        difficulty: '',
       });
       fetchChapters();
     } catch (error) {
@@ -450,6 +452,15 @@ const AdminChapters = () => {
                 <select value={formData.test_type} onChange={(e) => setFormData({...formData, test_type: e.target.value})}>
                   <option value="Pre-load Test">Pre-load Test</option>
                   <option value="Live Test">Live Test</option>
+                </select>
+              </div>
+              <div className="input-group">
+                <label>Difficulty</label>
+                <select value={formData.difficulty || ''} onChange={(e) => setFormData({...formData, difficulty: e.target.value})}>
+                  <option value="">Not set</option>
+                  <option value="Easy">Easy</option>
+                  <option value="Moderate">Moderate</option>
+                  <option value="Hard">Hard</option>
                 </select>
               </div>
             </div>
