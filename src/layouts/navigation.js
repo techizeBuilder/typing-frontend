@@ -6,8 +6,13 @@ const isAdminRole = (role) => role === 'Admin' || role === 'SuperAdmin';
 
 // Same rule as the legacy DashboardNav: the Admin Panel shortcut is shown to Admins.
 export const studentNav = [
-  { label: 'Home', icon: 'home', to: '/dashboard', match: ['/available-tests', '/steno-dictations'], color: '#38BDF8' },
+  { label: 'Home', icon: 'home', to: '/dashboard', color: '#38BDF8' },
   { label: 'My Account', icon: 'userCircle', to: '/profile', color: '#A78BFA' },
+  { label: 'Typing Exam', icon: 'keyboard', to: '/typing-exam', color: '#34D399' },
+  { label: 'English Steno Exam', icon: 'penLine', to: '/english-steno', matchMode: 'Steno English', color: '#FB923C' },
+  { label: 'Hindi Steno Exam', icon: 'penLine', to: '/hindi-steno', matchMode: 'Steno Hindi', color: '#F472B6' },
+  { label: 'Live Test (Typing)', icon: 'play', to: '/live-test/typing', badge: 'live', color: '#FB7185' },
+  { label: 'Live Test (Steno)', icon: 'play', to: '/live-test/steno', badge: 'live', color: '#FBBF24' },
   { label: 'Self Assessment', icon: 'graduationCap', to: '/self-assessment', color: '#C084FC' },
   { label: 'Test Analysis (Results)', icon: 'barChart', to: '/my-tests', match: ['/results'], color: '#60A5FA' },
   { label: 'Leaderboard', icon: 'trophy', to: '/leaderboard', color: '#FACC15' },
@@ -45,9 +50,16 @@ export function getSessionUser() {
   };
 }
 
-export function isItemActive(item, pathname) {
+export function isItemActive(item, pathname, search = '') {
   if (item.end) return pathname === item.to;
-  return [item.to, ...(item.match || [])].some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
+  if ([item.to, ...(item.match || [])].some((p) => pathname === p || pathname.startsWith(`${p}/`))) return true;
+
+  // Detail pages shared by several sections are attributed by their ?mode=.
+  const mode = new URLSearchParams(search).get('mode') || '';
+  const stenoMode = mode === 'Steno English' || mode === 'Steno Hindi';
+  if (pathname.startsWith('/steno/')) return item.matchMode === mode;
+  if (pathname.startsWith('/live-test/exam/')) {
+    return item.to === (stenoMode ? '/live-test/steno' : '/live-test/typing');
+  }
+  return false;
 }

@@ -1,7 +1,6 @@
 /* Legacy student pages were full-screen shells (100vh, own header and nav).
    Inside the new layout they fill the page area instead, keeping their own
    inner scrolling. Remove each selector once its page is redesigned. */
-.layout-main > .dashboard-page-container,
-.layout-main > .sd-page {
+.layout-main > .dashboard-page-container {
   height: 100%;
 }

@@ -28,7 +28,7 @@ function Badge({ kind }) {
 }
 
 export function StudentSidebar({ mobileOpen = false, onClose }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const user = getSessionUser();
   const items = studentNav.filter((item) => !item.visible || item.visible(user));
@@ -72,7 +72,7 @@ export function StudentSidebar({ mobileOpen = false, onClose }) {
         <nav className="scroll-thin flex-1 overflow-y-auto px-3 py-3" aria-label="Student navigation">
           <ul className="space-y-[3px]">
             {items.map((item) => {
-              const active = isItemActive(item, pathname);
+              const active = isItemActive(item, pathname, search);
               const color = item.color ?? '#38BDF8';
               return (
                 <li key={item.label}>

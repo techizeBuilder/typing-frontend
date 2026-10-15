@@ -6,15 +6,20 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import StudentDashboard from './pages/StudentDashboard';
 import TestEngine from './pages/TestEngine';
 import StenoTestEngine from './pages/StenoTestEngine';
 import ResultScreen from './pages/ResultScreen';
 import MyResults from './pages/MyResults';
 import Leaderboard from './pages/Leaderboard';
 import StudentProfile from './pages/StudentProfile';
-import AvailableTests from './pages/AvailableTests';
-import StenoDictations from './pages/StenoDictations';
+import Home from './pages/student/Home';
+import TypingExams from './pages/student/TypingExams';
+import ExamTests from './pages/student/ExamTests';
+import StenoExams from './pages/student/StenoExams';
+import DictationList from './pages/student/DictationList';
+import LiveTests from './pages/student/LiveTests';
+import LiveTestSlots from './pages/student/LiveTestSlots';
+import LegacyExamRedirect from './pages/student/LegacyExamRedirect';
 import ProtectedRoute from './components/ProtectedRoute';
 import StudentLayout from './layouts/StudentLayout';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -45,10 +50,19 @@ function App() {
           <Route element={<ProtectedRoute />}>
             {/* Pages inside the student shell (sidebar + header) */}
             <Route element={<StudentLayout />}>
-              <Route path="/dashboard" element={<StudentDashboard />} />
+              <Route path="/dashboard" element={<Home />} />
               <Route path="/profile" element={<StudentProfile />} />
-              <Route path="/available-tests" element={<AvailableTests />} />
-              <Route path="/steno-dictations" element={<StenoDictations />} />
+              <Route path="/typing-exam" element={<TypingExams />} />
+              <Route path="/typing-exam/:examId" element={<ExamTests />} />
+              <Route path="/english-steno" element={<StenoExams key="english" language="english" />} />
+              <Route path="/hindi-steno" element={<StenoExams key="hindi" language="hindi" />} />
+              <Route path="/steno/:examId" element={<DictationList />} />
+              <Route path="/live-test/typing" element={<LiveTests key="typing" kind="typing" />} />
+              <Route path="/live-test/steno" element={<LiveTests key="steno" kind="steno" />} />
+              <Route path="/live-test/exam/:examId" element={<LiveTestSlots />} />
+              {/* Legacy addresses (navigation-state based) forward to the pages above */}
+              <Route path="/available-tests" element={<LegacyExamRedirect />} />
+              <Route path="/steno-dictations" element={<LegacyExamRedirect />} />
               <Route path="/my-tests" element={<MyResults />} />
               <Route path="/results" element={<MyResults />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
