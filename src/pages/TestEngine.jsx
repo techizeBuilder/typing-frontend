@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import LiveInstituteScreen from '../features/screenLayout/LiveInstituteScreen';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { chapterService, resultService, getCurrentUserUuid, userService } from '../services/api';
 import { API_BASE_URL } from '../config';
@@ -1943,6 +1944,44 @@ const TestEngine = () => {
           )}
         </div>
       </div>
+    );
+  }
+
+  // ─── Screen 7 (Institute Layout, designed on the admin Screen Layout page) ───
+  // Display only: same input handlers, timer, pause and submit as the other screens.
+  if (screenType === 'Screen-7') {
+    return (
+      <LiveInstituteScreen
+        examName={exam?.name}
+        candidate={{ name: localStorage.getItem('name') || localStorage.getItem('username') || '', rollNo: localStorage.getItem('username') || '' }}
+        timeText={formatTime(timeLeft)}
+        passage={<div className="text-display" style={{ fontFamily: hindiFontFamily, fontSize: `${settings.testFontSize}px` }}>{renderWords()}</div>}
+        hindiBanner={renderHindiModeBanner()}
+        showText={showContent}
+        onToggleText={() => setShowContent(v => !v)}
+        fontSize={settings.fontSize}
+        onFontSize={(d) => setSettings(s => ({ ...s, fontSize: Math.max(10, s.fontSize + d), testFontSize: Math.max(10, s.testFontSize + d) }))}
+        isFullscreen={isFullscreen}
+        onFullScreen={toggleFullScreen}
+        paused={isPaused}
+        onPause={handlePause}
+        pauseDisabled={!isPaused && pauseCount >= MAX_PAUSES}
+        onSubmit={() => handleFinish()}
+        textareaProps={{
+          value: userInput,
+          autoFocus: true,
+          onKeyDown: handleEnglishKeyDown,
+          onChange: isPaused ? undefined : (isMangal ? handleMangalChange : handleEnglishChange),
+          onCompositionStart: () => { isComposingRef.current = true; },
+          onCompositionEnd: isMangal ? handleCompositionEnd : undefined,
+          spellCheck: false,
+          autoCorrect: 'off',
+          autoCapitalize: 'off',
+          lang: isMangal ? 'hi' : 'en',
+          disabled: timeLeft === 0,
+          readOnly: isPaused,
+          style: { fontFamily: hindiFontFamily, fontSize: `${settings.fontSize}px` },
+        }} />
     );
   }
 

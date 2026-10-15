@@ -33,6 +33,7 @@ export const adminNav = [
   { label: 'Students Management', icon: 'users', to: '/admin/students', color: '#A78BFA', visible: can('students') },
   { label: 'Exam Management', icon: 'layers', to: '/admin/exams', color: '#FB923C', visible: can('exams') },
   { label: 'Font Groups', icon: 'type', to: '/admin/font-groups', color: '#60A5FA', visible: can('exams') },
+  { label: 'Screen Layout', icon: 'monitor', to: '/admin/screen-layout', color: '#2DD4BF', visible: adminOnly },
   { label: 'Test Management', icon: 'clipboard', to: '/admin/content', color: '#34D399', visible: can('chapters') },
   { label: 'Message Center', icon: 'mail', to: '/admin/messages', color: '#0EA5E9', visible: can('messages') },
   { label: 'Flash Banner', icon: 'zap', to: '/admin/flash-banner', color: '#F59E0B', visible: can('flash_banner') },

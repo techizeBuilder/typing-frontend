@@ -612,6 +612,7 @@ const AdminExams = () => {
                             <option value="Screen 4">Screen 4 (Line-by-Line)</option>
                             <option value="Screen 5">Screen 5 (TCS)</option>
                             <option value="Screen 6">Screen 6 (DSSSB)</option>
+                            <option value="Screen 7">Screen 7 (Institute Layout)</option>
                         </select>
                     </div>
                     <div className="input-group">
