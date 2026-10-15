@@ -1,3 +1,7 @@
+/* Disabled: stray NUL bytes at the end of StudentDashboard.css used to corrupt
+   this selector in production builds, so shipped web/desktop builds never
+   applied it. Kept off to preserve that layout; revisit in the test-screen
+   redesign.
 .test-engine-layout {
   display: flex;
   flex-direction: column;
@@ -5,6 +9,7 @@
   background-color: var(--bg-color);
   overflow: hidden;
 }
+*/
 
 .test-topbar {
   display: flex;

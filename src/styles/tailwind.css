@@ -1,0 +1,241 @@
+/* Google Fonts must stay above the Tailwind directives. When the desktop app is
+   offline these fail silently and the system font stack is used. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Scoped preflight ──────────────────────────────────────────────────────
+   Tailwind's preflight is disabled globally (see tailwind.config.js) so legacy
+   pages keep their look. New-design screens wrap their root in `.nd`, which
+   gets the same reset. :where() keeps specificity at zero so utility classes
+   still override it. Generated from tailwindcss/src/css/preflight.css. */
+@layer base {
+  :where(.nd),
+  :where(.nd) *,
+  :where(.nd) ::before,
+  :where(.nd) ::after {
+    box-sizing: border-box;
+    border-width: 0;
+    border-style: solid;
+    border-color: #e5e7eb;
+  }
+  :where(.nd) ::before,
+  :where(.nd) ::after {
+    --tw-content: '';
+  }
+  :where(.nd) {
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    -moz-tab-size: 4;
+    tab-size: 4;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: normal;
+    font-variation-settings: normal;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :where(.nd) {
+    margin: 0;
+    line-height: inherit;
+  }
+  :where(.nd) hr {
+    height: 0;
+    color: inherit;
+    border-top-width: 1px;
+  }
+  :where(.nd) abbr:where([title]) {
+    text-decoration: underline dotted;
+  }
+  :where(.nd) h1,
+  :where(.nd) h2,
+  :where(.nd) h3,
+  :where(.nd) h4,
+  :where(.nd) h5,
+  :where(.nd) h6 {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  :where(.nd) a {
+    color: inherit;
+    text-decoration: inherit;
+  }
+  :where(.nd) b,
+  :where(.nd) strong {
+    font-weight: bolder;
+  }
+  :where(.nd) code,
+  :where(.nd) kbd,
+  :where(.nd) samp,
+  :where(.nd) pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-feature-settings: normal;
+    font-variation-settings: normal;
+    font-size: 1em;
+  }
+  :where(.nd) small {
+    font-size: 80%;
+  }
+  :where(.nd) sub,
+  :where(.nd) sup {
+    font-size: 75%;
+    line-height: 0;
+    position: relative;
+    vertical-align: baseline;
+  }
+  :where(.nd) sub {
+    bottom: -0.25em;
+  }
+  :where(.nd) sup {
+    top: -0.5em;
+  }
+  :where(.nd) table {
+    text-indent: 0;
+    border-color: inherit;
+    border-collapse: collapse;
+  }
+  :where(.nd) button,
+  :where(.nd) input,
+  :where(.nd) optgroup,
+  :where(.nd) select,
+  :where(.nd) textarea {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    font-size: 100%;
+    font-weight: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    margin: 0;
+    padding: 0;
+  }
+  :where(.nd) button,
+  :where(.nd) select {
+    text-transform: none;
+  }
+  :where(.nd) button,
+  :where(.nd) input:where([type='button']),
+  :where(.nd) input:where([type='reset']),
+  :where(.nd) input:where([type='submit']) {
+    -webkit-appearance: button;
+    background-color: transparent;
+    background-image: none;
+  }
+  :where(.nd) :-moz-focusring {
+    outline: auto;
+  }
+  :where(.nd) :-moz-ui-invalid {
+    box-shadow: none;
+  }
+  :where(.nd) progress {
+    vertical-align: baseline;
+  }
+  :where(.nd) ::-webkit-inner-spin-button,
+  :where(.nd) ::-webkit-outer-spin-button {
+    height: auto;
+  }
+  :where(.nd) [type='search'] {
+    -webkit-appearance: textfield;
+    outline-offset: -2px;
+  }
+  :where(.nd) ::-webkit-search-decoration {
+    -webkit-appearance: none;
+  }
+  :where(.nd) ::-webkit-file-upload-button {
+    -webkit-appearance: button;
+    font: inherit;
+  }
+  :where(.nd) summary {
+    display: list-item;
+  }
+  :where(.nd) blockquote,
+  :where(.nd) dl,
+  :where(.nd) dd,
+  :where(.nd) h1,
+  :where(.nd) h2,
+  :where(.nd) h3,
+  :where(.nd) h4,
+  :where(.nd) h5,
+  :where(.nd) h6,
+  :where(.nd) hr,
+  :where(.nd) figure,
+  :where(.nd) p,
+  :where(.nd) pre {
+    margin: 0;
+  }
+  :where(.nd) fieldset {
+    margin: 0;
+    padding: 0;
+  }
+  :where(.nd) legend {
+    padding: 0;
+  }
+  :where(.nd) ol,
+  :where(.nd) ul,
+  :where(.nd) menu {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  :where(.nd) dialog {
+    padding: 0;
+  }
+  :where(.nd) textarea {
+    resize: vertical;
+  }
+  :where(.nd) input::placeholder,
+  :where(.nd) textarea::placeholder {
+    opacity: 1;
+    color: #9ca3af;
+  }
+  :where(.nd) button,
+  :where(.nd) [role="button"] {
+    cursor: pointer;
+  }
+  :where(.nd) :disabled {
+    cursor: default;
+  }
+  :where(.nd) img,
+  :where(.nd) svg,
+  :where(.nd) video,
+  :where(.nd) canvas,
+  :where(.nd) audio,
+  :where(.nd) iframe,
+  :where(.nd) embed,
+  :where(.nd) object {
+    display: block;
+    vertical-align: middle;
+  }
+  :where(.nd) img,
+  :where(.nd) video {
+    max-width: 100%;
+    height: auto;
+  }
+  :where(.nd) [hidden]:where(:not([hidden="until-found"])) {
+    display: none;
+  }
+
+  :where(.nd) {
+    background-color: #f5f7fa;
+    color: #101828;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: #c7d2e1; border-radius: 999px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+  .animate-fade-in { animation: nd-fade-in 0.8s ease-out; }
+  .animate-fade-in-delay { animation: nd-fade-in 1s ease-out 0.2s both; }
+  .animate-slide-up { animation: nd-slide-up 0.8s ease-out; }
+  .animate-slide-in { animation: nd-slide-in 0.6s ease-out both; }
+  .animate-bounce-subtle { animation: nd-bounce-subtle 2s ease-in-out infinite; }
+}
+
+@keyframes nd-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes nd-slide-up { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes nd-slide-in { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes nd-bounce-subtle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
