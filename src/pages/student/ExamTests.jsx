@@ -26,6 +26,7 @@ import {
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
 import { ExamLogo, ModeChips, OfflineBanner, SaveOfflineButton, EmptyState, LoadingState } from '../../features/exams/ExamUI';
 import { DifficultyTabs, DifficultyBadge, RulesPdfCard } from '../../features/exams/ExamFilters';
+import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 
 // Default number of unlocked tests when the admin hasn't set a per-student limit.
 const DEFAULT_PRELOAD_LIMIT = 10;
@@ -57,7 +58,8 @@ export default function ExamTests() {
       `${chapter.chapter_no} ${chapter.name || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
   const hasDifficulty = chapters.some((c) => c.difficulty);
 
-  const examModes = exam ? TYPING_MODES.filter((m) => examMatchesMode(exam, m.value)) : [];
+  const { isActive } = useFontGroupSettings();
+  const examModes = exam ? TYPING_MODES.filter((m) => examMatchesMode(exam, m.value) && (isActive(m.value) || m.value === mode)) : [];
 
   const startTest = (chapter) =>
     navigate(isStenoMode(mode) ? '/steno-test' : '/test', { state: startTestState(exam, chapter, mode, PRELOAD) });

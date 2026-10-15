@@ -5,12 +5,14 @@ import { fontFamilyForFontGroup, fontFamilyForHindiType } from '../../utils/hind
 import mammoth from 'mammoth';
 import Pagination from '../../components/Pagination';
 import './Admin.css';
+import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 
 // Count words in a transcript: collapse whitespace and count non-empty tokens.
 const countWords = (text) =>
   (text || '').trim().split(/\s+/).filter(Boolean).length;
 
 const AdminChapters = () => {
+  const { isActive: isFontGroupActive } = useFontGroupSettings();
   const [chapters, setChapters] = useState([]);
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -329,12 +331,10 @@ const AdminChapters = () => {
                     }));
                   }}
                 >
-                  <option value="English Typing">English Typing</option>
-                  <option value="Hindi Mangal">Hindi Mangal</option>
-                  <option value="Hindi Kruti Dev">Hindi Kruti Dev</option>
-                  <option value="Hindi Remington (GAIL)">Hindi Remington (GAIL)</option>
-                  <option value="Steno English">Steno English</option>
-                  <option value="Steno Hindi">Steno Hindi</option>
+                  {/* Inactive font groups can't be newly assigned; the current one always shows. */}
+                  {['English Typing', 'Hindi Mangal', 'Hindi Kruti Dev', 'Hindi Remington (GAIL)', 'Steno English', 'Steno Hindi']
+                    .filter(fg => isFontGroupActive(fg) || fg === formData.font_group)
+                    .map(fg => <option key={fg} value={fg}>{fg}</option>)}
                 </select>
               </div>
 

@@ -6,6 +6,7 @@ import { TYPING_MODES, PRELOAD, examMatchesMode, chapterInExam } from '../../fea
 import { useExamList, useChapterSummary, useExamOfflineSave, useOnlineStatus } from '../../features/exams/useExamData';
 import { ExamLogo, ModeChips, CardSaveButton, EmptyState, LoadingState, OfflineBanner } from '../../features/exams/ExamUI';
 import { RegionChips } from '../../features/exams/ExamFilters';
+import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 
 const tones = [
   { card: 'bg-rose-50', logo: 'bg-rose-100 text-rose-600' },
@@ -19,7 +20,11 @@ const tones = [
 export default function TypingExams() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const mode = TYPING_MODES.some((m) => m.value === params.get('mode')) ? params.get('mode') : TYPING_MODES[0].value;
+  const { isActive } = useFontGroupSettings();
+  // Font groups switched off by the admin are not offered.
+  const offered = TYPING_MODES.filter((m) => isActive(m.value));
+  const modes = offered.length ? offered : TYPING_MODES;
+  const mode = modes.some((m) => m.value === params.get('mode')) ? params.get('mode') : modes[0].value;
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState('all');
   const { exams, loading } = useExamList();
@@ -52,7 +57,7 @@ export default function TypingExams() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-card">
         <ModeChips
-          modes={TYPING_MODES}
+          modes={modes}
           value={mode}
           onChange={(value) => setParams({ mode: value }, { replace: true })} />
 

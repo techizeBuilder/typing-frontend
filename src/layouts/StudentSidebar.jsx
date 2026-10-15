@@ -3,7 +3,8 @@ import { LogOutIcon, XIcon } from 'lucide-react';
 import { authService } from '../services/api';
 import { NavIcon } from '../ui/NavIcon';
 import { LOGO_URL } from '../ui/brand';
-import { studentNav, getSessionUser, isItemActive } from './navigation';
+import { studentNav, getSessionUser, isItemActive, offersFontGroups } from './navigation';
+import { useFontGroupSettings } from '../features/fontGroups/fontGroups';
 
 function Badge({ kind }) {
   if (kind === 'live') {
@@ -31,7 +32,8 @@ export function StudentSidebar({ mobileOpen = false, onClose }) {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const user = getSessionUser();
-  const items = studentNav.filter((item) => !item.visible || item.visible(user));
+  const { isActive } = useFontGroupSettings();
+  const items = studentNav.filter((item) => (!item.visible || item.visible(user)) && offersFontGroups(item, isActive));
 
   const handleLogout = () => {
     authService.logout();

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
+import { offersFontGroups } from '../../layouts/navigation';
 import {
   KeyboardIcon,
   PenLineIcon,
@@ -18,6 +20,7 @@ import { useExamList } from '../../features/exams/useExamData';
 const primaryCards = [
   {
     title: 'Typing Exam',
+    fontGroups: ['English Typing', 'Hindi Mangal', 'Hindi Kruti Dev', 'Hindi Remington (GAIL)'],
     text: 'Improve your typing speed and accuracy with exam oriented tests.',
     cta: 'Start Test',
     to: '/typing-exam',
@@ -30,6 +33,7 @@ const primaryCards = [
   },
   {
     title: 'English Steno Exam',
+    fontGroups: ['Steno English'],
     text: 'Practice English Stenography dictations and enhance your skills.',
     cta: 'Start Test',
     to: '/english-steno',
@@ -42,6 +46,7 @@ const primaryCards = [
   },
   {
     title: 'Hindi Steno Exam',
+    fontGroups: ['Steno Hindi'],
     text: 'अभ्यास करें हिंदी स्टेनो के साथ और अपनी गति बढ़ाएं।',
     cta: 'Start Test',
     to: '/hindi-steno',
@@ -57,6 +62,7 @@ const primaryCards = [
 const liveCards = [
   {
     title: 'Live Test (Typing)',
+    fontGroups: ['English Typing', 'Hindi Mangal', 'Hindi Kruti Dev', 'Hindi Remington (GAIL)'],
     text: 'Participate in live typing tests and compete with aspirants across India.',
     cta: 'Join Live Test',
     to: '/live-test/typing',
@@ -67,6 +73,7 @@ const liveCards = [
   },
   {
     title: 'Live Test (Steno)',
+    fontGroups: ['Steno English', 'Steno Hindi'],
     text: 'Take live steno dictation tests and check your real-time rank.',
     cta: 'Join Live Test',
     to: '/live-test/steno',
@@ -91,6 +98,7 @@ function daysLeftLabel() {
 }
 
 export default function Home() {
+  const { isActive } = useFontGroupSettings();
   const [messages, setMessages] = useState([]);
   const [flashBanners, setFlashBanners] = useState([]);
   const username = localStorage.getItem('username') || 'Student';
@@ -156,7 +164,7 @@ export default function Home() {
 
       {/* Course cards */}
       <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {primaryCards.map((card) => (
+        {primaryCards.filter((card) => offersFontGroups(card, isActive)).map((card) => (
           <article key={card.title} className={`flex flex-col rounded-xl border border-slate-200 ${card.bg} p-5 shadow-card`}>
             <div className="mb-4 flex items-start gap-4">
               <div className="min-w-0 flex-1">
@@ -178,7 +186,7 @@ export default function Home() {
 
       {/* Live tests + analysis */}
       <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {liveCards.map((card) => (
+        {liveCards.filter((card) => offersFontGroups(card, isActive)).map((card) => (
           <article key={card.title} className={`flex flex-col rounded-xl border border-slate-200 ${card.bg} p-5 shadow-card`}>
             <div className="mb-4 flex items-start gap-4">
               <div className="min-w-0 flex-1">

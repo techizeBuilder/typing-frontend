@@ -593,6 +593,13 @@ export const supportService = {
 };
 
 // Student reviews. Approved ones are public (landing page testimonials).
+// Built-in font groups: public list (active flags) + admin settings.
+export const fontGroupService = {
+  list: async () => (await api.get('/font-groups')).data,
+  adminList: async () => (await api.get('/font-groups/admin')).data,
+  update: async (value, patch) => (await api.patch(`/font-groups/${encodeURIComponent(value)}`, patch)).data,
+};
+
 // Student's favourite dictations and folders ("My Dictations").
 export const favouriteService = {
   getMine: async () => (await api.get('/favourites')).data,

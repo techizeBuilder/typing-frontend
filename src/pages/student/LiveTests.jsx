@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { RadioIcon, ArrowRightIcon, ClockIcon, UsersIcon } from 'lucide-react';
 import { Breadcrumbs } from '../../ui/PageHeading';
 import { TYPING_MODES, STENO_MODES, LIVE, examMatchesMode, chapterInExam } from '../../features/exams/examData';
+import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 import { useExamList, useChapterSummary, useOnlineStatus } from '../../features/exams/useExamData';
 import { ExamLogo, ModeChips, EmptyState, LoadingState, OfflineBanner } from '../../features/exams/ExamUI';
 
@@ -24,7 +25,11 @@ const isToday = (chapter) => {
 };
 
 export default function LiveTests({ kind }) {
-  const modes = kind === 'steno' ? STENO_MODE_LIST : TYPING_MODES;
+  const { isActive } = useFontGroupSettings();
+  const allModes = kind === 'steno' ? STENO_MODE_LIST : TYPING_MODES;
+  // Font groups switched off by the admin are not offered.
+  const offered = allModes.filter((m) => isActive(m.value));
+  const modes = offered.length ? offered : allModes;
   const title = kind === 'steno' ? 'Live Test (Steno)' : 'Live Test (Typing)';
   const [params, setParams] = useSearchParams();
   const mode = modes.some((m) => m.value === params.get('mode')) ? params.get('mode') : modes[0].value;

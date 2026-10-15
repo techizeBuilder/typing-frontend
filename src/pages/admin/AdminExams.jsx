@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { examService, resultPatternService } from '../../services/api';
 import Pagination from '../../components/Pagination';
+import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 import './Admin.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3012/api';
@@ -32,6 +33,7 @@ const getExamFontGroups = (exam) => {
 };
 
 const AdminExams = () => {
+  const { isActive: isFontGroupActive } = useFontGroupSettings();
   const [activeTab, setActiveTab] = useState('exams'); // 'patterns' or 'exams'
   const [fontGroupDropdownOpen, setFontGroupDropdownOpen] = useState(false);
   
@@ -215,6 +217,10 @@ const AdminExams = () => {
     no_of_words_strokes: 0,
     region: ''
   };
+
+  // Inactive font groups (Font Groups page) can't be newly assigned; ones the exam
+  // already uses stay visible so they can be removed.
+  const offeredFontGroups = FONT_GROUPS.filter(fg => isFontGroupActive(fg) || (examData.font_groups || []).includes(fg));
 
   const handleExamSubmit = async (e) => {
     e.preventDefault();
@@ -730,7 +736,7 @@ const AdminExams = () => {
                         >
                           {(examData.font_groups || []).length === 0
                             ? '-- Select Font Groups --'
-                            : (examData.font_groups || []).length === FONT_GROUPS.length
+                            : (examData.font_groups || []).length === offeredFontGroups.length
                               ? 'All Font Groups'
                               : (examData.font_groups || []).join(', ')}
                           <span style={{ float: 'right', color: '#64748b' }}>▾</span>
@@ -740,15 +746,15 @@ const AdminExams = () => {
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderBottom: '1px solid #e2e8f0', fontWeight: 600, cursor: 'pointer', background: '#f8fafc' }}>
                               <input
                                 type="checkbox"
-                                checked={(examData.font_groups || []).length === FONT_GROUPS.length}
+                                checked={(examData.font_groups || []).length === offeredFontGroups.length}
                                 onChange={() => {
-                                  const all = (examData.font_groups || []).length === FONT_GROUPS.length;
-                                  setExamData({ ...examData, font_groups: all ? [] : [...FONT_GROUPS] });
+                                  const all = (examData.font_groups || []).length === offeredFontGroups.length;
+                                  setExamData({ ...examData, font_groups: all ? [] : [...offeredFontGroups] });
                                 }}
                               />
                               Select All
                             </label>
-                            {FONT_GROUPS.map(fg => (
+                            {offeredFontGroups.map(fg => (
                               <label key={fg} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.9rem' }}>
                                 <input
                                   type="checkbox"

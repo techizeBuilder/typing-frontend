@@ -35,6 +35,7 @@ import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminExams from './pages/admin/AdminExams';
 import AdminChapters from './pages/admin/AdminChapters';
+import AdminFontGroups from './pages/admin/AdminFontGroups';
 import AdminStudents from './pages/admin/AdminStudents';
 import AdminMessages from './pages/admin/AdminMessages';
 import AdminFlashBanner from './pages/admin/AdminFlashBanner';
@@ -96,6 +97,7 @@ function App() {
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />
               <Route path="exams" element={<AdminExams />} />
+              <Route path="font-groups" element={<AdminFontGroups />} />
               <Route path="content" element={<AdminChapters />} />
               <Route path="students" element={<AdminStudents />} />
               <Route path="messages" element={<AdminMessages />} />

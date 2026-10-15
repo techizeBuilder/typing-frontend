@@ -8,12 +8,12 @@ const isAdminRole = (role) => role === 'Admin' || role === 'SuperAdmin';
 export const studentNav = [
   { label: 'Home', icon: 'home', to: '/dashboard', color: '#38BDF8' },
   { label: 'My Account', icon: 'userCircle', to: '/profile', color: '#A78BFA' },
-  { label: 'Typing Exam', icon: 'keyboard', to: '/typing-exam', color: '#34D399' },
-  { label: 'English Steno Exam', icon: 'penLine', to: '/english-steno', matchMode: 'Steno English', color: '#FB923C' },
-  { label: 'Hindi Steno Exam', icon: 'penLine', to: '/hindi-steno', matchMode: 'Steno Hindi', color: '#F472B6' },
+  { label: 'Typing Exam', icon: 'keyboard', to: '/typing-exam', color: '#34D399', fontGroups: ['English Typing', 'Hindi Mangal', 'Hindi Kruti Dev', 'Hindi Remington (GAIL)'] },
+  { label: 'English Steno Exam', icon: 'penLine', to: '/english-steno', matchMode: 'Steno English', color: '#FB923C', fontGroups: ['Steno English'] },
+  { label: 'Hindi Steno Exam', icon: 'penLine', to: '/hindi-steno', matchMode: 'Steno Hindi', color: '#F472B6', fontGroups: ['Steno Hindi'] },
   { label: 'My Dictations', icon: 'heart', to: '/my-dictations', color: '#FB7185' },
-  { label: 'Live Test (Typing)', icon: 'play', to: '/live-test/typing', badge: 'live', color: '#FB7185' },
-  { label: 'Live Test (Steno)', icon: 'play', to: '/live-test/steno', badge: 'live', color: '#FBBF24' },
+  { label: 'Live Test (Typing)', icon: 'play', to: '/live-test/typing', badge: 'live', color: '#FB7185', fontGroups: ['English Typing', 'Hindi Mangal', 'Hindi Kruti Dev', 'Hindi Remington (GAIL)'] },
+  { label: 'Live Test (Steno)', icon: 'play', to: '/live-test/steno', badge: 'live', color: '#FBBF24', fontGroups: ['Steno English', 'Steno Hindi'] },
   { label: 'Self Assessment', icon: 'graduationCap', to: '/self-assessment', color: '#C084FC' },
   { label: 'Test Analysis (Results)', icon: 'barChart', to: '/my-tests', match: ['/results'], color: '#60A5FA' },
   { label: 'Leaderboard', icon: 'trophy', to: '/leaderboard', color: '#FACC15' },
@@ -32,6 +32,7 @@ export const adminNav = [
   { label: 'Dashboard', icon: 'home', to: '/admin', end: true, color: '#38BDF8' },
   { label: 'Students Management', icon: 'users', to: '/admin/students', color: '#A78BFA', visible: can('students') },
   { label: 'Exam Management', icon: 'layers', to: '/admin/exams', color: '#FB923C', visible: can('exams') },
+  { label: 'Font Groups', icon: 'type', to: '/admin/font-groups', color: '#60A5FA', visible: can('exams') },
   { label: 'Test Management', icon: 'clipboard', to: '/admin/content', color: '#34D399', visible: can('chapters') },
   { label: 'Message Center', icon: 'mail', to: '/admin/messages', color: '#0EA5E9', visible: can('messages') },
   { label: 'Flash Banner', icon: 'zap', to: '/admin/flash-banner', color: '#F59E0B', visible: can('flash_banner') },
@@ -42,6 +43,9 @@ export const adminNav = [
   { label: 'Leaderboard', icon: 'trophy', to: '/admin/leaderboard', color: '#FBBF24', visible: adminOnly },
   { label: 'Settings', icon: 'settings', to: '/admin/settings', color: '#C084FC', visible: adminOnly },
 ];
+
+// `fontGroups` items are hidden when every listed font group is switched off.
+export const offersFontGroups = (item, isActive) => !item.fontGroups || item.fontGroups.some(isActive);
 
 export function getSessionUser() {
   let permissions;

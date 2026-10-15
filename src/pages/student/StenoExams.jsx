@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Breadcrumbs } from '../../ui/PageHeading';
 import { STENO_MODES, PRELOAD, examMatchesMode, chapterInExam } from '../../features/exams/examData';
+import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 import { useExamList, useChapterSummary, useExamOfflineSave, useOnlineStatus } from '../../features/exams/useExamData';
 import { ExamLogo, CardSaveButton, EmptyState, LoadingState, OfflineBanner } from '../../features/exams/ExamUI';
 
@@ -34,6 +35,7 @@ const footerFeatures = [
 export default function StenoExams({ language }) {
   const steno = STENO_MODES[language];
   const mode = steno.value;
+  const offered = useFontGroupSettings().isActive(mode);
   const [query, setQuery] = useState('');
   const { exams, loading } = useExamList();
   const summary = useChapterSummary(mode, PRELOAD);
@@ -80,7 +82,8 @@ export default function StenoExams({ language }) {
 
       {isOffline && <OfflineBanner what="dictations" />}
 
-      {loading ? <LoadingState>Loading exam patterns...</LoadingState> :
+      {!offered ? <EmptyState>{steno.label} is not offered at the moment.</EmptyState> :
+        loading ? <LoadingState>Loading exam patterns...</LoadingState> :
         visible.length === 0 ?
           <EmptyState>{query ? 'No exams match your search.' : `No exams available for ${steno.label}.`}</EmptyState> :
           <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
