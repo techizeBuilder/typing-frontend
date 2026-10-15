@@ -123,6 +123,10 @@ const Login = () => {
           Don&apos;t have an account?{' '}
           <Link to="/signup" className="font-semibold text-primary hover:underline">Sign up</Link>
         </p>
+        <p className="mt-1.5 text-center text-[12px] text-slate-500">
+          Plan expired?{' '}
+          <Link to="/plans" className="font-semibold text-primary hover:underline">See plans &amp; renew</Link>
+        </p>
       </form>
     </AuthShell>
   );

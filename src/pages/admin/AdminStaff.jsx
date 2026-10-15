@@ -13,7 +13,8 @@ const AVAILABLE_MODULES = [
   { id: 'staff', label: 'Staff Management' },
   { id: 'support', label: 'Support Tickets' },
   { id: 'reviews', label: 'Student Reviews' },
-  { id: 'magazines', label: 'PDF Magazines' }
+  { id: 'magazines', label: 'PDF Magazines' },
+  { id: 'plans', label: 'Subscription & Plan' }
 ];
 
 const AdminStaff = () => {

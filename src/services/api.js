@@ -593,6 +593,22 @@ export const supportService = {
 };
 
 // Student reviews. Approved ones are public (landing page testimonials).
+// Plans & pricing (manual activation).
+export const planService = {
+  list: async () => (await api.get('/plans')).data,
+  mine: async () => (await api.get('/plans/mine')).data,
+  request: async (id, note) => (await api.post(`/plans/${id}/request`, { note })).data,
+  cancel: async (id) => (await api.post(`/plans/requests/${id}/cancel`)).data,
+  adminList: async () => (await api.get('/plans/admin')).data,
+  create: async (plan) => (await api.post('/plans', plan)).data,
+  update: async (id, plan) => (await api.patch(`/plans/${id}`, plan)).data,
+  remove: async (id) => (await api.delete(`/plans/${id}`)).data,
+  subscriptions: async () => (await api.get('/plans/subscriptions/all')).data,
+  activate: async (id, payment) => (await api.post(`/plans/subscriptions/${id}/activate`, payment)).data,
+  reject: async (id, body) => (await api.post(`/plans/subscriptions/${id}/reject`, body)).data,
+  assign: async (body) => (await api.post('/plans/subscriptions', body)).data,
+};
+
 // PDF magazines (KC / Progressive). Files come through an access-checked route.
 export const magazineService = {
   list: async (collection) => (await api.get('/magazines', { params: { collection } })).data,
