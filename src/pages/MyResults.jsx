@@ -1,7 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BarChart3Icon, FilterIcon, XIcon, EyeIcon, AlertTriangleIcon, TrophyIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { resultService, getCurrentUserUuid } from '../services/api';
-import './StudentDashboard.css';
+import { LoadingState, EmptyState } from '../features/exams/ExamUI';
+
+const TABS = [
+  { id: 'typing', label: 'Typing' },
+  { id: 'steno', label: 'Steno' },
+  { id: 'live', label: 'Live Tests' },
+];
+
+const PAGE_SIZE = 20;
 
 const MyResults = () => {
   const navigate = useNavigate();
@@ -13,6 +22,7 @@ const MyResults = () => {
   const [examFilter, setExamFilter] = useState('All');
   const [fetchError, setFetchError] = useState('');
   const [saveErrorBanner, setSaveErrorBanner] = useState('');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     // Surface the most recent save error from TestEngine, if any.
@@ -117,168 +127,201 @@ const MyResults = () => {
     return true;
   });
 
+  // Summary of the rows currently shown (stored values, as listed below).
+  const avgNwpm = filteredResults.length
+    ? Math.round(filteredResults.reduce((sum, r) => sum + (Number(r.nwpm) || 0), 0) / filteredResults.length)
+    : 0;
+  const bestNwpm = filteredResults.reduce((best, r) => Math.max(best, Math.round(Number(r.nwpm) || 0)), 0);
+
+  const pageCount = Math.max(1, Math.ceil(filteredResults.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = filteredResults.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const resetPage = () => setPage(1);
+  const hasFilters = startDate || endDate || examFilter !== 'All';
+
   return (
-    <div className="dashboard-page-container">
-      
-      {/* Blue Welcome Bar */}
-      <div className="dashboard-welcome-bar">
-        <div className="welcome-text-content">
-          <h2>My Performance History</h2>
-          <p>Review your past typing tests and track your progress over time.</p>
-        </div>
-      </div>
-
-      <div className="dashboard-layout">
-        <div className="dashboard-content" style={{ backgroundColor: '#fafafa' }}>
-          <button className="btn-back-floating" style={{position: 'static', marginBottom: '20px', display: 'inline-block'}} onClick={() => navigate(-1)}>&larr; Back</button>
-
-          <div className="available-tests-container" style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-            <h2 className="explore-title" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem', color: '#0b4bcc' }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-              Past Test Result
-            </h2>
-            
-            <div className="reports-filters" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px' }}>
-              <div className="reports-tabs" style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  style={{ padding: '8px 16px', background: activeTab === 'typing' ? '#0b4bcc' : '#f1f5f9', color: activeTab === 'typing' ? 'white' : '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: activeTab === 'typing' ? 'bold' : 'normal', fontSize: '0.9rem' }}
-                  onClick={() => setActiveTab('typing')}
-                >
-                  ⌨ Typing Reports
-                </button>
-                <button
-                  style={{ padding: '8px 16px', background: activeTab === 'steno' ? '#0b4bcc' : '#f1f5f9', color: activeTab === 'steno' ? 'white' : '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: activeTab === 'steno' ? 'bold' : 'normal', fontSize: '0.9rem' }}
-                  onClick={() => setActiveTab('steno')}
-                >
-                  🎙 Steno Reports
-                </button>
-                <button
-                  style={{ padding: '8px 16px', background: activeTab === 'live' ? '#0b4bcc' : '#f1f5f9', color: activeTab === 'live' ? 'white' : '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: activeTab === 'live' ? 'bold' : 'normal', fontSize: '0.9rem' }}
-                  onClick={() => setActiveTab('live')}
-                >
-                  🏆 Live Reports
-                </button>
-              </div>
-
-              <div className="date-filter-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>From:</label>
-                  <input 
-                    type="date" 
-                    value={startDate} 
-                    onChange={(e) => setStartDate(e.target.value)} 
-                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.85rem', color: '#334155' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>To:</label>
-                  <input 
-                    type="date" 
-                    value={endDate} 
-                    onChange={(e) => setEndDate(e.target.value)} 
-                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.85rem', color: '#334155' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <label style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>Exam:</label>
-                  <select
-                    value={examFilter}
-                    onChange={(e) => setExamFilter(e.target.value)}
-                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', color: '#334155' }}
-                  >
-                    <option value="All">All Exams</option>
-                    {examOptions.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </div>
-                {(startDate || endDate || examFilter !== 'All') && (
-                  <button
-                    onClick={() => { setStartDate(''); setEndDate(''); setExamFilter('All'); }}
-                    style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-            
-            {saveErrorBanner && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '10px 14px', borderRadius: '6px', marginBottom: '15px', fontSize: '0.88rem' }}>
-                <strong>⚠ Save warning:</strong> {saveErrorBanner}
-              </div>
-            )}
-            {fetchError && (
-              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '10px 14px', borderRadius: '6px', marginBottom: '15px', fontSize: '0.88rem' }}>
-                <strong>⚠ Could not load results:</strong> {fetchError}
-              </div>
-            )}
-            <div className="test-list custom-result-list">
-              {loading ? (
-                <p>Loading your results...</p>
-              ) : filteredResults.length === 0 ? (
-                <p>No tests found matching the selected criteria. {results.length > 0 && '(Try switching the Typing/Steno tab or clearing the date range.)'}</p>
-              ) : (
-                filteredResults.map((result) => {
-                  const dateObj = new Date(result.date_taken);
-                  const dateStr = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-                  const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                  
-                  return (
-                    <div key={result.id} className="result-card-custom">
-                      <div className="result-card-left">
-                        <div className="result-icon-container">
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                            <line x1="8" y1="21" x2="16" y2="21"></line>
-                            <line x1="12" y1="17" x2="12" y2="21"></line>
-                            <polyline points="9 10 11 12 15 8"></polyline>
-                          </svg>
-                        </div>
-                        <div className="result-details-custom">
-                          <h4 className="result-title-custom">{result.exam?.name || 'Self Practice'}</h4>
-                          <div className="result-stats-custom">
-                            <span className="stat-blue">{Math.round(result.nwpm)} WPM</span>
-                            <span className="stat-blue">{parseFloat(result.accuracy).toFixed(2)}% Acc</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="result-card-middle">
-                        <div className="result-rank-badge">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '4px'}}>
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="9" cy="7" r="4"></circle>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                          </svg>
-                          <span>{result.rank ? `${result.rank}Th Rank` : 'Completed'}</span>
-                        </div>
-                        <div className="result-date-time">
-                          <div className="datetime-item">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                            <span>{dateStr}</span>
-                          </div>
-                          <div className="datetime-item">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            <span>{timeStr}</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="result-card-right">
-                        <button className="btn-view-reports-custom" onClick={() => handleViewResult(result)}>
-                          View Reports
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+    <div className="nd p-3 pb-20 sm:p-5 sm:pb-20">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="flex items-center gap-2 font-display text-[22px] font-bold text-navy-800">
+            <BarChart3Icon className="h-5 w-5 text-primary" aria-hidden="true" /> Test Analysis (Results)
+          </h2>
+          <p className="mt-0.5 text-[12.5px] text-slate-500">
+            Review your past tests and track your progress over time.
+          </p>
+          <div className="mt-2.5 flex gap-4 border-b border-slate-200" role="tablist">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === t.id}
+                onClick={() => { setActiveTab(t.id); resetPage(); }}
+                className={`border-b-2 pb-2 text-[13px] font-semibold transition-colors duration-150 ${
+                  activeTab === t.id ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-navy-800'}`}>
+                {t.label}
+              </button>
+            ))}
           </div>
         </div>
+        <div className="flex shrink-0 flex-wrap gap-2.5">
+          {[
+            ['Total Tests', filteredResults.length],
+            ['Avg Net WPM', avgNwpm],
+            ['Best Net WPM', bestNwpm],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-primary-100 bg-primary-50 px-4 py-2 text-center">
+              <p className="font-display text-[18px] font-bold text-primary">{value}</p>
+              <p className="text-[10px] font-medium text-primary-700">{label}</p>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {saveErrorBanner &&
+        <div role="alert" className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[12.5px] text-rose-800">
+          <span className="flex items-start gap-2">
+            <AlertTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span><strong>Your last test result could not be saved to the server:</strong> {saveErrorBanner}</span>
+          </span>
+          <button type="button" onClick={() => setSaveErrorBanner('')} aria-label="Dismiss" className="text-rose-500 hover:text-rose-700">
+            <XIcon className="h-4 w-4" />
+          </button>
+        </div>
+      }
+
+      <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+        <h3 className="mb-3 flex items-center gap-2 font-display text-[13.5px] font-semibold text-navy-800">
+          <FilterIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Filter Results
+        </h3>
+        <div className="flex flex-wrap items-end gap-3.5">
+          <label className="block min-w-[180px] flex-1">
+            <span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Select Exam</span>
+            <select
+              value={examFilter}
+              onChange={(e) => { setExamFilter(e.target.value); resetPage(); }}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] text-slate-700 outline-none focus:border-primary">
+              <option value="All">All Exams</option>
+              {examOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+          <label className="block min-w-[150px] flex-1">
+            <span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">From</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); resetPage(); }}
+              className="w-full rounded-md border border-slate-300 px-3 py-[7px] text-[12.5px] outline-none focus:border-primary" />
+          </label>
+          <label className="block min-w-[150px] flex-1">
+            <span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">To</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); resetPage(); }}
+              className="w-full rounded-md border border-slate-300 px-3 py-[7px] text-[12.5px] outline-none focus:border-primary" />
+          </label>
+          <button
+            type="button"
+            disabled={!hasFilters}
+            onClick={() => { setStartDate(''); setEndDate(''); setExamFilter('All'); resetPage(); }}
+            className="flex items-center gap-1.5 rounded-md border border-primary px-4 py-2 text-[12.5px] font-medium text-primary transition-colors duration-150 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-40">
+            <XIcon className="h-3.5 w-3.5" aria-hidden="true" /> Clear Filters
+          </button>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+        {loading ? <LoadingState>Loading your results...</LoadingState> :
+          fetchError ?
+            <p role="alert" className="px-5 py-8 text-center text-[13px] font-medium text-danger">{fetchError}</p> :
+            filteredResults.length === 0 ?
+              <EmptyState>
+                No tests found matching the selected criteria.
+                {results.length > 0 && ' (Try switching the Typing/Steno tab or clearing the date range.)'}
+              </EmptyState> :
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[820px] text-left">
+                    <thead className="bg-gradient-to-r from-primary to-indigo-600 text-[10.5px] font-semibold uppercase tracking-wide text-white">
+                      <tr>
+                        <th scope="col" className="px-4 py-3">#</th>
+                        <th scope="col" className="px-4 py-3">Exam Name</th>
+                        <th scope="col" className="px-4 py-3">Test No.</th>
+                        <th scope="col" className="px-4 py-3">Course</th>
+                        <th scope="col" className="px-4 py-3">Test Date &amp; Time</th>
+                        <th scope="col" className="px-4 py-3">Net Speed (WPM)</th>
+                        <th scope="col" className="px-4 py-3">Accuracy (%)</th>
+                        <th scope="col" className="px-4 py-3">Status</th>
+                        <th scope="col" className="px-4 py-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-[12.5px]">
+                      {pageRows.map((result, i) => {
+                        const dateObj = new Date(result.date_taken);
+                        return (
+                          <tr key={result.id} className="transition-colors duration-150 hover:bg-slate-50/70">
+                            <td className="px-4 py-3 text-slate-500">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
+                            <td className="px-4 py-3 font-semibold text-navy-800">{result.exam?.name || 'Self Practice'}</td>
+                            <td className="px-4 py-3 text-slate-600">{result.chapter?.chapter_no || '—'}</td>
+                            <td className="px-4 py-3 text-slate-600">{result.mode || '—'}</td>
+                            <td className="px-4 py-3 text-slate-600">
+                              {dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })},{' '}
+                              {dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-primary">{Math.round(result.nwpm)} WPM</td>
+                            <td className="px-4 py-3 text-slate-700">{parseFloat(result.accuracy).toFixed(2)}%</td>
+                            <td className="px-4 py-3">
+                              {result.rank ?
+                                <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-[2px] text-[11.5px] font-semibold text-amber-700">
+                                  <TrophyIcon className="h-3 w-3" aria-hidden="true" /> {result.rank}Th Rank
+                                </span> :
+                                <span className="rounded bg-emerald-50 px-2 py-[2px] text-[11.5px] font-semibold text-emerald-700">Completed</span>
+                              }
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleViewResult(result)}
+                                className="inline-flex items-center gap-1 rounded bg-navy-800 px-3 py-1 text-[11.5px] font-semibold text-white transition-colors duration-150 hover:bg-navy-900">
+                                <EyeIcon className="h-3 w-3" aria-hidden="true" /> View Report
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-[12px] text-slate-500">
+                  <span>
+                    Showing {(currentPage - 1) * PAGE_SIZE + 1} to {Math.min(currentPage * PAGE_SIZE, filteredResults.length)} of {filteredResults.length} results
+                  </span>
+                  {pageCount > 1 &&
+                    <span className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label="Previous page"
+                        disabled={currentPage === 1}
+                        onClick={() => setPage(currentPage - 1)}
+                        className="grid h-8 w-8 place-items-center rounded-md border border-slate-300 text-navy-800 hover:bg-slate-50 disabled:opacity-40">
+                        <ChevronLeftIcon className="h-4 w-4" />
+                      </button>
+                      Page {currentPage} of {pageCount}
+                      <button
+                        type="button"
+                        aria-label="Next page"
+                        disabled={currentPage === pageCount}
+                        onClick={() => setPage(currentPage + 1)}
+                        className="grid h-8 w-8 place-items-center rounded-md border border-slate-300 text-navy-800 hover:bg-slate-50 disabled:opacity-40">
+                        <ChevronRightIcon className="h-4 w-4" />
+                      </button>
+                    </span>
+                  }
+                </div>
+              </>
+        }
+      </section>
     </div>
   );
 };
