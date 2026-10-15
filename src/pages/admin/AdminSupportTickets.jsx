@@ -48,7 +48,7 @@ function TicketPanel({ ticket, onChange, onClose }) {
 
   const student = ticket.student;
   return (
-    <section className="nd rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+    <section className="nd min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-card">
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11.5px] font-semibold text-slate-400">{ticketNo(ticket)} · {ticket.category} · {fmtDateTime(ticket.created_at)}</p>
@@ -147,8 +147,8 @@ export default function AdminSupportTickets() {
         <StatCard icon={<CheckCircle2Icon className="h-5 w-5" />} iconBg="#198754" label="Resolved" value={count('Resolved')} />
       </div>
 
-      <div className={`grid gap-4 ${openTicket ? 'xl:grid-cols-[1fr_520px]' : ''}`}>
-        <section className="rounded-xl border border-slate-200 bg-white shadow-card">
+      <div className={`grid gap-4 ${openTicket ? 'xl:grid-cols-[minmax(0,1fr)_minmax(0,460px)]' : ''}`}>
+        <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-card">
           <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-100 p-3.5">
             <select value={status} onChange={(e) => setStatus(e.target.value)} className={inlineFieldCls} aria-label="Filter by status">
               <option value="All">All Status</option>
@@ -190,7 +190,7 @@ export default function AdminSupportTickets() {
                           key={t.id}
                           onClick={() => setOpenId(t.id)}
                           className={`cursor-pointer transition-colors duration-150 ${openId === t.id ? 'bg-primary-50' : 'hover:bg-slate-50'}`}>
-                          <td className="px-4 py-2.5 font-semibold text-slate-500">{ticketNo(t)}</td>
+                          <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-slate-500">{ticketNo(t)}</td>
                           <td className="max-w-[260px] px-4 py-2.5">
                             <p className="truncate font-semibold text-navy-800">{t.subject}</p>
                             <p className="text-[11px] text-slate-400">{t.category} · {(t.replies || []).length} message{(t.replies || []).length === 1 ? '' : 's'}</p>
