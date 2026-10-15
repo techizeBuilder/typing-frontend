@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { StudentSidebar } from './StudentSidebar';
 import { StudentHeader } from './StudentHeader';
-import './layouts.css';
 
 // Shell for student pages: sidebar + header around the routed page. The page
 // area itself is not `.nd`, so pages still on legacy CSS render as before;

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { UserCircle2Icon, CalendarClockIcon } from 'lucide-react';
+import { PageHeading } from '../ui/PageHeading';
 import { userService, resultService, offlineTestService, chapterService } from '../services/api';
 import { API_BASE_URL } from '../config';
 import './StudentProfile.css';
-import './StudentDashboard.css';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -523,20 +524,21 @@ const StudentProfile = () => {
   if (loading && !user) return <div className="profile-loading"><div className="spinner" /></div>;
 
   return (
-    <div className="dashboard-page-container" style={{ height: 'auto', minHeight: '100vh', overflow: 'visible' }}>
-
-      <div className="dashboard-welcome-bar">
-        <div className="welcome-text-content">
-          <h2>My Account</h2>
-          <p>Manage Your Profile, Subscription &amp; Typing Performance</p>
-        </div>
-        {daysLeft !== null && (
-          <div className="days-left-badge">{daysLeft} Days Left</div>
-        )}
+    <div className="sp-v2">
+      <div className="nd px-3 pt-3 sm:px-5 sm:pt-5">
+        <PageHeading
+          icon={<UserCircle2Icon className="h-5 w-5" aria-hidden="true" />}
+          title="My Account"
+          subtitle="Manage your profile, subscription & typing performance"
+          crumbs={[{ label: 'Home', to: '/dashboard' }, { label: 'My Account' }]}
+          actions={daysLeft !== null && (
+            <span className="inline-flex items-center gap-2 rounded-lg bg-yellow-300 px-4 py-2 font-display text-[13px] font-bold text-navy-900">
+              <CalendarClockIcon className="h-4 w-4" aria-hidden="true" /> {daysLeft} Days Left
+            </span>
+          )} />
       </div>
 
-      <div className="dashboard-layout" style={{ overflow: 'visible', minHeight: 0 }}>
-        <div className="dashboard-content sp-container" style={{ overflowY: 'visible' }}>
+      <div className="sp-container">
 
           {/* ── Row 1: Profile + Subscription ── */}
           <div className="sp-row-2">
@@ -945,7 +947,6 @@ const StudentProfile = () => {
           {!isEditing && error && <div className="sp-alert sp-alert-error" style={{ marginTop: 16 }}>{error}</div>}
           {!isEditing && success && <div className="sp-alert sp-alert-success" style={{ marginTop: 16 }}>{success}</div>}
 
-        </div>
       </div>
     </div>
   );

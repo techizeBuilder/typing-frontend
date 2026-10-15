@@ -66,12 +66,12 @@ function App() {
               <Route path="/my-tests" element={<MyResults />} />
               <Route path="/results" element={<MyResults />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
+              <Route path="/self-assessment" element={<SelfAssessmentSetup />} />
             </Route>
 
-            {/* Full-screen pages: exam engines, results, practice setup */}
+            {/* Full-screen pages: exam engines and the result sheet */}
             <Route path="/test" element={<TestEngine />} />
             <Route path="/steno-test" element={<StenoTestEngine />} />
-            <Route path="/self-assessment" element={<SelfAssessmentSetup />} />
             <Route path="/result" element={<ResultScreen />} />
           </Route>
 

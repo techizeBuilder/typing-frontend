@@ -560,3 +560,53 @@
 @media (max-width: 480px) {
   .sp-stats-row { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   New design (My Account inside the student layout). Scoped to
+   .sp-v2 so the rules above stay as the base; only colours,
+   type and card treatment change here.
+   ============================================================ */
+.sp-v2 { background: #f5f7fa; min-height: 100%; }
+.sp-v2 .sp-container {
+  padding: 4px 20px 80px;
+  background: transparent;
+  min-height: 0;
+  color: #475569;
+}
+.sp-v2 .sp-card,
+.sp-v2 .sp-stat-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+}
+.sp-v2 .sp-card-header h3,
+.sp-v2 .sp-chart-title,
+.sp-v2 .sp-section-title,
+.sp-v2 .sp-details h4 {
+  font-family: 'Poppins', 'Inter', sans-serif;
+  color: #0a2e6b;
+}
+.sp-v2 .sp-card-header h3,
+.sp-v2 .sp-chart-title { font-size: 0.95rem; font-weight: 600; }
+.sp-v2 .sp-stat-val { color: #0a2e6b; font-family: 'Poppins', 'Inter', sans-serif; }
+.sp-v2 .sp-primary,
+.sp-v2 .sp-btn-outline,
+.sp-v2 .sp-btn-light,
+.sp-v2 .sp-view-all { color: #0d6efd; }
+.sp-v2 .sp-btn-outline { border-color: #cbd5e1; }
+.sp-v2 .sp-btn-outline:hover { background: #eff6ff; border-color: #0d6efd; }
+.sp-v2 .sp-day-tab.active {
+  background: #0d6efd;
+  border-color: #0d6efd;
+}
+.sp-v2 .sp-avatar { box-shadow: 0 0 0 3px #dbeafe; }
+.sp-v2 .sp-table th {
+  background: #f8fafc;
+  color: #475569;
+  text-transform: none;
+}
+.sp-v2 .spinner { border-top-color: #0d6efd; }
+
+@media (max-width: 768px) {
+  .sp-v2 .sp-container { padding: 4px 12px 80px; }
+}
