@@ -1,0 +1,172 @@
+/* ============================================================
+   Admin theme — new design applied to the shared admin class
+   vocabulary (admin-card, admin-table, input-group, btn-*, …).
+   Scoped to .admin-v2 (the admin page area) and limited to
+   visual properties (colour, radius, border, type, shadow) so
+   page layouts and forms keep their structure. Inline styles in
+   the pages still take precedence.
+   ============================================================ */
+
+.admin-v2 {
+  color: #334155;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ── Cards ─────────────────────────────────────────────────── */
+.admin-v2 .admin-card,
+.admin-v2 .kpi-card {
+  /* Wide tables (e.g. students) scroll inside the card instead of spilling out. */
+  overflow-x: auto;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+}
+
+.admin-v2 .admin-form-container {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+/* ── Headings ──────────────────────────────────────────────── */
+.admin-v2 .admin-header h1,
+.admin-v2 .admin-header h2,
+.admin-v2 .admin-card > h2,
+.admin-v2 .admin-card > h3,
+.admin-v2 .kpi-card h3 {
+  font-family: 'Poppins', 'Inter', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #0a2e6b;
+}
+
+.admin-v2 .form-section h4 {
+  font-family: 'Poppins', 'Inter', sans-serif;
+  font-weight: 600;
+  color: #0d6efd;
+  border-bottom-color: #dbeafe;
+}
+
+/* ── Tabs ──────────────────────────────────────────────────── */
+.admin-v2 .tab-btn {
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.admin-v2 .tab-btn:hover { border-color: #0d6efd; color: #0d6efd; background: #ffffff; }
+.admin-v2 .tab-btn.active {
+  background: #0d6efd;
+  border-color: #0d6efd;
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(13, 110, 253, 0.2);
+}
+
+/* ── Tables ────────────────────────────────────────────────── */
+.admin-v2 .admin-table th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid #e2e8f0;
+}
+.admin-v2 .admin-table td {
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+}
+.admin-v2 .admin-table tbody tr:hover td { background: #f8fafc; }
+
+/* ── Form fields ───────────────────────────────────────────── */
+.admin-v2 .input-group label,
+.admin-v2 .admin-form label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0a2e6b;
+}
+.admin-v2 .input-group input,
+.admin-v2 .input-group select,
+.admin-v2 .input-group textarea,
+.admin-v2 .admin-form input,
+.admin-v2 .admin-form select,
+.admin-v2 .admin-form textarea {
+  border-color: #cbd5e1;
+  border-radius: 6px;
+  color: #0f172a;
+  background-color: #ffffff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.admin-v2 .input-group input[type='checkbox'],
+.admin-v2 .input-group input[type='radio'],
+.admin-v2 .admin-form input[type='checkbox'],
+.admin-v2 .admin-form input[type='radio'] {
+  accent-color: #0d6efd;
+}
+.admin-v2 .input-group input:focus,
+.admin-v2 .input-group select:focus,
+.admin-v2 .input-group textarea:focus,
+.admin-v2 .admin-form input:focus,
+.admin-v2 .admin-form select:focus,
+.admin-v2 .admin-form textarea:focus {
+  outline: none;
+  border-color: #0d6efd;
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.admin-v2 .btn-primary {
+  background-color: #0d6efd;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.admin-v2 .btn-primary:hover { background-color: #0b5ed7; }
+
+.admin-v2 .btn-secondary {
+  background: #ffffff;
+  color: #0a2e6b;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.admin-v2 .btn-secondary:hover { background: #f8fafc; border-color: #0d6efd; }
+
+.admin-v2 .btn-action { border-radius: 6px; }
+.admin-v2 .btn-edit { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.admin-v2 .btn-edit:hover { background: #d1fae5; }
+.admin-v2 .btn-delete { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; }
+.admin-v2 .btn-delete:hover { background: #ffe4e6; }
+
+/* ── Badges ────────────────────────────────────────────────── */
+.admin-v2 .badge-control { background: #eff6ff; color: #0b5ed7; }
+.admin-v2 .status-badge.active { background: #ecfdf5; color: #047857; }
+.admin-v2 .status-badge.inactive { background: #fff1f2; color: #be123c; }
+.admin-v2 .status-badge.pending { background: #fffbeb; color: #b45309; }
+
+/* ── Dashboard stat cards ──────────────────────────────────── */
+.admin-v2 .stats-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+}
+.admin-v2 .stats-card label { color: #64748b; }
+.admin-v2 .stats-card .value,
+.admin-v2 .kpi-value {
+  font-family: 'Poppins', 'Inter', sans-serif;
+  color: #0a2e6b;
+}
+
+/* Page headers: keep the title on one line; let the toolbar wrap below it. */
+.admin-v2 .admin-header { flex-wrap: wrap; gap: 12px; }
+.admin-v2 .admin-header h1,
+.admin-v2 .admin-header h2 { white-space: nowrap; }
+
+/* Form grids: let fields shrink to their column (the exam form uses four
+   1fr columns, which previously overflowed the card). */
+.admin-v2 .admin-grid-form { column-gap: 24px; }
+.admin-v2 .admin-grid-form > *,
+.admin-v2 .admin-inline-group > * { min-width: 0; }
+.admin-v2 .admin-grid-form .input-group input:not([type='checkbox']):not([type='radio']),
+.admin-v2 .admin-grid-form .input-group select,
+.admin-v2 .admin-grid-form .input-group textarea { width: 100%; max-width: 100%; }

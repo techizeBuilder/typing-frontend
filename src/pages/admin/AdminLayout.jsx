@@ -4,6 +4,7 @@ import { MenuIcon, MessageSquareIcon, ZapIcon } from 'lucide-react';
 import { AdminSidebar } from '../../layouts/AdminSidebar';
 import { getSessionUser } from '../../layouts/navigation';
 import './Admin.css';
+import './admin-theme.css';
 
 const ROLE_LABELS = { SuperAdmin: 'Super Admin', Admin: 'Admin', 'Sub-Admin': 'Sub Admin' };
 
@@ -62,7 +63,7 @@ const AdminLayout = () => {
           </div>
         </header>
 
-        <main className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-5 lg:p-8">
+        <main className="admin-v2 scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-5 lg:p-8">
           <Outlet />
         </main>
       </div>

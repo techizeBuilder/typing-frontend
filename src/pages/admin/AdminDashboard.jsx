@@ -1,5 +1,25 @@
 import { useState, useEffect } from 'react';
 import { userService, resultService, chapterService } from '../../services/api';
+import { Link } from 'react-router-dom';
+import {
+  CalendarIcon,
+  ClipboardCheckIcon,
+  ClockIcon,
+  GaugeIcon,
+  HeadphonesIcon,
+  KeyboardIcon,
+  LayoutDashboardIcon,
+  Loader2Icon,
+  Trash2Icon,
+  UserCheckIcon,
+  UsersIcon,
+  UserXIcon,
+} from 'lucide-react';
+import { PageHeading } from '../../ui/PageHeading';
+import { StatCard } from '../../ui/StatCard';
+import { Panel } from '../../ui/Pill';
+import { NavIcon } from '../../ui/NavIcon';
+import { adminNav, getSessionUser } from '../../layouts/navigation';
 import './Admin.css';
 
 const AdminDashboard = () => {
@@ -111,90 +131,85 @@ const AdminDashboard = () => {
     }
   };
 
-  if (loading) return <div style={{ padding: '40px' }}>Loading Data...</div>;
+  if (loading) {
+    return (
+      <p className="nd flex items-center gap-2 p-10 text-[13px] text-slate-500">
+        <Loader2Icon className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading Data...
+      </p>
+    );
+  }
+
+  const user = getSessionUser();
+  const quickLinks = adminNav.filter((item) => item.to !== '/admin' && (!item.visible || item.visible(user)));
 
   return (
-    <div className="admin-dashboard">
-      <header className="admin-heading">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1>Overview Dashboard</h1>
-            <p>Real-time statistics and student performance metrics.</p>
-          </div>
-          <div className="filter-group" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ marginRight: '10px', color: '#64748b', fontWeight: 'bold' }}>Date Filter:</span>
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-            >
-              <option value="daily">Daily (Today)</option>
-              <option value="weekly">Weekly (Last 7 Days)</option>
-              <option value="monthly">Monthly (This Month)</option>
-              <option value="yearly">Yearly (This Year)</option>
-            </select>
+    <div className="nd admin-dashboard">
+      <PageHeading
+        icon={<LayoutDashboardIcon className="h-5 w-5" aria-hidden="true" />}
+        title="Overview Dashboard"
+        subtitle="Real-time statistics and student performance metrics."
+        actions={
+          <div className="flex flex-wrap items-center gap-2.5">
+            <label className="flex items-center gap-2 text-[12.5px] font-semibold text-slate-600">
+              <CalendarIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Date Filter
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] font-medium text-navy-800 outline-none focus:border-primary">
+                <option value="daily">Daily (Today)</option>
+                <option value="weekly">Weekly (Last 7 Days)</option>
+                <option value="monthly">Monthly (This Month)</option>
+                <option value="yearly">Yearly (This Year)</option>
+              </select>
+            </label>
             <button
+              type="button"
               onClick={handleClearOldResults}
               title="Delete all result records older than the last 10 days"
-              style={{ padding: '8px 14px', borderRadius: '4px', border: 'none', background: '#ef4444', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              Clear Results
+              className="inline-flex items-center gap-1.5 rounded-md bg-danger px-3.5 py-2 text-[12.5px] font-semibold text-white transition-colors duration-150 hover:bg-[#bb2d3b]">
+              <Trash2Icon className="h-4 w-4" aria-hidden="true" /> Clear Results
             </button>
           </div>
-        </div>
-      </header>
+        } />
 
-      <div className="stats-grid" style={{ marginBottom: '20px' }}>
-        <div className="stats-card total">
-          <label>Total Students</label>
-          <div className="value">{stats.total}</div>
-        </div>
-        <div className="stats-card active">
-          <label>Active Students</label>
-          <div className="value">{stats.active}</div>
-        </div>
-        <div className="stats-card pending">
-          <label>Pending Requests</label>
-          <div className="value">{stats.pending}</div>
-        </div>
-        <div className="stats-card inactive">
-          <label>Inactive / Expired</label>
-          <div className="value">{stats.inactive}</div>
-        </div>
-      </div>
-      
-      {/* Chapter Breakdown */}
-      <div className="stats-grid">
-        <div className="stats-card" style={{ borderBottom: '4px solid #8b5cf6' }}>
-          <label>Total Exams Performed</label>
-          <div className="value">{stats.totalTests}</div>
-          <p style={{ fontSize: '0.75rem', marginTop: '5px', color: '#64748b' }}>Filtered by {filter}</p>
-        </div>
-        <div className="stats-card" style={{ borderBottom: '4px solid #06b6d4' }}>
-          <label>Total Typing Chapters</label>
-          <div className="value">{stats.typingChapters}</div>
-        </div>
-        <div className="stats-card" style={{ borderBottom: '4px solid #f43f5e' }}>
-          <label>Total Steno Chapters</label>
-          <div className="value">{stats.stenoChapters}</div>
-        </div>
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={<UsersIcon className="h-5 w-5" />} iconBg="#0D6EFD" label="Total Students" value={stats.total} accentBar="#0D6EFD" />
+        <StatCard icon={<UserCheckIcon className="h-5 w-5" />} iconBg="#198754" label="Active Students" value={stats.active} accentBar="#198754" />
+        <StatCard icon={<ClockIcon className="h-5 w-5" />} iconBg="#F59E0B" label="Pending Requests" value={stats.pending} accentBar="#F59E0B" />
+        <StatCard icon={<UserXIcon className="h-5 w-5" />} iconBg="#DC3545" label="Inactive / Expired" value={stats.inactive} accentBar="#DC3545" />
       </div>
 
-      <div className="kpi-row">
-        <div className="kpi-card">
-          <h4>Performance Overview</h4>
-          <div className="kpi-main">
-            <div className="kpi-item">
-              <span className="kpi-value">{stats.totalTests}</span>
-              <span className="kpi-label">Tests Taken</span>
-            </div>
-            <div className="kpi-item">
-              <span className="kpi-value">{stats.avgSpeed}</span>
-              <span className="kpi-label">Avg. WPM</span>
-            </div>
-          </div>
-        </div>
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={<ClipboardCheckIcon className="h-5 w-5" />}
+          iconBg="#7C3AED"
+          label="Total Exams Performed"
+          value={stats.totalTests}
+          sub={`Filtered by ${filter}`}
+          accentBar="#7C3AED" />
+        <StatCard icon={<GaugeIcon className="h-5 w-5" />} iconBg="#0EA5E9" label="Average Speed" value={`${stats.avgSpeed} WPM`} sub={`Avg. NWPM, ${filter}`} accentBar="#0EA5E9" />
+        <StatCard icon={<KeyboardIcon className="h-5 w-5" />} iconBg="#06B6D4" label="Total Typing Chapters" value={stats.typingChapters} accentBar="#06B6D4" />
+        <StatCard icon={<HeadphonesIcon className="h-5 w-5" />} iconBg="#F43F5E" label="Total Steno Chapters" value={stats.stenoChapters} accentBar="#F43F5E" />
       </div>
+
+      {quickLinks.length > 0 &&
+        <Panel title="Quick Access">
+          <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {quickLinks.map((item) => (
+              <li key={item.to}>
+                <Link
+                  to={item.to}
+                  className="flex items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2.5 text-[12.5px] font-medium text-navy-800 transition-colors duration-150 hover:border-primary hover:bg-primary-50">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg" style={{ backgroundColor: `${item.color}1F` }}>
+                    <NavIcon name={item.icon} className="h-4 w-4" style={{ color: item.color }} />
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      }
     </div>
   );
 };
