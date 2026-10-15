@@ -582,4 +582,39 @@ export const supportService = {
   },
 };
 
+// Student reviews. Approved ones are public (landing page testimonials).
+export const reviewService = {
+  getPublic: async () => {
+    const res = await api.get('/reviews/public');
+    return res.data;
+  },
+  getMine: async () => {
+    const res = await api.get('/reviews/mine');
+    return res.data;
+  },
+  saveMine: async ({ rating, exam, designation, message }, photo, removePhoto = false) => {
+    const data = new FormData();
+    data.append('rating', String(rating));
+    data.append('exam', exam);
+    data.append('designation', designation || '');
+    data.append('message', message);
+    if (photo) data.append('photo', photo);
+    if (removePhoto) data.append('remove_photo', 'true');
+    const res = await api.post('/reviews/mine', data);
+    return res.data;
+  },
+  getAll: async () => {
+    const res = await api.get('/reviews');
+    return res.data;
+  },
+  setStatus: async (id, status) => {
+    const res = await api.patch(`/reviews/${id}`, { status });
+    return res.data;
+  },
+  remove: async (id) => {
+    const res = await api.delete(`/reviews/${id}`);
+    return res.data;
+  },
+};
+
 export default api;

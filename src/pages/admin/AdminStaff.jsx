@@ -11,7 +11,8 @@ const AVAILABLE_MODULES = [
   { id: 'messages', label: 'Message Center' },
   { id: 'flash_banner', label: 'Flash Banner' },
   { id: 'staff', label: 'Staff Management' },
-  { id: 'support', label: 'Support Tickets' }
+  { id: 'support', label: 'Support Tickets' },
+  { id: 'reviews', label: 'Student Reviews' }
 ];
 
 const AdminStaff = () => {

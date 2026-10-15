@@ -25,6 +25,8 @@ import PracticeWords from './pages/student/PracticeWords';
 import TopRanks from './pages/student/TopRanks';
 import Support from './pages/student/Support';
 import AdminSupportTickets from './pages/admin/AdminSupportTickets';
+import WriteReview from './pages/student/WriteReview';
+import AdminReviews from './pages/admin/AdminReviews';
 import ProtectedRoute from './components/ProtectedRoute';
 import StudentLayout from './layouts/StudentLayout';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -76,6 +78,7 @@ function App() {
               <Route path="/practice-words" element={<PracticeWords />} />
               <Route path="/top-ranks" element={<TopRanks />} />
               <Route path="/support" element={<Support />} />
+              <Route path="/write-review" element={<WriteReview />} />
             </Route>
 
             {/* Full-screen pages: exam engines and the result sheet */}
@@ -97,6 +100,7 @@ function App() {
               <Route path="results" element={<AdminResults />} />
               <Route path="leaderboard" element={<AdminLeaderboard />} />
               <Route path="support" element={<AdminSupportTickets />} />
+              <Route path="reviews" element={<AdminReviews />} />
               <Route path="settings" element={<AdminSettings />} />
             </Route>
           </Route>

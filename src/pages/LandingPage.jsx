@@ -24,6 +24,7 @@ import {
   UserIcon,
 } from 'lucide-react';
 import { settingService } from '../services/api';
+import Testimonials from '../features/reviews/Testimonials';
 import { LOGO_URL, COLLEGE_NAME, TAGLINE } from '../ui/brand';
 
 const heroSlides = [
@@ -477,6 +478,9 @@ const LandingPage = () => {
             ))}
           </div>
         </section>
+
+        {/* Approved student reviews (hidden until one is approved) */}
+        <Testimonials />
 
         {/* About the institute */}
         <section className="mb-4 grid gap-5 rounded-xl border border-slate-200 bg-white p-6 shadow-card lg:grid-cols-[1fr_1.2fr] lg:items-center">
