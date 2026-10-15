@@ -25,6 +25,15 @@
   :where(.nd) ::after {
     --tw-content: '';
   }
+  /* index.css has a global `button { border: none }` (specificity 0,0,1) that beats
+     the zero-specificity reset above, so bordered buttons lost their border.
+     :not(svg) lifts this to 0,0,2: above the legacy rule, still below any
+     utility class (0,1,0). */
+  :where(.nd) button:not(svg) {
+    border-width: 0;
+    border-style: solid;
+    border-color: #e5e7eb;
+  }
   :where(.nd) {
     line-height: 1.5;
     -webkit-text-size-adjust: 100%;

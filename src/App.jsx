@@ -17,6 +17,7 @@ import TypingExams from './pages/student/TypingExams';
 import ExamTests from './pages/student/ExamTests';
 import StenoExams from './pages/student/StenoExams';
 import DictationList from './pages/student/DictationList';
+import StenoPractice from './pages/student/StenoPractice';
 import LiveTests from './pages/student/LiveTests';
 import LiveTestSlots from './pages/student/LiveTestSlots';
 import LegacyExamRedirect from './pages/student/LegacyExamRedirect';
@@ -64,6 +65,7 @@ function App() {
               <Route path="/english-steno" element={<StenoExams key="english" language="english" />} />
               <Route path="/hindi-steno" element={<StenoExams key="hindi" language="hindi" />} />
               <Route path="/steno/:examId" element={<DictationList />} />
+              <Route path="/steno/:examId/practice/:chapterId" element={<StenoPractice />} />
               <Route path="/live-test/typing" element={<LiveTests key="typing" kind="typing" />} />
               <Route path="/live-test/steno" element={<LiveTests key="steno" kind="steno" />} />
               <Route path="/live-test/exam/:examId" element={<LiveTestSlots />} />

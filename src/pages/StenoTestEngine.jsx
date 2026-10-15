@@ -4,6 +4,8 @@ import { resultService, settingService } from '../services/api';
 import { API_BASE_URL } from '../config';
 import { fontFamilyForHindiType, fontGroupForHindiType } from '../utils/hindiFonts';
 import { matchContractions, matchAlternateForms } from '../utils/stenoAlternateForms';
+import PracticeExam from '../features/steno/ExamScreens';
+import { findInterface } from '../features/steno/stenoPractice';
 import './StenoTestEngine.css';
 
 // ─── Steno error-classification helpers (module-level, pure functions) ────────
@@ -47,7 +49,13 @@ const resolveAssetUrl = (url) => {
 const StenoTestEngine = () => {
   const navigate  = useNavigate();
   const location  = useLocation();
-  const { exam, chapter, mode, testType } = location.state || {};
+  const { exam, chapter, mode, testType, practice } = location.state || {};
+
+  // Practice flow (new design): an exam-style interface picked on the practice
+  // setup page. It only changes the screens; grading below is the same code.
+  const practiceIface     = practice ? findInterface(practice.interfaceId) : null;
+  // Partial-length practice is graded against the selected words only.
+  const practiceReference = practiceIface && practice.partial ? practice.referenceText : null;
 
   const isStrictMode = !!exam;
   const pattern      = exam?.result_pattern || null;
@@ -76,7 +84,7 @@ const StenoTestEngine = () => {
 
   // ─── Audio state ────────────────────────────────────────────────────────────
   const audioRef           = useRef(null);
-  const [showAudioModal, setShowAudioModal]   = useState(true);
+  const [showAudioModal, setShowAudioModal]   = useState(!practiceIface);
   const [audioPlaying, setAudioPlaying]       = useState(false);
   const [audioDuration, setAudioDuration]     = useState(0);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
@@ -85,9 +93,15 @@ const StenoTestEngine = () => {
   const [audioSpeed, setAudioSpeed]           = useState(defaultSpeed);
 
   // ─── Timer state ────────────────────────────────────────────────────────────
-  const [timeLeft,    setTimeLeft]    = useState(exam?.test_time_minutes * 60 || 600);
+  const [timeLeft,    setTimeLeft]    = useState(practiceIface ? practice.minutes * 60 : (exam?.test_time_minutes * 60 || 600));
   const [timeElapsed, setTimeElapsed] = useState(0);
-  const [isStarted,   setIsStarted]   = useState(false);
+  // The Common interface opens straight on its typing screen, so its timer runs at once.
+  const [isStarted,   setIsStarted]   = useState(practiceIface?.variant === 'common');
+
+  // ─── Practice interface state ───────────────────────────────────────────────
+  const [practiceStage, setPracticeStage]     = useState(practiceIface?.variant === 'common' ? 'typing' : 'instructions');
+  const [practiceMinutes, setPracticeMinutes] = useState(practice?.minutes);
+  const [paused, setPaused]                   = useState(false); // Common interface "Pause Test"
 
   // ─── Typing state ───────────────────────────────────────────────────────────
   const [typedText, setTypedText] = useState('');
@@ -395,7 +409,7 @@ const StenoTestEngine = () => {
 
   useEffect(() => {
     let interval = null;
-    if (isStarted && timeLeft > 0) {
+    if (isStarted && !paused && timeLeft > 0) {
       interval = setInterval(() => {
         setTimeLeft(prev => prev - 1);
         setTimeElapsed(prev => prev + 1);
@@ -405,7 +419,7 @@ const StenoTestEngine = () => {
       if (handleFinishRef.current) handleFinishRef.current();
     }
     return () => clearInterval(interval);
-  }, [isStarted, timeLeft]);
+  }, [isStarted, paused, timeLeft]);
 
   // ─── Live WPM (based on strokes) ────────────────────────────────────────────
   useEffect(() => {
@@ -435,6 +449,10 @@ const StenoTestEngine = () => {
   };
 
   const handleKeyDown = (e) => {
+    if (practice?.backspace === 'Disabled' && (e.key === 'Backspace' || e.key === 'Delete')) {
+      e.preventDefault();
+      return;
+    }
     if (!isStarted && e.key !== 'Escape') setIsStarted(true);
   };
 
@@ -531,7 +549,7 @@ const StenoTestEngine = () => {
   const handleFinish = useCallback(async () => {
     if (!isStartedRef.current) { navigate('/dashboard'); return; }
 
-    const referenceText = chapter?.content_text || '';
+    const referenceText = practiceReference ?? (chapter?.content_text || '');
     const { fullErrors: full, halfErrors: half } = compareTexts(typedText, referenceText);
 
     const finalStrokes    = typedText.length;
@@ -624,7 +642,8 @@ const StenoTestEngine = () => {
     };
 
     try {
-      if (userId && navigator.onLine) {
+      // Partial-length practice is not stored, so it can't skew results / ranks.
+      if (userId && navigator.onLine && !practiceReference) {
         await resultService.saveResult({
           student_id:    userId,
           chapter_id:    chapter?.id,
@@ -649,7 +668,7 @@ const StenoTestEngine = () => {
     // Show a brief "processing result" screen for 2s, then go to the result.
     setIsProcessing(true);
     setTimeout(() => navigate('/result', { state: finalData }), 2000);
-  }, [typedText, chapter, timeElapsed, exam, mode, testType, pattern, compareTexts, navigate]);
+  }, [typedText, chapter, timeElapsed, exam, mode, testType, pattern, compareTexts, navigate, practiceReference]);
 
   // Keep ref in sync with latest handleFinish
   useEffect(() => { handleFinishRef.current = handleFinish; }, [handleFinish]);
@@ -666,6 +685,47 @@ const StenoTestEngine = () => {
       <div className="test-processing-sub">Please wait while we evaluate your dictation.</div>
     </div>
   );
+
+  if (practiceIface) {
+    const startPractice = (minutes) => {
+      setPracticeMinutes(minutes);
+      setTimeLeft(minutes * 60);
+      setPracticeStage('typing');
+      // CAPF starts its timer on the first key press (handled by handleKeyDown).
+      if (practiceIface.variant !== 'capf') setIsStarted(true);
+      setTimeout(() => textareaRef.current?.focus(), 100);
+    };
+    return (
+      <div className="nd">
+        <PracticeExam
+          stage={practiceStage}
+          onStart={startPractice}
+          iface={practiceIface}
+          minutes={practiceMinutes}
+          typed={typedText}
+          onType={handleTyping}
+          onKeyDown={handleKeyDown}
+          textareaRef={textareaRef}
+          timeLeft={timeLeft}
+          started={isStarted}
+          disabled={timeLeft === 0 || paused}
+          paused={paused}
+          onTogglePause={() => setPaused((p) => !p)}
+          backspaceDisabled={practice.backspace === 'Disabled'}
+          fontSize={fontSize}
+          onFontSize={(d) => setFontSize((f) => Math.max(10, f + d))}
+          inputStyle={{ fontSize: `${fontSize}px`, ...(stenoFontFamily ? { fontFamily: stenoFontFamily } : {}) }}
+          onSubmit={handleFinish}
+          onExit={() => navigate(-1)}
+          candidate={{ name: localStorage.getItem('name') || '', rollNo: localStorage.getItem('username') || '' }}
+          language={mode === 'Steno Hindi' ? 'Hindi' : 'English'}
+          examName={exam?.name}
+          dictationTitle={`${exam?.name || 'Steno'} — ${chapter?.name || `Dictation ${chapter?.chapter_no ?? ''}`}${practice.rangeLabel ? ` (${practice.rangeLabel})` : ''}`}
+          dateStr={new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}
+          centre={instituteBrand.name} />
+      </div>
+    );
+  }
 
   return (
     <div className="steno-engine-layout">

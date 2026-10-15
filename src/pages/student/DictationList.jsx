@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { SearchIcon, LayersIcon, PlayIcon, RotateCcwIcon, CrownIcon, CheckIcon, PenLineIcon, CalendarIcon } from 'lucide-react';
+import { SearchIcon, LayersIcon, PlayIcon, RotateCcwIcon, CrownIcon, CheckIcon, PenLineIcon, CalendarIcon, EyeIcon } from 'lucide-react';
 import { Breadcrumbs } from '../../ui/PageHeading';
-import { STENO_MODES, PRELOAD, modeLabel, sortByChapterNo, wordCountFor, startTestState, matchesDifficulty } from '../../features/exams/examData';
+import { STENO_MODES, PRELOAD, modeLabel, sortByChapterNo, wordCountFor, matchesDifficulty } from '../../features/exams/examData';
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
 import { OfflineBanner, SaveOfflineButton, EmptyState, LoadingState } from '../../features/exams/ExamUI';
 import { DifficultyTabs, DifficultyBadge } from '../../features/exams/ExamFilters';
+import { isSeen } from '../../features/steno/stenoPractice';
 
 export default function DictationList() {
   const navigate = useNavigate();
@@ -29,8 +30,9 @@ export default function DictationList() {
         .toLowerCase()
         .includes(query.trim().toLowerCase()));
 
+  // Opens the practice setup page (speed, word length, exam interface…).
   const takeTest = (chapter) =>
-    navigate('/steno-test', { state: startTestState(exam, chapter, mode, PRELOAD) });
+    navigate(`/steno/${exam.id}/practice/${chapter.id}?mode=${encodeURIComponent(mode)}`);
 
   if (!examsLoading && !exam) {
     return (
@@ -106,7 +108,10 @@ export default function DictationList() {
                     <li key={chapter.id} className="flex flex-col rounded-lg border border-slate-200 bg-white p-3.5 shadow-card">
                       <div className="flex items-start justify-between gap-2">
                         <h4 className="font-display text-[15px] font-semibold text-navy-800">Dictation No. {index + 1}</h4>
-                        {chapter.difficulty && <DifficultyBadge value={chapter.difficulty} />}
+                        <span className="flex items-center gap-1.5">
+                          {isSeen(chapter.id) && <span title="Marked as seen" className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-[3px] text-[10.5px] font-medium text-slate-600"><EyeIcon className="h-3 w-3" aria-hidden="true" /> Seen</span>}
+                          {chapter.difficulty && <DifficultyBadge value={chapter.difficulty} />}
+                        </span>
                       </div>
                       {(chapter.test_date || chapter.created_at) &&
                         <p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-slate-500">
