@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { UserIcon, LockIcon, EyeIcon, EyeOffIcon, LogInIcon, GiftIcon } from 'lucide-react';
 import { authService } from '../services/api';
-import './AuthScreens.css';
+import AuthShell, { AuthField, authInputClass } from '../layouts/AuthShell';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -9,36 +10,28 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', handleResize);
-    
-    return () => window.removeEventListener('resize', handleResize);
-  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(''); // Clear previous errors
-    
+
     try {
       console.log('Starting login process...');
       const response = await authService.login(username, password);
       console.log('Login API response:', response);
-      
+
       // Check if login was successful
       if (response.success) {
         // Get role from response or localStorage
         const role = response.user?.role || localStorage.getItem('role');
         const token = localStorage.getItem('token');
-        
+
         console.log('Login successful - Role:', role, 'Token exists:', !!token);
-        
+
         if (!token) {
           throw new Error('Token not saved properly');
         }
-        
+
         // Use React Router navigate (no page refresh)
         if (role === 'Admin' || role === 'SuperAdmin' || role === 'Sub-Admin') {
           console.log('Navigating to admin dashboard...');
@@ -50,7 +43,7 @@ const Login = () => {
       } else {
         throw new Error(response.message || 'Login failed');
       }
-        
+
     } catch (err) {
       console.error('Login error:', err);
       const msg = err.response?.data?.message || err.message || 'Login failed. Please check your credentials.';
@@ -62,118 +55,76 @@ const Login = () => {
   };
 
   return (
-    <div className="login-page-wrapper">
-      <button className="btn-back-floating" onClick={() => navigate('/')}>
-        &larr; Back
-      </button>
+    <AuthShell heading="Welcome Back!" subheading="Login to continue your learning journey" backTo="/">
+      <form onSubmit={handleLogin} className="rounded-xl border border-slate-200 bg-white p-5 shadow-card">
+        <h2 className="font-display text-[17px] font-bold text-navy-800">Login</h2>
+        <p className="mt-0.5 text-[12px] text-slate-500">Sign in to your student or admin account</p>
 
-      <div className="mobile-header-blue">
-        <div className="login-logo-top">
-          <img src="balaji logo.jpeg" alt="Balaji Logo" />
-        </div>
-        <h1 className="mobile-welcome-title">Welcome Back!</h1>
-        <p className="mobile-welcome-subtitle">Start Your Learning Journey</p>
-      </div>
-
-      <div className="login-split-container">
-        <div className="login-left-side">
-          <img src="girl.png" alt="Student Typing" className="girl-typing-image" />
-        </div>
-        
-        <div className="login-right-side">
-          <div className="auth-card login-card-custom">
-            
-            <div className="mobile-tabs">
-              <div className="mobile-tab active">Login</div>
-              <Link to="/signup" className="mobile-tab">Register</Link>
-            </div>
-
-            <div className="desktop-only-header">
-              <div className="user-icon-top">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                </svg>
-              </div>
-              
-              <div className="login-title-row">
-                <div className="login-line"></div>
-                <h2>LOGIN</h2>
-                <div className="login-line"></div>
-              </div>
-            </div>
-            
-            <form className="auth-form login-form-custom" onSubmit={handleLogin}>
-              {error && <div className="auth-error" style={{ color: 'red', marginBottom: '10px', textAlign: 'center' }}>{error}</div>}
-              
-              <div className="input-group login-input-group">
-                <span className="input-icon left-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                  </svg>
-                </span>
-                <input 
-                  type="text" 
-                  placeholder={isMobile ? "User Id/Email Id" : "User ID/Phone Number"} 
-                  required 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="icon-input"
-                />
-              </div>
-              
-              <div className="input-group login-input-group">
-                <span className="input-icon left-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                  </svg>
-                </span>
-                <input 
-                  type={showPassword ? "text" : "password"} 
-                  placeholder="Password" 
-                  required 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="icon-input"
-                />
-                <span className="input-icon right-icon" onClick={() => setShowPassword(!showPassword)}>
-                  {showPassword ? (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                      <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                      <line x1="1" y1="1" x2="23" y2="23"></line>
-                    </svg>
-                  )}
-                </span>
-              </div>
-              
-              <div className="forgot-password-row">
-                <a href="#" className="link-forgot-custom">Forget Password?</a>
-              </div>
-              
-              <div className="login-actions">
-                <button type="submit" className="btn-primary btn-login-custom">Login</button>
-              </div>
-              
-              <div className="auth-footer login-footer-custom">
-                <div className="discount-banner-mobile">
-                  <span className="banner-icon">🎉</span>
-                  <span className="banner-text">Get 30% Discount On Registration</span>
-                  <span className="banner-icon">🎁</span>
-                </div>
-
-                <p className="no-account-text">Dont have an account? <Link to="/signup" className="link-register">Sign up</Link></p>
-              </div>
-            </form>
+        {error &&
+          <div role="alert" className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-center text-[12.5px] font-medium text-danger">
+            {error}
           </div>
+        }
+
+        <div className="mt-4 space-y-3.5">
+          <AuthField id="username" label="User ID / Phone Number / Email" icon={UserIcon} required>
+            <input
+              id="username"
+              type="text"
+              required
+              autoComplete="username"
+              placeholder="Enter your User ID or Phone Number"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className={authInputClass} />
+          </AuthField>
+
+          <AuthField
+            id="password"
+            label="Password"
+            icon={LockIcon}
+            required
+            trailing={
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors duration-150 hover:text-slate-600">
+                {showPassword ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+              </button>
+            }>
+            <input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              required
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={`${authInputClass} pr-10`} />
+          </AuthField>
         </div>
-      </div>
-    </div>
+
+        <div className="mt-2 text-right">
+          <a href="#" className="text-[12px] font-medium text-primary hover:underline">Forget Password?</a>
+        </div>
+
+        <button
+          type="submit"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-primary py-3 text-[13.5px] font-semibold text-white transition-colors duration-150 hover:bg-primary-700">
+          <LogInIcon className="h-4 w-4" aria-hidden="true" /> Login
+        </button>
+
+        <div className="mt-4 flex items-center justify-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
+          <GiftIcon className="h-4 w-4" aria-hidden="true" /> Get 30% Discount On Registration
+        </div>
+
+        <p className="mt-3 text-center text-[12.5px] text-slate-600">
+          Don&apos;t have an account?{' '}
+          <Link to="/signup" className="font-semibold text-primary hover:underline">Sign up</Link>
+        </p>
+      </form>
+    </AuthShell>
   );
 };
 
