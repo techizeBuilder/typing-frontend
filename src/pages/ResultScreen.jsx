@@ -17,6 +17,7 @@ import {
   UserIcon,
   XCircleIcon,
 } from 'lucide-react';
+import DetailedAnalysis from '../features/results/DetailedAnalysis';
 import './ResultScreen.css';
 
 // ─── PrintSheet — government exam format (visible only on print) ───────────────
@@ -1700,6 +1701,30 @@ const ResultScreen = () => {
                 </ul>
               </div>
             </section>
+
+            {/* ── Detailed analysis (typing): breakdown of the values computed above ── */}
+            {!isStenoResult && referenceWords.length > 0 && (
+              <DetailedAnalysis
+                counts={{
+                  spelling: _sp,
+                  omission: _om,
+                  addition: _addCount,
+                  repetition: repeatedWordCount,
+                  capitalisation: _cap,
+                  punctuation: _pct,
+                  extraSpace: extraSpaceCount,
+                }}
+                referenceWords={referenceWords}
+                wordStatuses={wordStatuses}
+                wordAt={_wordAtFn}
+                lastTypedIndex={_lastTyped}
+                countOmissions={countOmissions}
+                extraTypedWords={extraTypedWords}
+                halfMistakeEnabled={halfMistakeEnabled}
+                mode={mode}
+                examName={exam_name}
+                passageFontFamily={passageFontFamily} />
+            )}
           </div>
 
           {/* ── Right column: verdict + rules ────────────── */}
