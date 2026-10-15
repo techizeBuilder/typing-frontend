@@ -16,6 +16,7 @@ import StudentProfile from './pages/StudentProfile';
 import AvailableTests from './pages/AvailableTests';
 import StenoDictations from './pages/StenoDictations';
 import ProtectedRoute from './components/ProtectedRoute';
+import StudentLayout from './layouts/StudentLayout';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminExams from './pages/admin/AdminExams';
@@ -42,17 +43,22 @@ function App() {
 
           {/* Protected Student Routes */}
           <Route element={<ProtectedRoute />}>
-            <Route path="/dashboard" element={<StudentDashboard />} />
-            <Route path="/profile" element={<StudentProfile />} />
+            {/* Pages inside the student shell (sidebar + header) */}
+            <Route element={<StudentLayout />}>
+              <Route path="/dashboard" element={<StudentDashboard />} />
+              <Route path="/profile" element={<StudentProfile />} />
+              <Route path="/available-tests" element={<AvailableTests />} />
+              <Route path="/steno-dictations" element={<StenoDictations />} />
+              <Route path="/my-tests" element={<MyResults />} />
+              <Route path="/results" element={<MyResults />} />
+              <Route path="/leaderboard" element={<Leaderboard />} />
+            </Route>
+
+            {/* Full-screen pages: exam engines, results, practice setup */}
             <Route path="/test" element={<TestEngine />} />
             <Route path="/steno-test" element={<StenoTestEngine />} />
-            <Route path="/available-tests" element={<AvailableTests />} />
             <Route path="/self-assessment" element={<SelfAssessmentSetup />} />
-            <Route path="/steno-dictations" element={<StenoDictations />} />
             <Route path="/result" element={<ResultScreen />} />
-            <Route path="/my-tests" element={<MyResults />} />
-            <Route path="/results" element={<MyResults />} />
-            <Route path="/leaderboard" element={<Leaderboard />} />
           </Route>
 
           {/* Admin Routes */}

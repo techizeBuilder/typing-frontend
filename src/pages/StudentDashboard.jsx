@@ -1,7 +1,5 @@
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import DashboardNav from '../components/DashboardNav';
-import Header from '../components/Header';
 import api, { examService, flashBannerService, resultService, chapterService, offlineTestService, offlineExamService } from '../services/api';
 import './StudentDashboard.css';
 
@@ -224,7 +222,6 @@ const StudentDashboard = () => {
 
   return (
     <div className="dashboard-page-container">
-      <Header />
       
       {/* Blue Welcome Bar */}
       <div className="dashboard-welcome-bar">
@@ -251,7 +248,6 @@ const StudentDashboard = () => {
       )}
 
       <div className="dashboard-layout">
-        <DashboardNav />
 
         <div className="dashboard-content">
           {/* Announcements */}

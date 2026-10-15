@@ -1,0 +1,53 @@
+// Sidebar navigation for the new-design layouts. Only routes that exist in the
+// app are listed; design entries for modules not yet built are added as each
+// module lands. `match` lists extra paths that should highlight the item.
+
+const isAdminRole = (role) => role === 'Admin' || role === 'SuperAdmin';
+
+// Same rule as the legacy DashboardNav: the Admin Panel shortcut is shown to Admins.
+export const studentNav = [
+  { label: 'Home', icon: 'home', to: '/dashboard', match: ['/available-tests', '/steno-dictations'], color: '#38BDF8' },
+  { label: 'My Account', icon: 'userCircle', to: '/profile', color: '#A78BFA' },
+  { label: 'Self Assessment', icon: 'graduationCap', to: '/self-assessment', color: '#C084FC' },
+  { label: 'Test Analysis (Results)', icon: 'barChart', to: '/my-tests', match: ['/results'], color: '#60A5FA' },
+  { label: 'Leaderboard', icon: 'trophy', to: '/leaderboard', color: '#FACC15' },
+  { label: 'Admin Panel', icon: 'settings', to: '/admin', color: '#94A3B8', visible: ({ role }) => role === 'Admin' },
+];
+
+// Mirrors the role/permission checks of the legacy AdminLayout exactly.
+const can = (perm) => ({ role, permissions }) => isAdminRole(role) || permissions.includes(perm);
+const adminOnly = ({ role }) => isAdminRole(role);
+
+export const adminNav = [
+  { label: 'Dashboard', icon: 'home', to: '/admin', end: true, color: '#38BDF8' },
+  { label: 'Students Management', icon: 'users', to: '/admin/students', color: '#A78BFA', visible: can('students') },
+  { label: 'Exam Management', icon: 'layers', to: '/admin/exams', color: '#FB923C', visible: can('exams') },
+  { label: 'Test Management', icon: 'clipboard', to: '/admin/content', color: '#34D399', visible: can('chapters') },
+  { label: 'Message Center', icon: 'mail', to: '/admin/messages', color: '#0EA5E9', visible: can('messages') },
+  { label: 'Flash Banner', icon: 'zap', to: '/admin/flash-banner', color: '#F59E0B', visible: can('flash_banner') },
+  { label: 'Staff Management', icon: 'shield', to: '/admin/staff', color: '#F472B6', visible: can('staff') },
+  { label: 'Results (Typing/Steno)', icon: 'barChart', to: '/admin/results', color: '#FACC15', visible: adminOnly },
+  { label: 'Leaderboard', icon: 'trophy', to: '/admin/leaderboard', color: '#FBBF24', visible: adminOnly },
+  { label: 'Settings', icon: 'settings', to: '/admin/settings', color: '#C084FC', visible: adminOnly },
+];
+
+export function getSessionUser() {
+  let permissions;
+  try {
+    permissions = JSON.parse(localStorage.getItem('permissions') || '[]') || [];
+  } catch {
+    permissions = [];
+  }
+  return {
+    role: localStorage.getItem('role'),
+    permissions,
+    name: localStorage.getItem('name') || localStorage.getItem('username') || '',
+  };
+}
+
+export function isItemActive(item, pathname) {
+  if (item.end) return pathname === item.to;
+  return [item.to, ...(item.match || [])].some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+}

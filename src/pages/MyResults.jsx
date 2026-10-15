@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import DashboardNav from '../components/DashboardNav';
-import Header from '../components/Header';
 import { resultService, getCurrentUserUuid } from '../services/api';
 import './StudentDashboard.css';
 
@@ -121,7 +119,6 @@ const MyResults = () => {
 
   return (
     <div className="dashboard-page-container">
-      <Header />
       
       {/* Blue Welcome Bar */}
       <div className="dashboard-welcome-bar">
@@ -132,7 +129,6 @@ const MyResults = () => {
       </div>
 
       <div className="dashboard-layout">
-        <DashboardNav />
         <div className="dashboard-content" style={{ backgroundColor: '#fafafa' }}>
           <button className="btn-back-floating" style={{position: 'static', marginBottom: '20px', display: 'inline-block'}} onClick={() => navigate(-1)}>&larr; Back</button>
 

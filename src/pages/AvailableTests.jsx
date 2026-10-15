@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import DashboardNav from '../components/DashboardNav';
-import Header from '../components/Header';
 import { chapterService, userService, resultService, offlineTestService, getCurrentUserUuid } from '../services/api';
 import { API_BASE_URL } from '../config';
 import './StudentDashboard.css';
@@ -345,7 +343,6 @@ const AvailableTests = () => {
 
   return (
     <div className="dashboard-page-container">
-      <Header />
       
       <div className="dashboard-welcome-bar">
         <div className="welcome-text-content">
@@ -355,7 +352,6 @@ const AvailableTests = () => {
       </div>
 
       <div className="dashboard-layout">
-        <DashboardNav />
 
         <div className="available-tests-wrapper">
           <button

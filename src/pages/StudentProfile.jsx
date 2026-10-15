@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { userService, resultService, offlineTestService, chapterService } from '../services/api';
 import { API_BASE_URL } from '../config';
-import DashboardNav from '../components/DashboardNav';
-import Header from '../components/Header';
 import './StudentProfile.css';
 import './StudentDashboard.css';
 
@@ -526,7 +524,6 @@ const StudentProfile = () => {
 
   return (
     <div className="dashboard-page-container" style={{ height: 'auto', minHeight: '100vh', overflow: 'visible' }}>
-      <Header />
 
       <div className="dashboard-welcome-bar">
         <div className="welcome-text-content">
@@ -539,7 +536,6 @@ const StudentProfile = () => {
       </div>
 
       <div className="dashboard-layout" style={{ overflow: 'visible', minHeight: 0 }}>
-        <DashboardNav />
         <div className="dashboard-content sp-container" style={{ overflowY: 'visible' }}>
 
           {/* ── Row 1: Profile + Subscription ── */}

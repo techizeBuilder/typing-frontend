@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import DashboardNav from '../components/DashboardNav';
-import Header from '../components/Header';
 import api, { chapterService, offlineTestService } from '../services/api';
 import './StenoDictations.css';
 
@@ -181,7 +179,6 @@ const StenoDictations = () => {
 
   return (
     <div className="sd-page">
-      <Header />
 
       {/* Blue header bar */}
       <div className="sd-hero">
@@ -192,7 +189,6 @@ const StenoDictations = () => {
       </div>
 
       <div className="sd-layout">
-        <DashboardNav />
 
         <div className="sd-content">
           {/* Back button */}

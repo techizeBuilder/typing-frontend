@@ -22,6 +22,8 @@ import {
   UserCircle2Icon,
   HeadphonesIcon,
   ZapIcon,
+  MailIcon,
+  ShieldCheckIcon,
 } from 'lucide-react';
 
 const map = {
@@ -48,6 +50,8 @@ const map = {
   userCircle: UserCircle2Icon,
   headphones: HeadphonesIcon,
   zap: ZapIcon,
+  mail: MailIcon,
+  shield: ShieldCheckIcon,
 };
 
 export function NavIcon({ name, className = 'h-4 w-4', style }) {

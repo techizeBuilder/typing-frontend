@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import DashboardNav from '../components/DashboardNav';
-import Header from '../components/Header';
 import { resultService, settingService } from '../services/api';
 import { computeResultMetrics } from '../utils/resultMetrics';
 import './StudentDashboard.css';
@@ -97,7 +95,6 @@ const Leaderboard = () => {
 
   return (
     <div className="dashboard-page-container">
-      <Header />
 
       {/* Blue Welcome Bar */}
       <div className="dashboard-welcome-bar">
@@ -108,7 +105,6 @@ const Leaderboard = () => {
       </div>
 
       <div className="dashboard-layout">
-        <DashboardNav />
 
         <div className="dashboard-content">
           <div className="selection-panel" style={{ marginTop: '20px' }}>
