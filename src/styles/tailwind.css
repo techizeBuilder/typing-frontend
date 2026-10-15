@@ -6,6 +6,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Typing games: wrong-key shake. */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
 /* ── Scoped preflight ──────────────────────────────────────────────────────
    Tailwind's preflight is disabled globally (see tailwind.config.js) so legacy
    pages keep their look. New-design screens wrap their root in `.nd`, which

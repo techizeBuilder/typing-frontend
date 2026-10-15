@@ -22,6 +22,8 @@ import MyDictations from './pages/student/MyDictations';
 import Magazines from './pages/student/Magazines';
 import PlanPricing from './pages/student/PlanPricing';
 import ReferEarn from './pages/student/ReferEarn';
+import TypingGames from './pages/student/TypingGames';
+import TypingGamePlay from './pages/student/TypingGamePlay';
 import LiveTests from './pages/student/LiveTests';
 import LiveTestSlots from './pages/student/LiveTestSlots';
 import LegacyExamRedirect from './pages/student/LegacyExamRedirect';
@@ -80,6 +82,7 @@ function App() {
               <Route path="/pdf/progressive-magazines" element={<Magazines key="progressive" collection="progressive" />} />
               <Route path="/plan-pricing" element={<PlanPricing />} />
               <Route path="/refer-earn" element={<ReferEarn />} />
+              <Route path="/typing-games" element={<TypingGames />} />
               <Route path="/live-test/typing" element={<LiveTests key="typing" kind="typing" />} />
               <Route path="/live-test/steno" element={<LiveTests key="steno" kind="steno" />} />
               <Route path="/live-test/exam/:examId" element={<LiveTestSlots />} />
@@ -100,6 +103,7 @@ function App() {
             {/* Full-screen pages: exam engines and the result sheet */}
             <Route path="/test" element={<TestEngine />} />
             <Route path="/steno-test" element={<StenoTestEngine />} />
+            <Route path="/typing-games/:gameId" element={<TypingGamePlay />} />
             <Route path="/result" element={<ResultScreen />} />
           </Route>
 

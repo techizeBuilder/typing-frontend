@@ -17,6 +17,7 @@ export const studentNav = [
   { label: 'Live Test (Typing)', icon: 'play', to: '/live-test/typing', badge: 'live', color: '#FB7185', fontGroups: ['English Typing', 'Hindi Mangal', 'Hindi Kruti Dev', 'Hindi Remington (GAIL)'] },
   { label: 'Live Test (Steno)', icon: 'play', to: '/live-test/steno', badge: 'live', color: '#FBBF24', fontGroups: ['Steno English', 'Steno Hindi'] },
   { label: 'Self Assessment', icon: 'graduationCap', to: '/self-assessment', color: '#C084FC' },
+  { label: 'Typing Games', icon: 'gamepad', to: '/typing-games', color: '#F472B6' },
   { label: 'Test Analysis (Results)', icon: 'barChart', to: '/my-tests', match: ['/results'], color: '#60A5FA' },
   { label: 'Leaderboard', icon: 'trophy', to: '/leaderboard', color: '#FACC15' },
   { label: 'Top Ranks', icon: 'trophy', to: '/top-ranks', color: '#2DD4BF' },
