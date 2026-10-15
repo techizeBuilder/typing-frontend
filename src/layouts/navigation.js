@@ -16,6 +16,7 @@ export const studentNav = [
   { label: 'Self Assessment', icon: 'graduationCap', to: '/self-assessment', color: '#C084FC' },
   { label: 'Test Analysis (Results)', icon: 'barChart', to: '/my-tests', match: ['/results'], color: '#60A5FA' },
   { label: 'Leaderboard', icon: 'trophy', to: '/leaderboard', color: '#FACC15' },
+  { label: 'How to use?', icon: 'help', to: '/how-to-use', color: '#94A3B8' },
   { label: 'Admin Panel', icon: 'settings', to: '/admin', color: '#94A3B8', visible: ({ role }) => role === 'Admin' },
 ];
 
