@@ -551,4 +551,35 @@ export const settingService = {
   },
 };
 
+// Student support tickets. Messages can carry up to 3 image/video attachments.
+const ticketForm = (fields, files = []) => {
+  const data = new FormData();
+  Object.entries(fields).forEach(([k, v]) => { if (v !== undefined && v !== null) data.append(k, v); });
+  files.forEach((f) => data.append('files', f));
+  return data;
+};
+
+export const supportService = {
+  createTicket: async ({ subject, category, priority, message }, files) => {
+    const res = await api.post('/support/tickets', ticketForm({ subject, category, priority, message }, files));
+    return res.data;
+  },
+  getMyTickets: async () => {
+    const res = await api.get('/support/tickets/mine');
+    return res.data;
+  },
+  getAllTickets: async () => {
+    const res = await api.get('/support/tickets');
+    return res.data;
+  },
+  reply: async (ticketId, message, files) => {
+    const res = await api.post(`/support/tickets/${ticketId}/replies`, ticketForm({ message }, files));
+    return res.data;
+  },
+  updateTicket: async (ticketId, changes) => {
+    const res = await api.patch(`/support/tickets/${ticketId}`, changes);
+    return res.data;
+  },
+};
+
 export default api;

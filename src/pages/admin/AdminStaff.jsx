@@ -10,7 +10,8 @@ const AVAILABLE_MODULES = [
   { id: 'chapters', label: 'Add Chapter (Content)' },
   { id: 'messages', label: 'Message Center' },
   { id: 'flash_banner', label: 'Flash Banner' },
-  { id: 'staff', label: 'Staff Management' }
+  { id: 'staff', label: 'Staff Management' },
+  { id: 'support', label: 'Support Tickets' }
 ];
 
 const AdminStaff = () => {

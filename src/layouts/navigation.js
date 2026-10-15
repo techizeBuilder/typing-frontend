@@ -17,6 +17,7 @@ export const studentNav = [
   { label: 'Test Analysis (Results)', icon: 'barChart', to: '/my-tests', match: ['/results'], color: '#60A5FA' },
   { label: 'Leaderboard', icon: 'trophy', to: '/leaderboard', color: '#FACC15' },
   { label: 'Top Ranks', icon: 'trophy', to: '/top-ranks', color: '#2DD4BF' },
+  { label: 'Support', icon: 'headphones', to: '/support', color: '#34D399' },
   { label: 'How to use?', icon: 'help', to: '/how-to-use', color: '#94A3B8' },
   { label: 'Admin Panel', icon: 'settings', to: '/admin', color: '#94A3B8', visible: ({ role }) => role === 'Admin' },
 ];
@@ -33,6 +34,7 @@ export const adminNav = [
   { label: 'Message Center', icon: 'mail', to: '/admin/messages', color: '#0EA5E9', visible: can('messages') },
   { label: 'Flash Banner', icon: 'zap', to: '/admin/flash-banner', color: '#F59E0B', visible: can('flash_banner') },
   { label: 'Staff Management', icon: 'shield', to: '/admin/staff', color: '#F472B6', visible: can('staff') },
+  { label: 'Support Tickets', icon: 'headphones', to: '/admin/support', color: '#34D399', visible: can('support') },
   { label: 'Results (Typing/Steno)', icon: 'barChart', to: '/admin/results', color: '#FACC15', visible: adminOnly },
   { label: 'Leaderboard', icon: 'trophy', to: '/admin/leaderboard', color: '#FBBF24', visible: adminOnly },
   { label: 'Settings', icon: 'settings', to: '/admin/settings', color: '#C084FC', visible: adminOnly },

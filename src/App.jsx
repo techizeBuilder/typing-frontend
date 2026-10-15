@@ -23,6 +23,8 @@ import LegacyExamRedirect from './pages/student/LegacyExamRedirect';
 import HowToUse from './pages/student/HowToUse';
 import PracticeWords from './pages/student/PracticeWords';
 import TopRanks from './pages/student/TopRanks';
+import Support from './pages/student/Support';
+import AdminSupportTickets from './pages/admin/AdminSupportTickets';
 import ProtectedRoute from './components/ProtectedRoute';
 import StudentLayout from './layouts/StudentLayout';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -73,6 +75,7 @@ function App() {
               <Route path="/how-to-use" element={<HowToUse />} />
               <Route path="/practice-words" element={<PracticeWords />} />
               <Route path="/top-ranks" element={<TopRanks />} />
+              <Route path="/support" element={<Support />} />
             </Route>
 
             {/* Full-screen pages: exam engines and the result sheet */}
@@ -93,6 +96,7 @@ function App() {
               <Route path="staff" element={<AdminStaff />} />
               <Route path="results" element={<AdminResults />} />
               <Route path="leaderboard" element={<AdminLeaderboard />} />
+              <Route path="support" element={<AdminSupportTickets />} />
               <Route path="settings" element={<AdminSettings />} />
             </Route>
           </Route>
