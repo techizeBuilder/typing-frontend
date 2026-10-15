@@ -112,6 +112,17 @@
   overflow: hidden;
 }
 
+/* New-design result view: a wide layout of its own cards instead of one
+ * boxed sheet. Keeps the .sheet-container class so print CSS still hides it. */
+.result-layout:has(.result-v2) { background: #f5f7fa; }
+.sheet-container.result-v2 {
+  max-width: 1320px;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
 /* ── Header banner ──────────────────────────────────────────── */
 .sheet-header {
   background: #0b4bcc;

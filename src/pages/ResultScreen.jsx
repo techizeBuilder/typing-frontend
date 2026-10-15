@@ -3,6 +3,20 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 import { fontFamilyForFontGroup, fontGroupForHindiType } from '../utils/hindiFonts';
 import { matchContractions, matchAlternateForms } from '../utils/stenoAlternateForms';
+import {
+  AlertTriangleIcon,
+  ArrowLeftIcon,
+  AwardIcon,
+  CheckCircle2Icon,
+  FileTextIcon,
+  GaugeIcon,
+  KeyboardIcon,
+  PrinterIcon,
+  TargetIcon,
+  TrendingUpIcon,
+  UserIcon,
+  XCircleIcon,
+} from 'lucide-react';
 import './ResultScreen.css';
 
 // ─── PrintSheet — government exam format (visible only on print) ───────────────
@@ -1021,6 +1035,15 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   );
 };
 
+// ─── SummaryRow — one labelled figure in the detailed summary ────────────────
+const SummaryRow = ({ label, value, formula, tone = 'text-navy-800', highlight = false }) => (
+  <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2">
+    <span className="text-slate-500">{label}</span>
+    <span className={`font-semibold ${highlight ? 'rounded bg-yellow-100 px-1.5' : ''} ${tone}`}>{value}</span>
+    {formula && <span className="basis-full text-right text-[11px] italic text-slate-400">{formula}</span>}
+  </li>
+);
+
 // ─── ResultScreen ─────────────────────────────────────────────────────────────
 const ResultScreen = () => {
   const navigate = useNavigate();
@@ -1485,242 +1508,249 @@ const ResultScreen = () => {
         />
       </div>
 
-      <div className="print-controls no-print">
-        <button className="btn-secondary" onClick={handlePrint}>🖨 Print / Save Result</button>
-        <button className="btn-primary" onClick={handleReturn}>← Return to Dashboard</button>
-      </div>
+      {/* ══ On-screen result (new design). Every value below is computed above;
+          this block only lays them out. The pattern's show_* toggles still
+          decide which figures appear. ══ */}
+      <div className="sheet-container result-v2">
 
-      <div className="sheet-container">
-
-        {/* ── Header banner ─────────────────────────────── */}
-        <div className="sheet-header">
-          <h2 className="sheet-title">Candidate Result Sheet — Typing Test</h2>
-          <div className="sheet-exam-banner">{exam_name || 'Practice Test'}</div>
+        {/* ── Page heading + actions ─────────────────────── */}
+        <div className="nd no-print mb-4 flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[12.5px] font-semibold text-primary">
+              {isStenoResult ? 'Steno Test Result' : 'Typing Test Result'}
+            </p>
+            <h2 className="font-display text-[22px] font-bold leading-tight text-navy-800 sm:text-[26px]">
+              Candidate Result Sheet
+            </h2>
+            <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[12.5px] text-slate-500">
+              <span className="rounded-full bg-navy-800 px-2.5 py-[2px] text-[11.5px] font-semibold text-white">{exam_name || 'Practice Test'}</span>
+              {chapter_no && <span>Test #{chapter_no}</span>}
+              <span>{formattedDate}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-[13px] font-semibold text-navy-800 shadow-card transition-colors duration-150 hover:bg-slate-50">
+            <PrinterIcon className="h-4 w-4" aria-hidden="true" /> Print / Save Result
+          </button>
+          <button
+            type="button"
+            onClick={handleReturn}
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-[13px] font-semibold text-white shadow-card transition-colors duration-150 hover:bg-primary-700">
+            <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" /> Return to Dashboard
+          </button>
         </div>
 
-        {/* ── Two-panel: Candidate Details + Final Result ── */}
-        <div className="sheet-top-row">
+        <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
+          <div className="min-w-0 space-y-4">
 
-          {/* Left: Candidate Details */}
-          <div className="candidate-details-panel">
-            <h3>Candidate Details</h3>
-            <table className="candidate-table">
-              <tbody>
-                <tr><td>Candidate Name</td><td>:</td><td>{username}</td></tr>
-                <tr><td>Roll Number</td><td>:</td><td>{rollNo}</td></tr>
-                <tr><td>Exam Name</td><td>:</td><td>{exam_name || 'Practice Test'}</td></tr>
-                {chapter_no && <tr><td>Chapter No.</td><td>:</td><td><strong style={{ color: '#1e40af' }}>#{chapter_no}</strong></td></tr>}
-                {patternName && <tr><td>Result Pattern</td><td>:</td><td><span style={{ background: '#f0fdf4', color: '#166534', padding: '1px 7px', borderRadius: '4px', fontWeight: 600, fontSize: '0.9em' }}>{patternName}</span></td></tr>}
-                <tr><td>Language</td><td>:</td><td>{mode || 'English'}</td></tr>
-                <tr><td>Test Duration</td><td>:</td><td>{location.state?.testDurationMinutes || Math.floor(timeElapsed / 60)} Minutes</td></tr>
-                <tr><td>Test Date &amp; Time</td><td>:</td><td>{formattedDate}</td></tr>
-                <tr>
-                  <td>Result ID</td><td>:</td>
-                  <td>
-                    <span className="result-id-row">
-                      RES-{String(Math.floor(Math.random() * 90000000 + 10000000))}
-                      <button className="result-id-copy" title="Copy">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="9" y="9" width="13" height="13" rx="2"/>
-                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                        </svg>
-                      </button>
+            {/* ── Candidate details + test information ─────── */}
+            <div className="nd grid gap-4 lg:grid-cols-2">
+              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+                <h3 className="mb-3 flex items-center gap-2 font-display text-[14px] font-semibold text-navy-800">
+                  <UserIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Candidate Details
+                </h3>
+                <dl className="space-y-2 text-[12.5px]">
+                  {[
+                    ['Candidate Name', username],
+                    ['Roll Number', rollNo],
+                    ['User ID', userId],
+                    ['Language', mode || 'English'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between gap-3 border-b border-slate-100 pb-1.5 last:border-0">
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="text-right font-semibold text-navy-800">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+                <h3 className="mb-3 flex items-center gap-2 font-display text-[14px] font-semibold text-navy-800">
+                  <FileTextIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Test Information
+                </h3>
+                <dl className="space-y-2 text-[12.5px]">
+                  <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
+                    <dt className="text-slate-500">Exam Name</dt>
+                    <dd className="text-right font-semibold text-navy-800">{exam_name || 'Practice Test'}</dd>
+                  </div>
+                  {chapter_no &&
+                    <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
+                      <dt className="text-slate-500">Chapter No.</dt>
+                      <dd className="text-right font-semibold text-primary-700">#{chapter_no}</dd>
+                    </div>
+                  }
+                  {patternName &&
+                    <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
+                      <dt className="text-slate-500">Result Pattern</dt>
+                      <dd className="text-right"><span className="rounded bg-emerald-50 px-2 py-[1px] font-semibold text-emerald-700">{patternName}</span></dd>
+                    </div>
+                  }
+                  <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
+                    <dt className="text-slate-500">Test Duration</dt>
+                    <dd className="text-right font-semibold text-navy-800">{location.state?.testDurationMinutes || Math.floor(timeElapsed / 60)} Minutes</dd>
+                  </div>
+                  <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
+                    <dt className="text-slate-500">Test Date &amp; Time</dt>
+                    <dd className="text-right font-semibold text-navy-800">{formattedDate}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Result ID</dt>
+                    <dd className="text-right font-semibold text-navy-800">RES-{String(Math.floor(Math.random() * 90000000 + 10000000))}</dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
+
+            {/* ── Result overview: headline metrics ────────── */}
+            <section className="nd rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+              <h3 className="mb-3 font-display text-[14px] font-semibold text-navy-800">Result Overview</h3>
+              <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+                {[
+                  showGrossSpeed && { label: 'Gross Speed', value: grossSpeedCalculated, unit: speedUnit.toUpperCase(), icon: GaugeIcon, color: '#6F42C1' },
+                  showNetSpeed && { label: 'Net Speed', value: netSpeedCalculated, unit: speedUnit.toUpperCase(), icon: TrendingUpIcon, color: '#0EA5E9' },
+                  showAccuracy && { label: 'Accuracy', value: `${accuracyCalculated}%`, icon: TargetIcon, color: '#198754' },
+                  showTotalWords && { label: 'Total Typed Words', value: actualTypedWordCount, icon: KeyboardIcon, color: '#0D6EFD' },
+                  showCorrectWords && { label: 'Correct Words', value: actualCorrectWordCount, icon: CheckCircle2Icon, color: '#198754' },
+                  showFullMistakes && { label: 'Wrong Words', value: effectiveFullErrors, icon: XCircleIcon, color: '#DC3545' },
+                ].filter(Boolean).map((m) => (
+                  <li key={m.label} className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+                    <p className="flex items-center gap-1.5 text-[11.5px] font-medium text-slate-500">
+                      <m.icon className="h-3.5 w-3.5" style={{ color: m.color }} aria-hidden="true" /> {m.label}
+                    </p>
+                    <p className="mt-1 font-display text-[22px] font-bold leading-tight" style={{ color: m.color }}>{m.value}</p>
+                    {m.unit && <p className="text-[10.5px] font-semibold text-slate-400">{m.unit}</p>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* ── Detailed result summary (with formulas) ──── */}
+            <section className="nd rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+              <h3 className="mb-3 font-display text-[14px] font-semibold text-navy-800">Detailed Result Summary</h3>
+              <div className="grid gap-x-8 lg:grid-cols-2">
+                <ul className="divide-y divide-slate-100 text-[12.5px]">
+                  {showTotalStrokes &&
+                    <SummaryRow label="Total Strokes Typed" value={totalStrokes} formula="[character keystrokes, spaces/punct excluded]" />
+                  }
+                  {showFullMistakes &&
+                    <SummaryRow label="Full Mistakes" value={effectiveFullErrors} tone="text-danger" />
+                  }
+                  {showHalfMistakes &&
+                    <SummaryRow
+                      label="Half Mistakes"
+                      value={effectiveHalfErrors}
+                      tone="text-amber-600"
+                      formula={`[counted as ${halfMistakeMultiplier} each${halfMistakeEnabled ? '' : ' — i.e. as full mistakes'}]`} />
+                  }
+                  {showTotalErrors &&
+                    <SummaryRow
+                      label="Total Mistakes"
+                      value={totalMistakes}
+                      formula={`[${effectiveFullErrors} + (${effectiveHalfErrors} × ${halfMistakeMultiplier}) = ${totalMistakes}]${ignorableEnabled ? `  ·  Allowance ${ignorablePercent}% of ${totalWords} = ${ignorableAllowance} ignored, ${excessMistakes} excess` : ''}`} />
+                  }
+                  {showPenaltyWords &&
+                    <SummaryRow
+                      label={`Penalty ${unitLabel}`}
+                      value={penaltyWords}
+                      formula={ignorableEnabled
+                        ? `[${excessMistakes} excess mistakes × ${deductionPerMistake} words]`
+                        : penaltyDiv5
+                          ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes ÷ 5]`
+                          : `[${totalMistakes} mistakes × ${penaltyFactor} ${unitLabel.toLowerCase()}]`} />
+                  }
+                </ul>
+                <ul className="divide-y divide-slate-100 text-[12.5px]">
+                  {showTotalWords &&
+                    <SummaryRow
+                      label={`Total ${unitLabel} Typed`}
+                      value={totalWords}
+                      formula={isStrokeMode ? `[${totalStrokes} keystrokes ÷ 5]` : `[${actualTypedWordCount} actual words typed]`} />
+                  }
+                  {showGrossSpeed &&
+                    <SummaryRow
+                      label={`Gross Speed (${grossAbbr})`}
+                      value={`${grossSpeedCalculated} ${speedUnit}`}
+                      highlight
+                      formula={`[${totalWords} ${unitLabel.toLowerCase()} / ${timeMinutes.toFixed(2)} min]`} />
+                  }
+                  {showAccuracy &&
+                    <SummaryRow label="Accuracy" value={`${accuracyCalculated}%`} />
+                  }
+                  {showNetSpeed &&
+                    <SummaryRow
+                      label={`Net ${unitLabel} Typed`}
+                      value={netWordsCalculated}
+                      formula={`[${totalWords} - ${penaltyWords} penalty ${unitLabel.toLowerCase()}]`} />
+                  }
+                  {showNetSpeed &&
+                    <SummaryRow
+                      label={`Net Speed (${netAbbr})`}
+                      value={`${netSpeedCalculated} ${speedUnit}`}
+                      highlight
+                      formula={`[${netWordsCalculated} / ${timeMinutes.toFixed(2)} min]`} />
+                  }
+                  <li className="flex items-center justify-between gap-3 py-2">
+                    <span className="text-slate-500">Result</span>
+                    <span className={`rounded px-2.5 py-[2px] font-semibold ${isQualified ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      {isQualified ? 'Qualified' : 'Not-Qualified'}
                     </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  </li>
+                </ul>
+              </div>
+            </section>
           </div>
 
-          {/* Right: Final Result verdict */}
-          <div className="final-result-panel">
-            <div className={`final-result-box ${isQualified ? 'qualified' : 'unqualified'}`}>
-              <div className="final-result-label">Final Result</div>
-              <div className={`final-result-verdict ${isQualified ? 'qualified-text' : 'unqualified-text'}`}>
-                <span className={`verdict-icon ${isQualified ? 'pass' : 'fail'}`}>
-                  {isQualified ? '✓' : '✕'}
-                </span>
+          {/* ── Right column: verdict + rules ────────────── */}
+          <aside className="nd space-y-4">
+            <section className={`rounded-xl border p-5 text-center shadow-card ${isQualified ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}`}>
+              <p className={`text-[11px] font-bold uppercase tracking-wide ${isQualified ? 'text-emerald-700' : 'text-rose-700'}`}>Final Result</p>
+              <p className={`mt-2 flex items-center justify-center gap-2 font-display text-[24px] font-extrabold ${isQualified ? 'text-emerald-700' : 'text-rose-700'}`}>
+                {isQualified ? <AwardIcon className="h-7 w-7" aria-hidden="true" /> : <XCircleIcon className="h-7 w-7" aria-hidden="true" />}
                 {isQualified ? 'QUALIFIED' : 'UNQUALIFIED'}
-              </div>
-              <div className="final-result-sub">
+              </p>
+              <p className="mt-1.5 text-[12px] text-slate-600">
                 {isQualified
                   ? `You met the required ${qualifyOn} of ${requiredSpeed} WPM and ${requiredAcc}% accuracy.`
                   : 'You did not meet the required speed and accuracy criteria.'}
-              </div>
-            </div>
-          </div>
-        </div>
+              </p>
+            </section>
 
-        {/* ── 6-Metric Stats Cards Row ───────────────────── */}
-        <div className="stats-cards-row">
-          {showGrossSpeed && (
-            <div className="stat-metric-card metric-gross">
-              <div className="stat-metric-label">Gross Speed</div>
-              <div className="stat-metric-body">
-                <span className="stat-metric-icon">🕹</span>
-                <span className="stat-metric-value">{grossSpeedCalculated}</span>
-              </div>
-              <div className="stat-metric-unit">{speedUnit.toUpperCase()}</div>
-            </div>
-          )}
-          {showNetSpeed && (
-            <div className="stat-metric-card metric-net">
-              <div className="stat-metric-label">Net Speed</div>
-              <div className="stat-metric-body">
-                <span className="stat-metric-icon">📊</span>
-                <span className="stat-metric-value">{netSpeedCalculated}</span>
-              </div>
-              <div className="stat-metric-unit">{speedUnit.toUpperCase()}</div>
-            </div>
-          )}
-          {showAccuracy && (
-            <div className="stat-metric-card metric-acc">
-              <div className="stat-metric-label">Accuracy</div>
-              <div className="stat-metric-body">
-                <span className="stat-metric-icon">🎯</span>
-                <span className="stat-metric-value">{accuracyCalculated}%</span>
-              </div>
-              <div className="stat-metric-unit">&nbsp;</div>
-            </div>
-          )}
-          {showTotalWords && (
-            <div className="stat-metric-card metric-total">
-              <div className="stat-metric-label">Total Typed Words</div>
-              <div className="stat-metric-body">
-                <span className="stat-metric-icon">📄</span>
-                <span className="stat-metric-value">{actualTypedWordCount}</span>
-              </div>
-              <div className="stat-metric-unit">&nbsp;</div>
-            </div>
-          )}
-          {showCorrectWords && (
-            <div className="stat-metric-card metric-correct">
-              <div className="stat-metric-label">Correct Words</div>
-              <div className="stat-metric-body">
-                <span className="stat-metric-icon">✅</span>
-                <span className="stat-metric-value">{actualCorrectWordCount}</span>
-              </div>
-              <div className="stat-metric-unit">&nbsp;</div>
-            </div>
-          )}
-          {showFullMistakes && (
-            <div className="stat-metric-card metric-wrong">
-              <div className="stat-metric-label">Wrong Words</div>
-              <div className="stat-metric-body">
-                <span className="stat-metric-icon">❌</span>
-                <span className="stat-metric-value">{effectiveFullErrors}</span>
-              </div>
-              <div className="stat-metric-unit">&nbsp;</div>
-            </div>
-          )}
-        </div>
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+              <h3 className="mb-3 font-display text-[14px] font-semibold text-navy-800">Qualifying Criteria</h3>
+              <ul className="space-y-2 text-[12.5px]">
+                <li className="flex justify-between gap-3"><span className="text-slate-500">Qualifying Speed</span><strong className="text-navy-800">{requiredSpeed} {qualifyOn}</strong></li>
+                <li className="flex justify-between gap-3"><span className="text-slate-500">Your {qualifyOn}</span><strong className="text-navy-800">{speedToCheck} {speedUnit}</strong></li>
+                <li className="flex justify-between gap-3"><span className="text-slate-500">Required Accuracy</span><strong className="text-navy-800">{requiredAcc}%</strong></li>
+                <li className="flex justify-between gap-3"><span className="text-slate-500">Your Accuracy</span><strong className="text-navy-800">{accuracyCalculated}%</strong></li>
+                {ignorableEnabled &&
+                  <li className="rounded-md bg-slate-50 px-2.5 py-2 text-[11.5px] text-slate-600">
+                    Ignorable Allowance: <strong>{ignorablePercent}%</strong> ({ignorableAllowance} of {totalMistakes} mistakes) · Excess: <strong>{excessMistakes}</strong> × {deductionPerMistake} = <strong>{penaltyWords}</strong> words deducted
+                  </li>
+                }
+              </ul>
+            </section>
 
-        {/* ── Detailed Stats Columns ─────────────────────── */}
-        <div className="sheet-stats-container">
-          <div className="stats-col-left">
-            {showTotalStrokes && (
-              <div className="stat-line">
-                <span className="stat-label">Total Strokes Typed =</span>
-                <span className="stat-val">{totalStrokes}</span>
-                <span className="stat-formula">[character keystrokes, spaces/punct excluded]</span>
-              </div>
-            )}
-            {showFullMistakes && (
-              <div className="stat-line">
-                <span className="stat-label">Full Mistakes =</span>
-                <span className="stat-val">{effectiveFullErrors}</span>
-              </div>
-            )}
-            {showHalfMistakes && (
-              <div className="stat-line">
-                <span className="stat-label">Half Mistakes =</span>
-                <span className="stat-val">{effectiveHalfErrors}</span>
-                <span className="stat-formula">[counted as {halfMistakeMultiplier} each{halfMistakeEnabled ? '' : ' — i.e. as full mistakes'}]</span>
-              </div>
-            )}
-            {showTotalErrors && (
-              <div className="stat-line">
-                <span className="stat-label">Total Mistakes =</span>
-                <span className="stat-val">{totalMistakes}</span>
-                <span className="stat-formula">
-                  {`[${effectiveFullErrors} + (${effectiveHalfErrors} × ${halfMistakeMultiplier}) = ${totalMistakes}]`}
-                  {ignorableEnabled ? `  ·  Allowance ${ignorablePercent}% of ${totalWords} = ${ignorableAllowance} ignored, ${excessMistakes} excess` : ''}
-                </span>
-              </div>
-            )}
-            {showPenaltyWords && (
-              <div className="stat-line">
-                <span className="stat-label">Penalty {unitLabel} =</span>
-                <span className="stat-val">{penaltyWords}</span>
-                <span className="stat-formula">
-                  {ignorableEnabled
-                    ? `[${excessMistakes} excess mistakes × ${deductionPerMistake} words]`
-                    : penaltyDiv5
-                    ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes ÷ 5]`
-                    : `[${totalMistakes} mistakes × ${penaltyFactor} ${unitLabel.toLowerCase()}]`}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="stats-col-right">
-            {showTotalWords && (
-              <div className="stat-line">
-                <span className="stat-label">Total {unitLabel} Typed =</span>
-                <span className="stat-val">{totalWords}</span>
-                <span className="stat-formula">
-                  {isStrokeMode
-                    ? `[${totalStrokes} keystrokes ÷ 5]`
-                    : `[${actualTypedWordCount} actual words typed]`}
-                </span>
-              </div>
-            )}
-            {showGrossSpeed && (
-              <div className="stat-line">
-                <span className="stat-label">Gross Speed ({grossAbbr}) =</span>
-                <span className="stat-val highlight-yellow">{grossSpeedCalculated} {speedUnit}</span>
-                <span className="stat-formula">[{totalWords} {unitLabel.toLowerCase()} / {timeMinutes.toFixed(2)} min]</span>
-              </div>
-            )}
-            {showAccuracy && (
-              <div className="stat-line">
-                <span className="stat-label">Accuracy =</span>
-                <span className="stat-val">{accuracyCalculated}%</span>
-              </div>
-            )}
-            {showNetSpeed && (
-              <div className="stat-line">
-                <span className="stat-label">Net {unitLabel} Typed =</span>
-                <span className="stat-val">{netWordsCalculated}</span>
-                <span className="stat-formula">[{totalWords} - {penaltyWords} penalty {unitLabel.toLowerCase()}]</span>
-              </div>
-            )}
-            {showNetSpeed && (
-              <div className="stat-line">
-                <span className="stat-label">Net Speed ({netAbbr}) =</span>
-                <span className="stat-val highlight-yellow">{netSpeedCalculated} {speedUnit}</span>
-                <span className="stat-formula">[{netWordsCalculated} / {timeMinutes.toFixed(2)} min]</span>
-              </div>
-            )}
-            <div className="stat-line result-status">
-              <span className="stat-label">Result =</span>
-              <span className={`stat-val ${isQualified ? 'badge-qualified' : 'badge-not-qualified'}`}>
-                {isQualified ? '✅ Qualified' : '❌ Not-Qualified'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Footer Notes ───────────────────────────────── */}
-        <div className="sheet-footer-notes">
-          <p>* Qualifying Speed: <strong>{requiredSpeed} {qualifyOn}</strong> | Your {qualifyOn}: <strong>{speedToCheck} {speedUnit}</strong> | Required Accuracy: <strong>{requiredAcc}%</strong> | Your Accuracy: <strong>{accuracyCalculated}%</strong>{ignorableEnabled ? <> | Ignorable Allowance: <strong>{ignorablePercent}%</strong> ({ignorableAllowance} of {totalMistakes} mistakes) | Excess: <strong>{excessMistakes}</strong> × {deductionPerMistake} = <strong>{penaltyWords}</strong> words deducted</> : null} → You are <strong>{isQualified ? 'Qualified' : 'Not Qualified'}</strong>.</p>
-          <p>* Penalty Type: <strong>{penaltyType}</strong> | Penalty Factor: <strong>{penaltyFactor}</strong> | Half Mistakes: <strong>{halfMistakeEnabled ? 'Count as 0.5' : 'Count as Full (1)'}</strong></p>
-          <p>* Punctuation, Capital/Small letter and Extra-Space mistakes count as {halfMistakeEnabled ? 'Half Mistakes (0.5 each)' : 'Full Mistakes (1 each)'}; spelling mistakes count as Full Mistakes.</p>
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+              <h3 className="mb-3 flex items-center gap-2 font-display text-[14px] font-semibold text-navy-800">
+                <AlertTriangleIcon className="h-4 w-4 text-amber-500" aria-hidden="true" /> Mistake Penalty Rules
+              </h3>
+              <ul className="space-y-2 text-[12.5px]">
+                <li className="flex justify-between gap-3"><span className="text-slate-500">Penalty Type</span><strong className="text-navy-800">{penaltyType}</strong></li>
+                <li className="flex justify-between gap-3"><span className="text-slate-500">Penalty Factor</span><strong className="text-navy-800">{penaltyFactor}</strong></li>
+                <li className="flex justify-between gap-3"><span className="text-slate-500">Half Mistakes</span><strong className="text-navy-800">{halfMistakeEnabled ? 'Count as 0.5' : 'Count as Full (1)'}</strong></li>
+              </ul>
+              <p className="mt-3 text-[11.5px] leading-relaxed text-slate-500">
+                Punctuation, Capital/Small letter and Extra-Space mistakes count as {halfMistakeEnabled ? 'Half Mistakes (0.5 each)' : 'Full Mistakes (1 each)'}; spelling mistakes count as Full Mistakes.
+              </p>
+            </section>
+          </aside>
         </div>
 
         {/* ── Repeated Lines Section ───────────────────── */}
         {repeatedRanges.length > 0 && (
-          <div className="repeated-lines-section">
+          <div className="repeated-lines-section mt-4 rounded-xl">
             <h3 className="repeated-lines-title">
               ⚠ Repeated Lines Detected ({repeatedWordCount} word{repeatedWordCount !== 1 ? 's' : ''} counted as extra words / full errors)
             </h3>
@@ -1755,8 +1785,8 @@ const ResultScreen = () => {
           </div>
         )}
 
-        {/* ── Passage Review Section ─────────────────────── */}
-        <div className="passage-review-section" id="passage-review-section">
+        {/* ── Passage Review Section (unchanged components) ── */}
+        <div className="passage-review-section mt-4 rounded-xl border border-slate-200 bg-white shadow-card" id="passage-review-section">
 
           {/* Mistake Legend bar */}
           <div className="mistake-legend-bar no-print">
