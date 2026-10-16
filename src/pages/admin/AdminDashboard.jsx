@@ -74,6 +74,8 @@ const AdminDashboard = () => {
   const s = summary || {};
   const d = dash || { results: {}, tests: {}, activity: [], recent_tests: [], recent_exams: [], top_students: [] };
   const user = getSessionUser();
+  // Clearing results is Admin-only on the server.
+  const canClear = user.role === 'Admin' || user.role === 'SuperAdmin';
   const quickLinks = adminNav.filter((item) => item.to !== '/admin' && (!item.visible || item.visible(user)));
   const activity = d.activity.map((a) => ({ label: fmtDay(a.date), students: a.new_students, tests: a.tests, active: a.active_students }));
   const actions = [
@@ -102,13 +104,13 @@ const AdminDashboard = () => {
                 <option value="yearly">Yearly (This Year)</option>
               </select>
             </label>
-            <button
+            {canClear && <button
               type="button"
               onClick={handleClearOldResults}
               title="Delete all result records older than the last 10 days"
               className="inline-flex items-center gap-1.5 rounded-md bg-danger px-3.5 py-2 text-[12.5px] font-semibold text-white transition-colors duration-150 hover:bg-[#bb2d3b]">
               <Trash2Icon className="h-4 w-4" aria-hidden="true" /> Clear Results
-            </button>
+            </button>}
           </div>
         } />
 
