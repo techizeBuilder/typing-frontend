@@ -23,7 +23,8 @@ export function LineChart({ points, series, height = 180, unit = '' }) {
           {points.map((p, i) => <circle key={i} cx={x(i)} cy={y(Number(p[s.key]) || 0)} r="2.5" fill={s.color}><title>{`${p.label} · ${s.label}: ${p[s.key]}`}</title></circle>)}
         </g>
       ))}
-      {points.map((p, i) => (i % step === 0 || i === points.length - 1) && (
+      {/* Every `step`-th label plus the last one, skipping a label that would crowd the last. */}
+      {points.map((p, i) => ((i % step === 0 && points.length - 1 - i >= step / 2) || i === points.length - 1) && (
         <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="9" fill="#94A3B8">{p.label}</text>
       ))}
     </svg>

@@ -558,6 +558,7 @@ export const flashBannerService = {
 // Counts for the admin frame (sidebar summary + notification bell).
 export const adminSummaryService = {
   get: async () => (await api.get('/admin/summary')).data,
+  dashboard: async (period) => (await api.get('/admin/summary/dashboard', { params: { period } })).data,
 };
 
 export const settingService = {
