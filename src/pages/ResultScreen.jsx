@@ -1598,7 +1598,21 @@ const ResultScreen = () => {
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-slate-500">Result ID</dt>
-                    <dd className="text-right font-semibold text-navy-800">RES-{String(Math.floor(Math.random() * 90000000 + 10000000))}</dd>
+                    <dd className="flex items-center justify-end gap-1.5 font-semibold text-navy-800">
+                      <span>RES-{String(Math.floor(Math.random() * 90000000 + 10000000))}</span>
+                      <button
+                        type="button"
+                        title="Copy"
+                        aria-label="Copy Result ID"
+                        className="text-primary hover:text-primary-700"
+                        onClick={(e) => navigator.clipboard?.writeText(e.currentTarget.previousSibling.textContent).catch(() => {})}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="9" y="9" width="13" height="13" rx="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                      </button>
+                    </dd>
                   </div>
                 </dl>
               </section>
