@@ -131,6 +131,7 @@ export default function LiveTestSlots() {
         <ExamLogo exam={exam} size="h-16 w-16" className="bg-white/10 text-white" />
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-[22px] font-bold leading-tight text-white sm:text-[26px]">{exam?.name}</h2>
+          {exam?.display_title && <p className="mt-1 text-[13px] text-white/75">{exam.display_title}</p>}
           <p className="mt-1 text-[12.5px] text-white/75">
             {modeLabel(mode)} · Live Test · {exam?.test_time_minutes} Minutes · Take tests daily &amp; improve your speed &amp; accuracy
           </p>

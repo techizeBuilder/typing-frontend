@@ -23,6 +23,9 @@ export const STENO_MODES = {
 export const PRELOAD = 'Pre-load Test';
 export const LIVE = 'Live Test';
 
+// Exams/tests the admin marked Inactive are hidden from students (results are kept).
+export const isVisibleToStudents = (item) => item?.is_active !== false;
+
 export const isStenoMode = (mode) => mode === 'Steno English' || mode === 'Steno Hindi';
 
 export const modeLabel = (mode) =>
@@ -140,7 +143,7 @@ const blobToBase64 = (blob) =>
 // Fetch an exam's pre-load chapters and store them (plus steno audio) for
 // offline use. Returns false when the exam has no chapters for the mode.
 export const downloadExamForOffline = async (exam, mode) => {
-  const chapters = await chapterService.getChapters(mode, PRELOAD, exam.id);
+  const chapters = ((await chapterService.getChapters(mode, PRELOAD, exam.id)) || []).filter(isVisibleToStudents);
   if (!chapters || chapters.length === 0) return false;
   await saveOfflineEntry(exam, mode, PRELOAD, chapters);
   if (isStenoMode(mode)) cacheStenoAudio(chapters).catch(() => {});

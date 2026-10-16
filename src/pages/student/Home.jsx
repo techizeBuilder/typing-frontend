@@ -133,9 +133,15 @@ export default function Home() {
       {flashBanners.length > 0 &&
         <div className="mb-4 overflow-hidden rounded-lg bg-danger py-2 text-[13.5px] font-semibold text-white">
           <marquee scrollamount="8">
-            {flashBanners.map((b) => (
-              <span key={b.id} className="mr-12">{b.content}</span>
-            ))}
+            {flashBanners.map((b) => {
+              // Optional colour chip, title and link (set on the admin Flash Banner page).
+              const body = <>{b.title && <strong className="mr-1.5">{b.title}:</strong>}{b.content}</>;
+              const chip = { className: `mr-12 rounded px-2 py-0.5${b.link_url ? ' underline decoration-white/60 underline-offset-2' : ''}`, style: b.color ? { backgroundColor: b.color } : undefined };
+              if (!b.link_url) return <span key={b.id} {...chip}>{body}</span>;
+              return /^https?:\/\//i.test(b.link_url)
+                ? <a key={b.id} href={b.link_url} target="_blank" rel="noopener noreferrer" {...chip}>{body}</a>
+                : <Link key={b.id} to={b.link_url} {...chip}>{body}</Link>;
+            })}
           </marquee>
         </div>
       }

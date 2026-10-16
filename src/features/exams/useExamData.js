@@ -16,6 +16,7 @@ import {
   saveOfflineEntry,
   cacheStenoAudio,
   downloadExamForOffline,
+  isVisibleToStudents,
 } from './examData';
 
 // Online/offline flag that follows browser connectivity events. Coming back
@@ -47,18 +48,18 @@ export function useExamList() {
       try {
         if (!navigator.onLine) {
           const cached = await offlineExamService.getExams();
-          if (!cancelled && cached && cached.length > 0) setExams(cached);
+          if (!cancelled && cached && cached.length > 0) setExams(cached.filter(isVisibleToStudents));
           return;
         }
         try {
           const data = (await examService.getExams()) || [];
           if (cancelled) return;
-          setExams(data);
+          setExams(data.filter(isVisibleToStudents));
           if (data.length > 0) offlineExamService.saveExams(data).catch(() => {});
         } catch {
           // Online fetch failed — fall back to locally cached exam list
           const cached = await offlineExamService.getExams().catch(() => null);
-          if (!cancelled && cached && cached.length > 0) setExams(cached);
+          if (!cancelled && cached && cached.length > 0) setExams(cached.filter(isVisibleToStudents));
         }
       } catch (error) {
         console.error('Error fetching exams:', error);
@@ -83,7 +84,7 @@ export function useChapterSummary(mode, testType) {
     let cancelled = false;
     if (!mode || !navigator.onLine) return undefined;
     chapterService.getChapters(mode, testType, undefined, true)
-      .then((data) => { if (!cancelled) setLoaded({ key, chapters: Array.isArray(data) ? data : [] }); })
+      .then((data) => { if (!cancelled) setLoaded({ key, chapters: Array.isArray(data) ? data.filter(isVisibleToStudents) : [] }); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [key, mode, testType]);
@@ -190,7 +191,7 @@ async function loadSession(exam, mode, testType, withResults) {
   }
 
   return {
-    chapters: Array.isArray(data) ? data : [],
+    chapters: Array.isArray(data) ? data.filter(isVisibleToStudents) : [],
     userProfile,
     attemptsByChapter,
     resultsByChapter,

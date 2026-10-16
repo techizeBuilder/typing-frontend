@@ -11,6 +11,21 @@ import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 const countWords = (text) =>
   (text || '').trim().split(/\s+/).filter(Boolean).length;
 
+const blankChapter = () => ({
+  chapter_no: '',
+  name: '',
+  description: '',
+  test_date: new Date().toISOString().split('T')[0],
+  font_group: 'English Typing',
+  test_type: 'Pre-load Test',
+  exam_ids: [],
+  content_text: '',
+  word_count: '', // auto-calculated from content_text; admin may override
+  steno_speed: 100, // default Steno dictation speed (WPM); only sent for Steno chapters
+  difficulty: '',
+  is_active: true,
+});
+
 const AdminChapters = () => {
   const { isActive: isFontGroupActive } = useFontGroupSettings();
   const [chapters, setChapters] = useState([]);
@@ -25,22 +40,13 @@ const AdminChapters = () => {
   const [chapPage, setChapPage] = useState(1);
   const [chapPageSize, setChapPageSize] = useState(20);
 
-  useEffect(() => { setChapPage(1); }, [searchTerm, testTypeFilter, fontGroupFilter, filterDate]);
+  const [difficultyFilter, setDifficultyFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  useEffect(() => { setChapPage(1); }, [searchTerm, testTypeFilter, fontGroupFilter, filterDate, difficultyFilter, statusFilter]);
   const [currentChapter, setCurrentChapter] = useState(null);
   const [audioFile, setAudioFile] = useState(null);   // raw File object for steno
   const [uploading, setUploading] = useState(false);
-  const [formData, setFormData] = useState({
-    chapter_no: '',
-    name: '',
-    test_date: new Date().toISOString().split('T')[0],
-    font_group: 'English Typing',
-    test_type: 'Pre-load Test',
-    exam_ids: [],
-    content_text: '',
-    word_count: '', // auto-calculated from content_text; admin may override
-    steno_speed: 100, // default Steno dictation speed (WPM); only sent for Steno chapters
-    difficulty: '',
-  });
+  const [formData, setFormData] = useState(blankChapter);
   const [examDropdownOpen, setExamDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
 
@@ -108,6 +114,22 @@ const AdminChapters = () => {
       test_date: new Date(chapter.test_date).toISOString().split('T')[0]
     });
     setShowForm(true);
+  };
+
+  const handleDuplicate = (chapter) => {
+    handleEdit(chapter);
+    setCurrentChapter(null);
+    setFormData(prev => ({ ...prev, id: undefined, chapter_no: `${chapter.chapter_no}-copy`, name: chapter.name ? `${chapter.name} (copy)` : '' }));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const toggleActive = async (chapter) => {
+    try {
+      await chapterService.updateChapter(chapter.id, { is_active: chapter.is_active === false });
+      fetchChapters();
+    } catch (err) {
+      alert('Could not change the test status: ' + (err.response?.data?.message || err.message));
+    }
   };
 
   const toggleExamId = (id) => {
@@ -185,14 +207,7 @@ const AdminChapters = () => {
       setShowForm(false);
       setCurrentChapter(null);
       setAudioFile(null);
-      setFormData({
-        chapter_no: '', name: '',
-        test_date: new Date().toISOString().split('T')[0],
-        font_group: 'English Typing', test_type: 'Pre-load Test', exam_ids: [], content_text: '',
-        word_count: '',
-        steno_speed: 100,
-        difficulty: '',
-      });
+      setFormData(blankChapter());
       fetchChapters();
     } catch (error) {
       alert('Error saving chapter: ' + (error.response?.data?.message || error.message));
@@ -269,6 +284,18 @@ const AdminChapters = () => {
             <option value="Steno English">Steno English</option>
             <option value="Steno Hindi">Steno Hindi</option>
           </select>
+          <select value={difficultyFilter} onChange={(e) => setDifficultyFilter(e.target.value)} aria-label="Filter by difficulty" style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <option value="All">All Levels</option>
+            <option value="Easy">Easy</option>
+            <option value="Moderate">Moderate</option>
+            <option value="Hard">Hard</option>
+            <option value="">Not set</option>
+          </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status" style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <option value="All">All Status</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
           <input
             type="date"
             value={filterDate}
@@ -283,7 +310,7 @@ const AdminChapters = () => {
           )}
           <input
             type="text"
-            placeholder="Search matching NO or keyword..."
+            placeholder="Search number, title or keyword..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
@@ -297,7 +324,7 @@ const AdminChapters = () => {
               Delete Selected ({selectedIds.length})
             </button>
           )}
-          <button className="btn-primary" onClick={() => { setShowForm(!showForm); setCurrentChapter(null); setAudioFile(null); }}>
+          <button className="btn-primary" onClick={() => { setShowForm(!showForm); setCurrentChapter(null); setAudioFile(null); setFormData(blankChapter()); }}>
             {showForm ? 'Cancel' : '+ Add Chapter'}
           </button>
         </div>
@@ -310,6 +337,14 @@ const AdminChapters = () => {
               <div className="input-group">
                 <label>Chapter No</label>
                 <input type="text" value={formData.chapter_no} onChange={(e) => setFormData({...formData, chapter_no: e.target.value})} placeholder="e.g. 101, A-1, CH-01" required />
+              </div>
+              <div className="input-group">
+                <label>Test Title</label>
+                <input type="text" maxLength={150} value={formData.name || ''} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Optional, e.g. Rural Development Budget" />
+              </div>
+              <div className="input-group">
+                <label>Description (optional)</label>
+                <textarea rows={2} maxLength={500} value={formData.description || ''} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Short note shown to students with the test" />
               </div>
               <div className="input-group">
                 <label>Select Date</label>
@@ -463,6 +498,13 @@ const AdminChapters = () => {
                   <option value="Hard">Hard</option>
                 </select>
               </div>
+              <div className="input-group">
+                <label>Status</label>
+                <select value={formData.is_active === false ? 'Inactive' : 'Active'} onChange={(e) => setFormData({...formData, is_active: e.target.value === 'Active'})}>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive (hidden from students)</option>
+                </select>
+              </div>
             </div>
 
             <div className="form-section">
@@ -598,9 +640,12 @@ const AdminChapters = () => {
             const chapDate = new Date(c.test_date).toISOString().split('T')[0];
             return chapDate === filterDate;
           })
+          .filter(c => difficultyFilter === 'All' || (c.difficulty || '') === difficultyFilter)
+          .filter(c => statusFilter === 'All' || (statusFilter === 'Active') === (c.is_active !== false))
           .filter(c =>
             !searchTerm ||
             c.font_group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(c.chapter_no).includes(searchTerm)
           );
         const chapTotalPages = Math.max(1, Math.ceil(visibleChapters.length / chapPageSize));
@@ -629,17 +674,20 @@ const AdminChapters = () => {
                 </th>
                 <th>ID</th>
                 <th>No</th>
+                <th>Title</th>
                 <th>Exam</th>
                 <th>Type</th>
                 <th>Font Group</th>
                 <th>Audio</th>
+                <th>Level</th>
+                <th>Status</th>
                 <th>Date</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="9">Loading...</td></tr>
+                <tr><td colSpan="12">Loading...</td></tr>
               ) : pagedChapters.map((c) => (
                 <tr key={c.id} style={selectedIds.includes(c.id) ? { background: '#fef3c7' } : {}}>
                   <td>
@@ -651,6 +699,7 @@ const AdminChapters = () => {
                   </td>
                   <td>{c.id.substring(0, 8)}</td>
                   <td>{c.chapter_no}</td>
+                  <td style={{ maxWidth: '220px' }}>{c.name || <span style={{ color: '#94a3b8' }}>—</span>}</td>
                   <td>
                     {(() => {
                       const names = Array.isArray(c.exams) && c.exams.length > 0
@@ -675,9 +724,15 @@ const AdminChapters = () => {
                       ? <span style={{ color: '#16a34a', fontSize: '0.8rem' }}>🎙 Audio</span>
                       : <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>}
                   </td>
+                  <td>{c.difficulty || <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                  <td>
+                    <span className={`status-badge ${c.is_active === false ? 'inactive' : 'active'}`}>{c.is_active === false ? 'Inactive' : 'Active'}</span>
+                  </td>
                   <td>{new Date(c.test_date).toLocaleDateString()}</td>
                   <td>
                     <button className="btn-action btn-edit" onClick={() => handleEdit(c)}>Edit</button>
+                    <button className="btn-action btn-edit" onClick={() => handleDuplicate(c)} title="Copy this test into a new one">Duplicate</button>
+                    <button className="btn-action btn-edit" onClick={() => toggleActive(c)}>{c.is_active === false ? 'Activate' : 'Deactivate'}</button>
                     <button className="btn-action btn-delete" onClick={() => handleDelete(c.id)}>Delete</button>
                   </td>
                 </tr>

@@ -11,6 +11,8 @@ import {
   CheckCircle2Icon,
   BarChart2Icon,
   TimerIcon,
+  LandmarkIcon,
+  AlertTriangleIcon,
 } from 'lucide-react';
 import { Breadcrumbs } from '../../ui/PageHeading';
 import {
@@ -86,6 +88,8 @@ export default function ExamTests() {
     exam.result_pattern?.name && { icon: CheckCircle2Icon, label: `Result Pattern : ${exam.result_pattern.name}` },
     { icon: MonitorIcon, label: `Exam Mode : ${exam.test_paper_screen || 'Screen'} · ${exam.screen_type || 'TCS'} interface` },
     exam.auto_submit && { icon: TimerIcon, label: 'Auto Submit : On' },
+    exam.conducted_by && { icon: LandmarkIcon, label: `Conducted By : ${exam.conducted_by}` },
+    exam.mistake_policy && { icon: AlertTriangleIcon, label: `Mistake Policy : ${exam.mistake_policy}` },
   ].filter(Boolean) : [];
 
   return (
@@ -106,6 +110,7 @@ export default function ExamTests() {
             <ExamLogo exam={exam} size="h-[72px] w-[72px]" className="bg-white/10 text-white" />
             <div className="min-w-0">
               <h2 className="font-display text-[24px] font-bold leading-tight text-white sm:text-[28px]">{exam?.name}</h2>
+              {exam?.display_title && <p className="mt-1 text-[13px] text-white/75">{exam.display_title}</p>}
               <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
                 <span className="rounded-full border border-white/30 px-3 py-1 text-[12px] font-medium text-white">
                   {loading ? '…' : `${chapters.length} Tests Available`}
@@ -195,6 +200,7 @@ export default function ExamTests() {
                         </td>
                         <td className="px-5 py-3 font-medium text-navy-800">
                           {chapter.name || `Practice Test ${chapter.chapter_no}`}
+                          {chapter.description && <p className="mt-0.5 text-[11.5px] font-normal text-slate-500">{chapter.description}</p>}
                         </td>
                         <td className="px-5 py-3 text-center text-slate-600">
                           <span className="inline-flex items-center gap-1.5">

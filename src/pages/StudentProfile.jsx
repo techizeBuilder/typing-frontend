@@ -278,7 +278,7 @@ const StudentProfile = () => {
   const fetchPreloadExams = async () => {
     try {
       const chapters = await chapterService.getChapters(undefined, 'Pre-load Test', undefined);
-      const list = Array.isArray(chapters) ? chapters : [];
+      const list = Array.isArray(chapters) ? chapters.filter(c => c?.is_active !== false) : [];
       setTypingExams(groupChaptersByExam(list.filter(c => !isStenoFont(c.font_group))));
       setStenoExams(groupChaptersByExam(list.filter(c => isStenoFont(c.font_group))));
     } catch (err) {

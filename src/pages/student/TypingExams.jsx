@@ -89,6 +89,7 @@ export default function TypingExams() {
                     <ExamLogo exam={exam} className={tone.logo} />
                     <span className="min-w-0 flex-1">
                       <span className="block font-display text-[13.5px] font-semibold leading-snug text-navy-800">{exam.name}</span>
+                      {exam.display_title && <span className="block text-[11px] leading-snug text-slate-500">{exam.display_title}</span>}
                       {exam.test_time_minutes &&
                         <span className="mt-0.5 flex items-center gap-1 text-[11.5px] leading-snug text-slate-500">
                           <ClockIcon className="h-3 w-3" aria-hidden="true" /> {exam.test_time_minutes} Minutes

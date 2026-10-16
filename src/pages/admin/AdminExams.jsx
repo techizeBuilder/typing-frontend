@@ -128,7 +128,11 @@ const AdminExams = () => {
     test_re_type: false,
     max_words_strokes: 0,
     no_of_words_strokes: 0,
-    region: ''
+    region: '',
+    display_title: '',
+    conducted_by: '',
+    mistake_policy: '',
+    is_active: true
   });
 
   const [loading, setLoading] = useState(true);
@@ -215,12 +219,28 @@ const AdminExams = () => {
     test_re_type: false,
     max_words_strokes: 0,
     no_of_words_strokes: 0,
-    region: ''
+    region: '',
+    display_title: '',
+    conducted_by: '',
+    mistake_policy: '',
+    is_active: true
   };
 
   // Inactive font groups (Font Groups page) can't be newly assigned; ones the exam
   // already uses stay visible so they can be removed.
   const offeredFontGroups = FONT_GROUPS.filter(fg => isFontGroupActive(fg) || (examData.font_groups || []).includes(fg));
+
+  // Hide/show an exam for students without opening the form.
+  const toggleExamActive = async (exam) => {
+    try {
+      const data = new FormData();
+      data.append('is_active', exam.is_active === false ? 'true' : 'false');
+      await examService.updateExam(exam.id, data);
+      fetchData();
+    } catch (err) {
+      alert('Could not change the exam status: ' + (err.response?.data?.message || err.message));
+    }
+  };
 
   const handleExamSubmit = async (e) => {
     e.preventDefault();
@@ -581,6 +601,18 @@ const AdminExams = () => {
                         <input type="text" value={examData.name} onChange={(e) => setExamData({...examData, name: e.target.value})} required placeholder="Enter Name" />
                     </div>
                     <div className="input-group">
+                        <label>DISPLAY TITLE</label>
+                        <input type="text" maxLength={150} value={examData.display_title || ''} onChange={(e) => setExamData({...examData, display_title: e.target.value})} placeholder="Optional, e.g. SSC CGL Tier-II DEST 2026" />
+                        <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '3px', display: 'block' }}>Shown to students under the exam name.</small>
+                    </div>
+                    <div className="input-group">
+                        <label>STATUS</label>
+                        <select value={examData.is_active === false ? 'Inactive' : 'Active'} onChange={(e) => setExamData({...examData, is_active: e.target.value === 'Active'})}>
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive (hidden from students)</option>
+                        </select>
+                    </div>
+                    <div className="input-group">
                         <label>TEST TIME</label>
                         <select value={examData.test_time_minutes} onChange={(e) => setExamData({...examData, test_time_minutes: parseInt(e.target.value)})}>
                             <option value={5}>5 mins</option>
@@ -801,6 +833,15 @@ const AdminExams = () => {
                         </small>
                     </div>
                     <div className="input-group">
+                        <label>CONDUCTED BY</label>
+                        <input type="text" maxLength={150} value={examData.conducted_by || ''} onChange={(e) => setExamData({...examData, conducted_by: e.target.value})} placeholder="Optional, e.g. Staff Selection Commission" />
+                    </div>
+                    <div className="input-group">
+                        <label>MISTAKE POLICY (INFO FOR STUDENTS)</label>
+                        <input type="text" maxLength={200} value={examData.mistake_policy || ''} onChange={(e) => setExamData({...examData, mistake_policy: e.target.value})} placeholder="Optional, e.g. 10 words deducted per full mistake" />
+                        <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '3px', display: 'block' }}>Information only — scoring always follows the Result Pattern.</small>
+                    </div>
+                    <div className="input-group">
                         <label>OFFICIAL RULES PDF</label>
                         {currentExam?.rules_pdf_url && !rulesPdf && !removeRulesPdf && (
                           <span style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.78rem', marginBottom: '4px' }}>
@@ -886,23 +927,30 @@ const AdminExams = () => {
                        <th>Exam Name</th>
                        <th>Screen</th>
                        <th>Pattern</th>
+                       <th>Status</th>
                        <th>Actions</th>
                    </tr>
                </thead>
                <tbody>
-                   {loading ? <tr><td colSpan="5">Loading...</td></tr> : (() => {
-                     const filteredExamList = exams.filter(e => e.name?.toLowerCase().includes(examSearch.toLowerCase()));
+                   {loading ? <tr><td colSpan="6">Loading...</td></tr> : (() => {
+                     const filteredExamList = exams.filter(e => [e.name, e.display_title, e.conducted_by].some(v => v?.toLowerCase().includes(examSearch.toLowerCase())));
                      const examTotalPages = Math.max(1, Math.ceil(filteredExamList.length / examPageSize));
                      const pagedExams = filteredExamList.slice((examPage - 1) * examPageSize, examPage * examPageSize);
-                     if (filteredExamList.length === 0) return <tr><td colSpan="5">No exams found.</td></tr>;
+                     if (filteredExamList.length === 0) return <tr><td colSpan="6">No exams found.</td></tr>;
                      return pagedExams.map(e => (
                        <tr key={e.id}>
                            <td>
                                {e.image_url ? <img src={resolveAssetUrl(e.image_url)} alt="" style={{width: '30px', height: '30px', objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: '4px', background: '#fff'}} onError={(ev) => { ev.target.style.display = 'none'; ev.target.parentNode.appendChild(document.createTextNode('-')); }} /> : '-'}
                            </td>
-                           <td><strong>{e.name}</strong></td>
+                           <td>
+                               <strong>{e.name}</strong>
+                               {e.display_title && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{e.display_title}</div>}
+                           </td>
                            <td>{e.screen_type}</td>
                            <td>{e.result_pattern?.name || 'Missing'}</td>
+                           <td>
+                               <span className={`status-badge ${e.is_active === false ? 'inactive' : 'active'}`}>{e.is_active === false ? 'Inactive' : 'Active'}</span>
+                           </td>
                            <td>
                                <button className="btn-action btn-edit" onClick={() => {
                                    setCurrentExam(e);
@@ -916,6 +964,7 @@ const AdminExams = () => {
                                    setRemoveRulesPdf(false);
                                    setShowExamForm(true);
                                }}>Edit</button>
+                               <button className="btn-action btn-edit" onClick={() => toggleExamActive(e)} style={{ marginLeft: '10px' }}>{e.is_active === false ? 'Activate' : 'Deactivate'}</button>
                                <button className="btn-action btn-delete" onClick={() => handleExamDelete(e.id)} style={{ marginLeft: '10px' }}>Delete</button>
                            </td>
                        </tr>
@@ -924,7 +973,7 @@ const AdminExams = () => {
                </tbody>
            </table>
            {(() => {
-             const filteredExamList = exams.filter(e => e.name?.toLowerCase().includes(examSearch.toLowerCase()));
+             const filteredExamList = exams.filter(e => [e.name, e.display_title, e.conducted_by].some(v => v?.toLowerCase().includes(examSearch.toLowerCase())));
              const examTotalPages = Math.max(1, Math.ceil(filteredExamList.length / examPageSize));
              return <Pagination page={examPage} totalPages={examTotalPages} totalItems={filteredExamList.length} pageSize={examPageSize} onPageChange={setExamPage} onPageSizeChange={p => { setExamPageSize(p); setExamPage(1); }} />;
            })()}

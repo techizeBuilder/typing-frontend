@@ -142,6 +142,12 @@ export default function DictationList() {
                           <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                           Topic — {chapter.name || `Dictation ${chapter.chapter_no || index + 1}`}
                         </li>
+                        {chapter.description &&
+                          <li className="flex gap-1.5">
+                            <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                            {chapter.description}
+                          </li>
+                        }
                         <li className="flex gap-1.5">
                           <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#F59E0B]" />
                           {wordCountFor(chapter)} Words

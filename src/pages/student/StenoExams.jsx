@@ -114,6 +114,7 @@ export default function StenoExams({ language }) {
                     </span>
                   </div>
                   <h3 className="mt-4 font-display text-[14.5px] font-bold leading-snug text-navy-800">{exam.name}</h3>
+                  {exam.display_title && <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">{exam.display_title}</p>}
                   <p className="mt-1 text-[12px] text-slate-500">
                     {isOffline ? 'Saved dictations' : `${count} Dictation${count === 1 ? '' : 's'}`}
                     {exam.test_time_minutes ? ` · ${exam.test_time_minutes} min transcription` : ''}

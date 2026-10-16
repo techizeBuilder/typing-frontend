@@ -2,7 +2,63 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { userService, resultService } from '../../services/api';
 import Pagination from '../../components/Pagination';
+import { API_BASE_URL } from '../../config';
+import { INDIAN_STATES } from '../../features/students/indianStates';
+import * as XLSX from 'xlsx';
 import './Admin.css';
+
+// Optional student details added in 8.18 (kept in both the Add and Edit forms).
+const EXTRA_FIELDS = { email: '', city: '', state: '', pin_code: '', address: '', guardian_phone: '', remarks: '' };
+const photoUrl = (p) => (p ? (p.startsWith('http') ? p : `${API_BASE_URL}${p}`) : null);
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+
+function ContactFields({ data, onChange }) {
+  const field = (key, label, props = {}) => (
+    <div className="input-group">
+      <label>{label}</label>
+      <input type="text" value={data[key] || ''} onChange={(e) => onChange(key, e.target.value)} {...props} />
+    </div>
+  );
+  return (
+    <div className="form-section">
+      <h4>Contact & Address</h4>
+      <div className="admin-inline-group">
+        {field('email', 'Email ID', { type: 'email', placeholder: 'name@example.com' })}
+        {field('guardian_phone', 'Parent / Guardian Mobile', { inputMode: 'numeric', placeholder: '10 digit mobile number' })}
+      </div>
+      <div className="admin-inline-group">
+        {field('city', 'City')}
+        {field('state', 'State', { list: 'admin-state-list', placeholder: 'Type or pick a state' })}
+        {field('pin_code', 'Pin Code', { inputMode: 'numeric', maxLength: 6, placeholder: '6 digits' })}
+      </div>
+      <datalist id="admin-state-list">{INDIAN_STATES.map((st) => <option key={st} value={st} />)}</datalist>
+      <div className="input-group">
+        <label>Address</label>
+        <textarea rows={2} value={data.address || ''} onChange={(e) => onChange('address', e.target.value)} />
+      </div>
+      <div className="input-group">
+        <label>Remarks (admin only)</label>
+        <textarea rows={2} placeholder="Notes about this student — not shown to the student" value={data.remarks || ''} onChange={(e) => onChange('remarks', e.target.value)} />
+      </div>
+    </div>
+  );
+}
+
+function PhotoField({ current, file, onFile }) {
+  const preview = file ? URL.createObjectURL(file) : photoUrl(current);
+  return (
+    <div className="input-group">
+      <label>Student Photo</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {preview
+          ? <img src={preview} alt="" style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', border: '1px solid #e2e8f0' }} />
+          : <span style={{ width: 56, height: 56, borderRadius: '50%', background: '#f1f5f9', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.75rem' }}>No photo</span>}
+        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => onFile(e.target.files?.[0] || null)} />
+      </div>
+      <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>JPG, PNG, WEBP or GIF, up to 2 MB.</p>
+    </div>
+  );
+}
 
 const AdminStudents = () => {
   const [students, setStudents] = useState([]);
@@ -21,6 +77,10 @@ const AdminStudents = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [currentStudent, setCurrentStudent] = useState(null);
   const [formData, setFormData] = useState({
+    name: '',
+    fathers_name: '',
+    phone: '',
+    ...EXTRA_FIELDS,
     status: 'Active',
     validity_start: '',
     validity_end: '',
@@ -40,10 +100,13 @@ const AdminStudents = () => {
   const ALL_CATEGORIES = ['Typing English', 'Typing Hindi', 'Steno English', 'Steno Hindi'];
 
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [addPhoto, setAddPhoto] = useState(null);
+  const [editPhoto, setEditPhoto] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  useEffect(() => { setPage(1); }, [searchTerm, categoryFilter]);
+  useEffect(() => { setPage(1); }, [searchTerm, categoryFilter, statusFilter]);
 
   // Bulk Edit State
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
@@ -140,7 +203,8 @@ const AdminStudents = () => {
     status: 'Active',
     roll_no: '',
     fees_amount: '',
-    validity_end: ''
+    validity_end: '',
+    ...EXTRA_FIELDS
   });
 
   useEffect(() => {
@@ -197,7 +261,12 @@ const AdminStudents = () => {
     const existingCats = student.category
       ? student.category.split(',').map(c => c.trim()).filter(Boolean)
       : [];
+    setEditPhoto(null);
     setFormData({
+      name: student.name || '',
+      fathers_name: student.fathers_name || '',
+      phone: student.phone || '',
+      ...Object.fromEntries(Object.keys(EXTRA_FIELDS).map((k) => [k, student[k] || ''])),
       status: student.status || 'Active',
       validity_start: student.validity_start ? new Date(student.validity_start).toISOString().split('T')[0] : '',
       validity_end: student.validity_end ? new Date(student.validity_end).toISOString().split('T')[0] : '',
@@ -228,17 +297,47 @@ const AdminStudents = () => {
       if (!payload.validity_end) delete payload.validity_end;
       if (payload.fees_amount === '') delete payload.fees_amount;
       if (!payload.user_id) payload.user_id = payload.phone;
-      await userService.createUser(payload);
+      const created = await userService.createUser(payload);
+      if (addPhoto && created?.id) {
+        try { await userService.uploadUserAvatar(created.id, addPhoto); } catch (err) { alert('Student created, but the photo was not saved: ' + (err.response?.data?.message || err.message)); }
+      }
       setShowAddModal(false);
+      setAddPhoto(null);
       setAddFormData({
         name: '', fathers_name: '', phone: '', user_id: '', password_hash: '',
         category: 'Typing English', selectedCategories: ['Typing English'],
-        status: 'Active', roll_no: '', fees_amount: '', validity_end: ''
+        status: 'Active', roll_no: '', fees_amount: '', validity_end: '', ...EXTRA_FIELDS
       });
       fetchStudents();
     } catch (error) {
       alert('Error creating student: ' + (error.response?.data?.message || error.message));
     }
+  };
+
+  // Students matching the search + filters (all pages); used by the table and the export.
+  const getFilteredStudents = () => students
+    .filter(s => s.role === 'Student')
+    .filter(s => {
+      const q = searchTerm.trim().toLowerCase();
+      return !q || [s.name, s.phone, s.user_id, s.roll_no, s.email, s.city].some(v => v && String(v).toLowerCase().includes(q));
+    })
+    .filter(s => categoryFilter === 'All' || (s.category && s.category.split(',').map(c => c.trim()).includes(categoryFilter)))
+    .filter(s => statusFilter === 'All' || s.status === statusFilter);
+
+  const exportStudents = () => {
+    const rows = getFilteredStudents().map(s => ({
+      Name: s.name, "Father's Name": s.fathers_name || '', 'Login ID': s.user_id || '', 'Roll No': s.roll_no || '',
+      Phone: s.phone || '', Email: s.email || '', 'Guardian Mobile': s.guardian_phone || '', City: s.city || '', State: s.state || '',
+      'Pin Code': s.pin_code || '', Address: s.address || '', Category: s.category || '', Status: s.status || '',
+      'Validity End': s.validity_end ? new Date(s.validity_end).toLocaleDateString('en-GB') : '',
+      'Login Window': s.allowed_login_time_start && s.allowed_login_time_end ? `${s.allowed_login_time_start}-${s.allowed_login_time_end}` : 'Anytime',
+      'Fees Amount': s.fees_amount ?? '', 'Last Fees Date': s.last_fees_submitted_date ? new Date(s.last_fees_submitted_date).toLocaleDateString('en-GB') : '',
+      'Joined On': s.created_at ? new Date(s.created_at).toLocaleDateString('en-GB') : '', Remarks: s.remarks || '',
+    }));
+    if (rows.length === 0) { alert('No students match the current filters.'); return; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Students');
+    XLSX.writeFile(wb, `students_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const generatePassword = () => {
@@ -248,6 +347,10 @@ const AdminStudents = () => {
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.name.trim() || !formData.phone.trim()) {
+      alert('Student name and phone are required.');
+      return;
+    }
     try {
       const { selectedCategories, ...rest } = formData;
       const payload = { ...rest, category: selectedCategories.length > 0 ? selectedCategories.join(', ') : null };
@@ -279,7 +382,9 @@ const AdminStudents = () => {
       }
 
       await userService.updateUser(currentStudent.id, payload);
+      if (editPhoto) await userService.uploadUserAvatar(currentStudent.id, editPhoto);
       setShowEditModal(false);
+      setEditPhoto(null);
       fetchStudents();
     } catch (error) {
       alert('Error updating user: ' + (error.response?.data?.message || error.message));
@@ -352,14 +457,29 @@ const AdminStudents = () => {
             <option value="Steno English">Steno English</option>
             <option value="Steno Hindi">Steno Hindi</option>
           </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label="Filter by status"
+            style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            <option value="All">All Status</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Pending">Pending</option>
+            <option value="Expired">Expired</option>
+          </select>
           <input
             type="text"
-            placeholder="Search matching name or phone..."
+            placeholder="Search name, phone, login ID, roll no, email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
           />
           <button onClick={fetchStudents} style={{ fontSize: '0.7rem' }}>🔄 Refresh</button>
+          <button onClick={() => exportStudents()} style={{ fontSize: '0.85rem', background: '#0f766e', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+            ⬇ Export Excel
+          </button>
           <button
             onClick={() => setShowAddModal(true)}
             style={{ fontSize: '0.85rem', background: '#16a34a', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
@@ -378,6 +498,26 @@ const AdminStudents = () => {
         </div>
       </header>
       
+      {(() => {
+        const all = students.filter(s => s.role === 'Student');
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        const chips = [
+          ['Active', all.filter(s => s.status === 'Active').length, '#16a34a'],
+          ['Inactive / Expired', all.filter(s => s.status === 'Inactive' || s.status === 'Expired').length, '#dc2626'],
+          ['Pending', all.filter(s => s.status === 'Pending').length, '#d97706'],
+          ['New This Month', all.filter(s => s.created_at && new Date(s.created_at) >= monthStart).length, '#2563eb'],
+        ];
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', margin: '0 0 12px' }}>
+            {chips.map(([label, n, color]) => (
+              <div key={label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${color}`, borderRadius: '6px', padding: '6px 14px', fontSize: '0.8rem', color: '#475569' }}>
+                {label}: <strong style={{ color }}>{n}</strong>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {errorMsg && (
         <div style={{ background: '#fee2e2', color: '#dc2626', padding: '10px', marginBottom: '10px', borderRadius: '4px' }}>
           <strong>Error:</strong> {errorMsg}
@@ -557,7 +697,10 @@ const AdminStudents = () => {
                   <input type="text" placeholder="Defaults to phone" value={addFormData.user_id} onChange={(e) => setAddFormData({...addFormData, user_id: e.target.value})} />
                 </div>
               </div>
+              <PhotoField file={addPhoto} onFile={setAddPhoto} />
             </div>
+
+            <ContactFields data={addFormData} onChange={(k, v) => setAddFormData(f => ({ ...f, [k]: v }))} />
 
             <div className="form-section">
               <h4>Course & Academic</h4>
@@ -631,6 +774,27 @@ const AdminStudents = () => {
         <div className="admin-form-container pattern-setup" style={{ marginBottom: '20px' }}>
           <h3>Edit Student Details: {currentStudent.name}</h3>
           <form onSubmit={handleEditSubmit} className="admin-grid-form">
+             <div className="form-section">
+                <h4>Personal Details</h4>
+                <div className="admin-inline-group">
+                  <div className="input-group">
+                    <label>Student Name *</label>
+                    <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+                  </div>
+                  <div className="input-group">
+                    <label>Father's Name</label>
+                    <input type="text" value={formData.fathers_name} onChange={(e) => setFormData({...formData, fathers_name: e.target.value})} />
+                  </div>
+                  <div className="input-group">
+                    <label>Phone *</label>
+                    <input type="text" required value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
+                  </div>
+                </div>
+                <PhotoField current={currentStudent?.profile_image} file={editPhoto} onFile={setEditPhoto} />
+             </div>
+
+             <ContactFields data={formData} onChange={(k, v) => setFormData(f => ({ ...f, [k]: v }))} />
+
              <div className="form-section">
                 <h4>Status & Validity</h4>
                 <div className="input-group">
@@ -804,15 +968,14 @@ const AdminStudents = () => {
       )}
 
       {(() => {
-        const filteredStudents = students
-          .filter(s => s.role === 'Student')
-          .filter(s => (s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.phone?.includes(searchTerm)))
-          .filter(s => categoryFilter === 'All' || (s.category && s.category.split(',').map(c => c.trim()).includes(categoryFilter)));
+        const filteredStudents = getFilteredStudents();
         const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
         const pagedStudents = filteredStudents.slice((page - 1) * pageSize, page * pageSize);
         const allPageSelected = pagedStudents.length > 0 && pagedStudents.every(s => selectedStudentIds.has(s.id));
         return (
       <>
+      {/* Scrolls sideways on narrow screens so the action buttons stay reachable. */}
+      <div style={{ overflowX: 'auto' }}>
       <table className="admin-table">
         <thead>
           <tr>
@@ -832,22 +995,29 @@ const AdminStudents = () => {
             <th>Status</th>
             <th>Validity</th>
             <th>Login Window</th>
+            <th>Joined On</th>
             <th>Action</th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan="10">Loading...</td></tr>
+            <tr><td colSpan="11">Loading...</td></tr>
           ) : filteredStudents.length === 0 ? (
-            <tr><td colSpan="10">No students match the current filter.</td></tr>
+            <tr><td colSpan="11">No students match the current filter.</td></tr>
           ) : pagedStudents.map((s) => (
             <tr key={s.id} style={{ background: selectedStudentIds.has(s.id) ? '#ede9fe' : undefined }}>
               <td><input type="checkbox" checked={selectedStudentIds.has(s.id)} onChange={() => toggleStudentSelect(s.id)} /></td>
-              <td><strong>{s.name}</strong></td>
+              <td>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {s.profile_image && <img src={photoUrl(s.profile_image)} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />}
+                  <strong>{s.name}</strong>
+                </div>
+              </td>
               <td>
                 <span style={{ fontFamily: 'monospace', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', color: '#1e40af', fontWeight: 600 }}>
                   {s.user_id || s.phone || '—'}
                 </span>
+                {s.roll_no && <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '3px' }}>Roll No: {s.roll_no}</div>}
               </td>
               <td>
                 {s.category ? (
@@ -875,8 +1045,9 @@ const AdminStudents = () => {
                   ? `${s.allowed_login_time_start} to ${s.allowed_login_time_end}`
                   : 'Anytime'}
               </td>
+              <td style={{ minWidth: '64px' }}>{fmtDate(s.created_at)}</td>
               <td>
-                <div style={{ display: 'flex', gap: '5px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '5px' }}>
                   <button className="btn-action btn-edit" onClick={() => openEditModal(s)}>Edit</button>
                   <button className="btn-action btn-edit" onClick={() => handleStatusToggle(s)}>Toggle</button>
                   <button className="btn-action btn-edit" style={{ background: '#3b82f6', color: 'white' }} onClick={() => openTestsModal(s)}>View Tests</button>
@@ -887,6 +1058,7 @@ const AdminStudents = () => {
           ))}
         </tbody>
       </table>
+      </div>
       <Pagination
         page={page} totalPages={totalPages} totalItems={filteredStudents.length}
         pageSize={pageSize} onPageChange={setPage} onPageSizeChange={p => { setPageSize(p); setPage(1); }}

@@ -507,6 +507,12 @@ export const userService = {
     const response = await api.put('/users/me', data);
     return response.data;
   },
+  // Admin uploads a student's photo (image file).
+  uploadUserAvatar: async (id, file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return (await api.post(`/users/${id}/avatar`, fd)).data;
+  },
   uploadAvatar: async (formData) => {
     const response = await api.post('/users/me/avatar', formData);
     return response.data;
