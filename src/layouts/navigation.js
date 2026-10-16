@@ -49,6 +49,7 @@ export const adminNav = [
   { label: 'Subscription & Plan', icon: 'wallet', to: '/admin/subscription', color: '#4ADE80', visible: can('plans') },
   { label: 'Results (Typing/Steno)', icon: 'barChart', to: '/admin/results', color: '#FACC15', visible: adminOnly },
   { label: 'Leaderboard', icon: 'trophy', to: '/admin/leaderboard', color: '#FBBF24', visible: adminOnly },
+  { label: 'Backup & Restore', icon: 'database', to: '/admin/backup', color: '#94A3B8', visible: adminOnly },
   { label: 'Settings', icon: 'settings', to: '/admin/settings', color: '#C084FC', visible: adminOnly },
 ];
 

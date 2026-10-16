@@ -592,7 +592,20 @@ export const supportService = {
   },
 };
 
+// Backup & Restore (admins).
+export const backupService = {
+  status: async () => (await api.get('/backups')).data,
+  create: async () => (await api.post('/backups')).data,
+  download: async (name, onProgress) => (await api.get(`/backups/${encodeURIComponent(name)}/download`, {
+    responseType: 'blob',
+    timeout: 0,
+    onDownloadProgress: (e) => onProgress && e.total && onProgress(Math.round((e.loaded / e.total) * 100)),
+  })).data,
+  remove: async (name) => (await api.delete(`/backups/${encodeURIComponent(name)}`)).data,
+};
+
 // Student reviews. Approved ones are public (landing page testimonials).
+
 // AI Deep Analysis (Claude via the backend; rule-based when unavailable).
 export const aiAnalysisService = {
   status: async () => (await api.get('/ai-analysis/status')).data,

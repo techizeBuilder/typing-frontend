@@ -44,6 +44,7 @@ import AdminChapters from './pages/admin/AdminChapters';
 import AdminFontGroups from './pages/admin/AdminFontGroups';
 import AdminScreenLayout from './pages/admin/AdminScreenLayout';
 import AdminMagazines from './pages/admin/AdminMagazines';
+import AdminBackup from './pages/admin/AdminBackup';
 import AdminPlans from './pages/admin/AdminPlans';
 import AdminStudents from './pages/admin/AdminStudents';
 import AdminMessages from './pages/admin/AdminMessages';
@@ -117,6 +118,7 @@ function App() {
               <Route path="font-groups" element={<AdminFontGroups />} />
               <Route path="screen-layout" element={<AdminScreenLayout />} />
               <Route path="magazines" element={<AdminMagazines />} />
+              <Route path="backup" element={<AdminBackup />} />
               <Route path="subscription" element={<AdminPlans />} />
               <Route path="content" element={<AdminChapters />} />
               <Route path="students" element={<AdminStudents />} />
