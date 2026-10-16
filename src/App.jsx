@@ -40,6 +40,9 @@ import StudentLayout from './layouts/StudentLayout';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminExams from './pages/admin/AdminExams';
+import AdminExamForm from './pages/admin/AdminExamForm';
+import AdminResultPatterns from './pages/admin/AdminResultPatterns';
+import AdminPatternForm from './pages/admin/AdminPatternForm';
 import AdminChapters from './pages/admin/AdminChapters';
 import AdminTestForm from './pages/admin/AdminTestForm';
 import AdminFontGroups from './pages/admin/AdminFontGroups';
@@ -117,6 +120,11 @@ function App() {
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />
               <Route path="exams" element={<AdminExams />} />
+              <Route path="exams/new" element={<AdminExamForm />} />
+              <Route path="exams/:id/edit" element={<AdminExamForm />} />
+              <Route path="result-patterns" element={<AdminResultPatterns />} />
+              <Route path="result-patterns/new" element={<AdminPatternForm />} />
+              <Route path="result-patterns/:id/edit" element={<AdminPatternForm />} />
               <Route path="font-groups" element={<AdminFontGroups />} />
               <Route path="screen-layout" element={<AdminScreenLayout />} />
               <Route path="magazines" element={<AdminMagazines />} />
