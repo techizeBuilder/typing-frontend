@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ListChecksIcon, DumbbellIcon } from 'lucide-react';
+import { ListChecksIcon, DumbbellIcon, BrainIcon } from 'lucide-react';
 
 // Mistake breakdown for a typing result. Purely presentational: the category
 // counts are the values ResultScreen already computed for the score, and the
@@ -39,6 +39,7 @@ export default function DetailedAnalysis({
   mode,
   examName,
   passageFontFamily,
+  aiInput,
 }) {
   const navigate = useNavigate();
   const [showAll, setShowAll] = useState(false);
@@ -72,11 +73,29 @@ export default function DetailedAnalysis({
         <h3 className="flex items-center gap-2 font-display text-[14px] font-semibold text-navy-800">
           <ListChecksIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Detailed Analysis
         </h3>
+        {aiInput &&
+          <button
+            type="button"
+            onClick={() => navigate('/ai-analysis', {
+              state: {
+                input: {
+                  ...aiInput,
+                  counts,
+                  mistake_words: mistakes.filter((m) => m.expected || m.typed).slice(0, 20).map((m) => ({ expected: m.expected, typed: m.typed })),
+                },
+                practiceWords,
+                passageFontFamily,
+              },
+            })}
+            className="no-print ml-auto inline-flex items-center gap-1.5 rounded-md bg-gradient-to-r from-violet-600 to-primary px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity duration-150 hover:opacity-90">
+            <BrainIcon className="h-3.5 w-3.5" aria-hidden="true" /> AI Deep Analysis
+          </button>
+        }
         {practiceWords.length > 0 &&
           <button
             type="button"
             onClick={() => navigate('/practice-words', { state: { words: practiceWords, mode, examName, passageFontFamily } })}
-            className="no-print ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[12px] font-semibold text-white transition-colors duration-150 hover:bg-primary-700">
+            className={`no-print ${aiInput ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[12px] font-semibold text-white transition-colors duration-150 hover:bg-primary-700`}>
             <DumbbellIcon className="h-3.5 w-3.5" aria-hidden="true" /> Practise These Words ({practiceWords.length})
           </button>
         }

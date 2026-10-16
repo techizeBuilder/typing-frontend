@@ -1723,7 +1723,20 @@ const ResultScreen = () => {
                 halfMistakeEnabled={halfMistakeEnabled}
                 mode={mode}
                 examName={exam_name}
-                passageFontFamily={passageFontFamily} />
+                passageFontFamily={passageFontFamily}
+                aiInput={{
+                  exam: exam_name,
+                  mode,
+                  kind: 'typing',
+                  gross_wpm: grossSpeedCalculated,
+                  net_wpm: netSpeedCalculated,
+                  accuracy: accuracyCalculated,
+                  minutes: parseFloat(timeMinutes.toFixed(2)),
+                  target_wpm: requiredSpeed,
+                  target_accuracy: requiredAcc,
+                  total_words: totalWords,
+                  correct_words: correctWordsCalculated,
+                }} />
             )}
           </div>
 

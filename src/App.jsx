@@ -24,6 +24,7 @@ import PlanPricing from './pages/student/PlanPricing';
 import ReferEarn from './pages/student/ReferEarn';
 import TypingGames from './pages/student/TypingGames';
 import TypingGamePlay from './pages/student/TypingGamePlay';
+import AIDeepAnalysis from './pages/student/AIDeepAnalysis';
 import LiveTests from './pages/student/LiveTests';
 import LiveTestSlots from './pages/student/LiveTestSlots';
 import LegacyExamRedirect from './pages/student/LegacyExamRedirect';
@@ -83,6 +84,7 @@ function App() {
               <Route path="/plan-pricing" element={<PlanPricing />} />
               <Route path="/refer-earn" element={<ReferEarn />} />
               <Route path="/typing-games" element={<TypingGames />} />
+              <Route path="/ai-analysis" element={<AIDeepAnalysis />} />
               <Route path="/live-test/typing" element={<LiveTests key="typing" kind="typing" />} />
               <Route path="/live-test/steno" element={<LiveTests key="steno" kind="steno" />} />
               <Route path="/live-test/exam/:examId" element={<LiveTestSlots />} />

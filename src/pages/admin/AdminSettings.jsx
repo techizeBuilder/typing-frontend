@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { settingService } from '../../services/api';
+import AiSettingsCard from '../../features/results/AiSettingsCard';
 
 // Admin settings panel. Exposes the Live Test rank-update time and the external
 // Desktop / Mobile application download links advertised on the public landing page.
@@ -344,6 +345,7 @@ const AdminSettings = () => {
           </div>
         </div>
       )}
+      <AiSettingsCard />
     </div>
   );
 };
