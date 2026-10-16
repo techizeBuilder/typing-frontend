@@ -477,6 +477,11 @@ export const resultService = {
     const response = await api.get('/results/leaderboard', { params });
     return response.data;
   },
+  // Admin leaderboard ranked on the server: { participants, top, topper, ... }.
+  getAdminLeaderboard: async (filters = {}) => {
+    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined && v !== ''));
+    return (await api.get('/results/leaderboard/admin', { params })).data;
+  },
   getChapterRank: async (chapterId, studentId) => {
     const response = await api.get('/results/rank', { params: { chapterId, studentId } });
     return response.data;
