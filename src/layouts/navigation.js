@@ -42,7 +42,7 @@ export const adminNav = [
   { label: 'Font Groups', icon: 'type', to: '/admin/font-groups', color: '#60A5FA', visible: can('exams') },
   { label: 'Screen Layout', icon: 'monitor', to: '/admin/screen-layout', color: '#2DD4BF', visible: adminOnly },
   { label: 'Test Management', icon: 'clipboard', to: '/admin/content', color: '#34D399', visible: can('chapters'),
-    children: [{ label: 'Manage Test (Live, Preload)', to: '/admin/content' }, { label: 'Add New Test (Live, Preload)', to: '/admin/content?new=1' }] },
+    children: [{ label: 'Manage Test (Live, Preload)', to: '/admin/content' }, { label: 'Add New Test (Live, Preload)', to: '/admin/content/new' }] },
   { label: 'Message Center', icon: 'mail', to: '/admin/messages', color: '#0EA5E9', visible: can('messages') },
   { label: 'Flash Banner', icon: 'zap', to: '/admin/flash-banner', color: '#F59E0B', visible: can('flash_banner') },
   { label: 'Staff Management', icon: 'shield', to: '/admin/staff', color: '#F472B6', visible: can('staff') },

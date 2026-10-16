@@ -1,59 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, Navigate, useLocation } from 'react-router-dom';
+import * as XLSX from 'xlsx';
+import {
+  BadgeCheckIcon, CircleOffIcon, CopyIcon, FileSpreadsheetIcon, HeadphonesIcon, LayersIcon, Loader2Icon, PencilIcon, PlusIcon, PowerIcon,
+  RadioIcon, RotateCcwIcon, SearchIcon, Trash2Icon, XIcon, ZapIcon,
+} from 'lucide-react';
 import { chapterService, examService } from '../../services/api';
-import { API_BASE_URL } from '../../config';
-import { fontFamilyForFontGroup, fontFamilyForHindiType } from '../../utils/hindiFonts';
-import mammoth from 'mammoth';
 import Pagination from '../../components/Pagination';
+import { StatCard } from '../../ui/StatCard';
 import { urlParam } from '../../features/admin/urlParams';
+import { FONT_GROUPS, LIVE, PRELOAD, chapterExamIds, chapterExamNames, errorText, isStenoGroup } from '../../features/tests/testData';
 import './Admin.css';
-import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 
-// Count words in a transcript: collapse whitespace and count non-empty tokens.
-const countWords = (text) =>
-  (text || '').trim().split(/\s+/).filter(Boolean).length;
-
-const blankChapter = () => ({
-  chapter_no: '',
-  name: '',
-  description: '',
-  test_date: new Date().toISOString().split('T')[0],
-  font_group: 'English Typing',
-  test_type: 'Pre-load Test',
-  exam_ids: [],
-  content_text: '',
-  word_count: '', // auto-calculated from content_text; admin may override
-  steno_speed: 100, // default Steno dictation speed (WPM); only sent for Steno chapters
-  difficulty: '',
-  is_active: true,
-});
+const selectCls = 'w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-[12px] text-slate-700 outline-none focus:border-primary';
+const LEVEL_TONE = { Easy: 'bg-emerald-50 text-emerald-700', Moderate: 'bg-amber-50 text-amber-700', Hard: 'bg-rose-50 text-rose-700' };
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+const dayKey = (d) => new Date(d).toISOString().split('T')[0];
 
 const AdminChapters = () => {
-  const { isActive: isFontGroupActive } = useFontGroupSettings();
+  const location = useLocation();
   const [chapters, setChapters] = useState([]);
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(() => urlParam('new') === '1');
+  const [notice, setNotice] = useState(() => location.state?.notice || '');
+  const [tab, setTab] = useState('All');
   const [searchTerm, setSearchTerm] = useState(() => urlParam('search') || '');
-  const [testTypeFilter, setTestTypeFilter] = useState('All');
-  const [fontGroupFilter, setFontGroupFilter] = useState('All');
-  const [filterDate, setFilterDate] = useState('');
-
-  const [chapPage, setChapPage] = useState(1);
-  const [chapPageSize, setChapPageSize] = useState(20);
-
+  const [kindFilter, setKindFilter] = useState('All');
+  const [examFilter, setExamFilter] = useState('All');
   const [difficultyFilter, setDifficultyFilter] = useState('All');
+  const [fontGroupFilter, setFontGroupFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
-  useEffect(() => { setChapPage(1); }, [searchTerm, testTypeFilter, fontGroupFilter, filterDate, difficultyFilter, statusFilter]);
-  const [currentChapter, setCurrentChapter] = useState(null);
-  const [audioFile, setAudioFile] = useState(null);   // raw File object for steno
-  const [uploading, setUploading] = useState(false);
-  const [formData, setFormData] = useState(blankChapter);
-  const [examDropdownOpen, setExamDropdownOpen] = useState(false);
+  const [filterDate, setFilterDate] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [selectedIds, setSelectedIds] = useState([]);
-
-  useEffect(() => {
-    fetchChapters();
-  }, []);
 
   const fetchChapters = async () => {
     try {
@@ -72,681 +52,219 @@ const AdminChapters = () => {
       console.error('Error fetching exams:', error);
     }
   };
+  useEffect(() => { fetchChapters(); }, []);
 
-  const handleTextFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (file.name.endsWith('.txt')) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target.result;
-        setFormData(prev => ({ ...prev, content_text: text, word_count: countWords(text) }));
-      };
-      reader.readAsText(file);
-    } else if (file.name.endsWith('.docx')) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const result = await mammoth.extractRawText({ arrayBuffer: event.target.result });
-          setFormData(prev => ({ ...prev, content_text: result.value, word_count: countWords(result.value) }));
-        } catch (error) {
-          console.error("Error reading Word document", error);
-          alert("Could not extract text from Word document.");
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    } else {
-      alert("Unsupported file format. Please upload .txt or .docx");
-    }
+  const examTime = useMemo(() => Object.fromEntries(exams.map((e) => [e.id, e.test_time_minutes])), [exams]);
+  const durationOf = (c) => {
+    const mins = chapterExamIds(c).map((id) => examTime[id]).filter(Boolean);
+    if (mins.length === 0) return '—';
+    const lo = Math.min(...mins); const hi = Math.max(...mins);
+    return lo === hi ? `${lo} Min` : `${lo}–${hi} Min`;
   };
 
-  const handleEdit = (chapter) => {
-    setCurrentChapter(chapter);
-    setAudioFile(null);
-    const existingIds = Array.isArray(chapter.exam_ids) && chapter.exam_ids.length > 0
-      ? chapter.exam_ids
-      : (chapter.exam?.id || chapter.exam_id ? [chapter.exam?.id || chapter.exam_id] : []);
-    setFormData({
-      ...chapter,
-      exam_ids: existingIds,
-      // Fall back to the live count so legacy chapters (word_count null) show a value.
-      word_count: (chapter.word_count ?? '') === '' ? countWords(chapter.content_text) : chapter.word_count,
-      test_date: new Date(chapter.test_date).toISOString().split('T')[0]
-    });
-    setShowForm(true);
+  const filtered = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return chapters
+      .filter((c) => tab === 'All' || c.test_type === tab)
+      .filter((c) => kindFilter === 'All' || (kindFilter === 'Steno') === isStenoGroup(c.font_group))
+      .filter((c) => examFilter === 'All' || chapterExamIds(c).includes(examFilter))
+      .filter((c) => difficultyFilter === 'All' || (c.difficulty || '') === difficultyFilter)
+      .filter((c) => fontGroupFilter === 'All' || c.font_group === fontGroupFilter)
+      .filter((c) => statusFilter === 'All' || (statusFilter === 'Active') === (c.is_active !== false))
+      .filter((c) => !filterDate || dayKey(c.test_date) === filterDate)
+      .filter((c) => !q || [c.chapter_no, c.name, c.font_group, c.description, ...chapterExamNames(c)].some((v) => v && String(v).toLowerCase().includes(q)));
+  }, [chapters, tab, kindFilter, examFilter, difficultyFilter, fontGroupFilter, statusFilter, filterDate, searchTerm]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleIds = paged.map((c) => c.id);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+
+  const counts = {
+    total: chapters.length,
+    live: chapters.filter((c) => c.test_type === LIVE).length,
+    preload: chapters.filter((c) => c.test_type !== LIVE).length,
+    active: chapters.filter((c) => c.is_active !== false).length,
+    inactive: chapters.filter((c) => c.is_active === false).length,
   };
 
-  const handleDuplicate = (chapter) => {
-    handleEdit(chapter);
-    setCurrentChapter(null);
-    setFormData(prev => ({ ...prev, id: undefined, chapter_no: `${chapter.chapter_no}-copy`, name: chapter.name ? `${chapter.name} (copy)` : '' }));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const filterChange = (setter) => (e) => { setter(e.target.value); setPage(1); };
+  const resetFilters = () => { setSearchTerm(''); setKindFilter('All'); setExamFilter('All'); setDifficultyFilter('All'); setFontGroupFilter('All'); setStatusFilter('All'); setFilterDate(''); setPage(1); };
+  const toggleAll = () => setSelectedIds((prev) => (allSelected ? prev.filter((id) => !visibleIds.includes(id)) : [...new Set([...prev, ...visibleIds])]));
+  const toggleOne = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
-  const toggleActive = async (chapter) => {
+  const handleDelete = async (c) => {
+    if (!window.confirm(`Delete test ${c.chapter_no}${c.name ? ` (${c.name})` : ''}? This cannot be undone.`)) return;
     try {
-      await chapterService.updateChapter(chapter.id, { is_active: chapter.is_active === false });
+      await chapterService.deleteChapter(c.id);
+      setSelectedIds((prev) => prev.filter((sid) => sid !== c.id));
       fetchChapters();
-    } catch (err) {
-      alert('Could not change the test status: ' + (err.response?.data?.message || err.message));
-    }
+    } catch (err) { alert('Error deleting test: ' + errorText(err, 'failed')); }
   };
-
-  const toggleExamId = (id) => {
-    setFormData(prev => {
-      const set = new Set(prev.exam_ids || []);
-      if (set.has(id)) set.delete(id); else set.add(id);
-      return { ...prev, exam_ids: Array.from(set) };
-    });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setUploading(true);
-    try {
-      const { id, created_at, updated_at, audio_url, exam, exams: _exams, ...cleanData } = formData;
-      const ids = Array.isArray(cleanData.exam_ids) ? cleanData.exam_ids.filter(Boolean) : [];
-      cleanData.exam_ids = ids;
-      cleanData.exam_id = ids.length > 0 ? ids[0] : null;
-
-      // Word count: use the manual override when provided, otherwise auto-calculate
-      // from the transcript so the value is always populated.
-      const manualCount = parseInt(cleanData.word_count, 10);
-      cleanData.word_count = Number.isFinite(manualCount) && manualCount >= 0
-        ? manualCount
-        : countWords(cleanData.content_text);
-
-      // The Hindi-Steno font columns are opt-in: only Steno chapters send them, so
-      // existing English/Hindi typing chapters still save on databases where the
-      // language_type / hindi_font_type migration has not been applied yet.
-      if ((cleanData.font_group || '').includes('Steno')) {
-        cleanData.language_type   = cleanData.font_group === 'Steno Hindi' ? 'Hindi' : 'English';
-        cleanData.hindi_font_type = cleanData.font_group === 'Steno Hindi'
-          ? (cleanData.hindi_font_type || 'Mangal')
-          : null;
-        // Persist the admin-selected default dictation speed (WPM) for Steno chapters.
-        cleanData.steno_speed = parseInt(cleanData.steno_speed, 10) || 100;
-      } else {
-        delete cleanData.language_type;
-        delete cleanData.hindi_font_type;
-        delete cleanData.steno_speed;
-      }
-
-      let savedId = currentChapter?.id;
-
-      if (currentChapter) {
-        await chapterService.updateChapter(currentChapter.id, cleanData);
-      } else {
-        try {
-          const created = await chapterService.createChapter(cleanData);
-          savedId = created.id;
-        } catch (createErr) {
-          // Some hosting proxies/WAFs reject the response of a chapter create that
-          // carries large Hindi (e.g. Mangal) content with a 403 — AFTER the backend
-          // has already saved the row. Before surfacing an error, check whether the
-          // chapter actually exists now; if it does, continue as a normal success.
-          if (createErr.response?.status !== 403) throw createErr;
-          const existing = await chapterService.getChapters();
-          existing.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-          const match = existing.find(c =>
-            String(c.chapter_no) === String(cleanData.chapter_no) &&
-            c.font_group === cleanData.font_group &&
-            c.test_type === cleanData.test_type &&
-            new Date(c.test_date).toISOString().split('T')[0] === cleanData.test_date
-          );
-          if (!match) throw createErr;
-          savedId = match.id;
-        }
-      }
-
-      // Upload audio file separately if one was selected
-      if (audioFile && savedId) {
-        await chapterService.uploadAudio(savedId, audioFile);
-      }
-
-      setShowForm(false);
-      setCurrentChapter(null);
-      setAudioFile(null);
-      setFormData(blankChapter());
-      fetchChapters();
-    } catch (error) {
-      alert('Error saving chapter: ' + (error.response?.data?.message || error.message));
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this?')) {
-      await chapterService.deleteChapter(id);
-      setSelectedIds(prev => prev.filter(sid => sid !== id));
-      fetchChapters();
-    }
-  };
-
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     if (!window.confirm(`Delete ${selectedIds.length} selected chapter(s)? This cannot be undone.`)) return;
     try {
-      await Promise.all(selectedIds.map(id => chapterService.deleteChapter(id)));
+      await Promise.all(selectedIds.map((id) => chapterService.deleteChapter(id)));
       setSelectedIds([]);
       fetchChapters();
     } catch (err) {
       alert('Error deleting some chapters: ' + err.message);
     }
   };
-
-  const toggleSelectId = (id) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(sid => sid !== id) : [...prev, id]);
+  const toggleActive = async (c) => {
+    try {
+      await chapterService.updateChapter(c.id, { is_active: c.is_active === false });
+      fetchChapters();
+    } catch (err) {
+      alert('Could not change the test status: ' + errorText(err, 'failed'));
+    }
   };
 
-  const isSteno = formData.font_group.includes('Steno');
+  const exportExcel = () => {
+    const rows = filtered.map((c) => ({
+      'Test ID': c.chapter_no, Title: c.name || '', Type: isStenoGroup(c.font_group) ? 'Steno' : 'Typing', Mode: c.test_type,
+      Exams: chapterExamNames(c).join(', '), Level: c.difficulty || '', 'Font Group': c.font_group, Words: c.word_count ?? '',
+      'Steno Speed': isStenoGroup(c.font_group) ? c.steno_speed ?? '' : '', Audio: c.audio_url ? 'Yes' : '', Duration: durationOf(c),
+      'Test Date': dayKey(c.test_date), Status: c.is_active === false ? 'Inactive' : 'Active', 'Created On': c.created_at ? dayKey(c.created_at) : '', Description: c.description || '',
+    }));
+    if (rows.length === 0) { alert('No tests match the current filters.'); return; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Tests');
+    XLSX.writeFile(wb, `tests_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
 
-  // Editor font so pasted Hindi renders correctly. Steno Hindi uses the per-chapter
-  // hindi_font_type; everything else is keyed off font_group.
-  const contentFontFamily = formData.font_group === 'Steno Hindi'
-    ? (fontFamilyForHindiType(formData.hindi_font_type) || 'inherit')
-    : (fontFamilyForFontGroup(formData.font_group) || 'inherit');
-  const useHindiFont = contentFontFamily !== 'inherit';
-
-  // Only show exams that support the selected font group
-  const filteredExams = exams.filter(exam => {
-    const groups = Array.isArray(exam.font_groups) && exam.font_groups.length > 0
-      ? exam.font_groups
-      : (exam.font_group ? [exam.font_group] : []);
-    return groups.length === 0 || groups.includes(formData.font_group);
-  });
+  // Old links (?new=1) open the Add New Test page.
+  if (urlParam('new') === '1') return <Navigate to="/admin/content/new" replace />;
 
   return (
-    <div className="admin-card">
-      <header className="admin-header">
-        <h2>{currentChapter ? 'Edit Chapter' : 'Add Chapter (Typing/Steno)'}</h2>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <select
-            value={testTypeFilter}
-            onChange={(e) => setTestTypeFilter(e.target.value)}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            <option value="All">All Test Types</option>
-            <option value="Pre-load Test">Pre-load Test</option>
-            <option value="Live Test">Live Test</option>
-          </select>
-          <select
-            value={fontGroupFilter}
-            onChange={(e) => setFontGroupFilter(e.target.value)}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            <option value="All">All Font Groups</option>
-            <option value="English Typing">English Typing</option>
-            <option value="Hindi Mangal">Hindi Mangal</option>
-            <option value="Hindi Kruti Dev">Hindi Kruti Dev</option>
-            <option value="Hindi Remington (GAIL)">Hindi Remington (GAIL)</option>
-            <option value="Steno English">Steno English</option>
-            <option value="Steno Hindi">Steno Hindi</option>
-          </select>
-          <select value={difficultyFilter} onChange={(e) => setDifficultyFilter(e.target.value)} aria-label="Filter by difficulty" style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
-            <option value="All">All Levels</option>
-            <option value="Easy">Easy</option>
-            <option value="Moderate">Moderate</option>
-            <option value="Hard">Hard</option>
-            <option value="">Not set</option>
-          </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status" style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
-            <option value="All">All Status</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-          <input
-            type="date"
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-            title="Filter by Test Date (Live Test date wise)"
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-          />
-          {filterDate && (
-            <button type="button" onClick={() => setFilterDate('')} style={{ fontSize: '0.75rem', padding: '4px 8px' }}>
-              Clear Date
-            </button>
-          )}
-          <input
-            type="text"
-            placeholder="Search number, title or keyword..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-          />
-          {selectedIds.length > 0 && (
-            <button
-              type="button"
-              onClick={handleBulkDelete}
-              style={{ padding: '8px 14px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
-            >
-              Delete Selected ({selectedIds.length})
-            </button>
-          )}
-          <button className="btn-primary" onClick={() => { setShowForm(!showForm); setCurrentChapter(null); setAudioFile(null); setFormData(blankChapter()); }}>
-            {showForm ? 'Cancel' : '+ Add Chapter'}
-          </button>
+    <div className="nd">
+      <div className="mb-4 flex flex-wrap items-start gap-4">
+        <div>
+          <h2 className="font-display text-[24px] font-bold leading-tight text-navy-800">Manage Test (Live / Preload)</h2>
+          <p className="text-[12.5px] text-slate-500">View, manage, edit, activate/inactivate or delete tests. Use filters to find specific tests quickly.</p>
         </div>
-      </header>
-
-      {showForm && (
-        <div className="admin-form-container">
-          <form onSubmit={handleSubmit} className="admin-grid-form">
-            <div className="form-section">
-              <div className="input-group">
-                <label>Chapter No</label>
-                <input type="text" value={formData.chapter_no} onChange={(e) => setFormData({...formData, chapter_no: e.target.value})} placeholder="e.g. 101, A-1, CH-01" required />
-              </div>
-              <div className="input-group">
-                <label>Test Title</label>
-                <input type="text" maxLength={150} value={formData.name || ''} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Optional, e.g. Rural Development Budget" />
-              </div>
-              <div className="input-group">
-                <label>Description (optional)</label>
-                <textarea rows={2} maxLength={500} value={formData.description || ''} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Short note shown to students with the test" />
-              </div>
-              <div className="input-group">
-                <label>Select Date</label>
-                <input type="date" value={formData.test_date} onChange={(e) => setFormData({...formData, test_date: e.target.value})} required />
-              </div>
-              <div className="input-group">
-                <label>Font Group</label>
-                <select
-                  value={formData.font_group}
-                  onChange={(e) => {
-                    const fg = e.target.value;
-                    setFormData(prev => ({
-                      ...prev,
-                      font_group: fg,
-                      exam_ids: [],
-                      // Default the Steno Hindi font picker; language_type + final value
-                      // are derived on submit (and only sent for Steno chapters).
-                      hindi_font_type: fg === 'Steno Hindi' ? (prev.hindi_font_type || 'Mangal') : null,
-                    }));
-                  }}
-                >
-                  {/* Inactive font groups can't be newly assigned; the current one always shows. */}
-                  {['English Typing', 'Hindi Mangal', 'Hindi Kruti Dev', 'Hindi Remington (GAIL)', 'Steno English', 'Steno Hindi']
-                    .filter(fg => isFontGroupActive(fg) || fg === formData.font_group)
-                    .map(fg => <option key={fg} value={fg}>{fg}</option>)}
-                </select>
-              </div>
-
-              {/* Steno Hindi → choose the Hindi font standard the student types/views in */}
-              {formData.font_group === 'Steno Hindi' && (
-                <div className="input-group">
-                  <label>Hindi Font Type</label>
-                  <select
-                    value={formData.hindi_font_type || 'Mangal'}
-                    onChange={(e) => setFormData({ ...formData, hindi_font_type: e.target.value })}
-                  >
-                    <option value="Mangal">Hindi Mangal (Unicode)</option>
-                    <option value="KrutiDev">Kruti Dev</option>
-                    <option value="RemingtonGail">Remington Gail</option>
-                  </select>
-                </div>
-              )}
-              <div className="input-group">
-                <label>Assign to Exam</label>
-                <div style={{ position: 'relative' }}>
-                  <button
-                    type="button"
-                    onClick={() => setExamDropdownOpen(o => !o)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '4px',
-                      border: '1px solid #cbd5e1',
-                      background: '#fff',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      fontSize: '0.9rem',
-                      color: '#0f172a',
-                    }}
-                  >
-                    {(() => {
-                      const selected = formData.exam_ids || [];
-                      if (selected.length === 0) return '-- No Exam (Independent) --';
-                      if (selected.length === filteredExams.length && filteredExams.length > 0) return 'All Exams Selected';
-                      const names = filteredExams.filter(e => selected.includes(e.id)).map(e => e.name);
-                      if (names.length <= 2) return names.join(', ');
-                      return `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
-                    })()}
-                    <span style={{ float: 'right', color: '#64748b' }}>▾</span>
-                  </button>
-                  {examDropdownOpen && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        right: 0,
-                        background: '#fff',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '4px',
-                        marginTop: '2px',
-                        maxHeight: '220px',
-                        overflowY: 'auto',
-                        zIndex: 10,
-                        boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
-                      }}
-                    >
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '8px 10px',
-                          borderBottom: '1px solid #e2e8f0',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          background: '#f8fafc',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={filteredExams.length > 0 && filteredExams.every(e => (formData.exam_ids || []).includes(e.id))}
-                          onChange={() => {
-                            const allIds = filteredExams.map(e => e.id);
-                            const allSelected = allIds.every(id => (formData.exam_ids || []).includes(id));
-                            setFormData(prev => ({ ...prev, exam_ids: allSelected ? [] : allIds }));
-                          }}
-                        />
-                        Select All
-                      </label>
-                      {filteredExams.map(exam => (
-                        <label
-                          key={exam.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '6px 10px',
-                            cursor: 'pointer',
-                            fontSize: '0.9rem',
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={(formData.exam_ids || []).includes(exam.id)}
-                            onChange={() => toggleExamId(exam.id)}
-                          />
-                          {exam.name}
-                        </label>
-                      ))}
-                      {filteredExams.length === 0 && (
-                        <div style={{ padding: '10px', color: '#94a3b8', fontSize: '0.85rem' }}>No exams support this font group</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="input-group">
-                <label>Test Type</label>
-                <select value={formData.test_type} onChange={(e) => setFormData({...formData, test_type: e.target.value})}>
-                  <option value="Pre-load Test">Pre-load Test</option>
-                  <option value="Live Test">Live Test</option>
-                </select>
-              </div>
-              <div className="input-group">
-                <label>Difficulty</label>
-                <select value={formData.difficulty || ''} onChange={(e) => setFormData({...formData, difficulty: e.target.value})}>
-                  <option value="">Not set</option>
-                  <option value="Easy">Easy</option>
-                  <option value="Moderate">Moderate</option>
-                  <option value="Hard">Hard</option>
-                </select>
-              </div>
-              <div className="input-group">
-                <label>Status</label>
-                <select value={formData.is_active === false ? 'Inactive' : 'Active'} onChange={(e) => setFormData({...formData, is_active: e.target.value === 'Active'})}>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive (hidden from students)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="form-section">
-              <div className="input-group">
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>
-                    Content (Text — used for result comparison)
-                    {formData.font_group === 'Hindi Kruti Dev' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#fef9c3', color: '#713f12', padding: '2px 6px', borderRadius: '4px' }}>⌨ Kruti Dev layout active</span>}
-                    {formData.font_group === 'Hindi Mangal' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#eff6ff', color: '#1e3a8a', padding: '2px 6px', borderRadius: '4px' }}>🌐 Use Windows Hindi IME</span>}
-                    {formData.font_group === 'Hindi Remington (GAIL)' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#f0fff4', color: '#14532d', padding: '2px 6px', borderRadius: '4px' }}>⌨ Remington GAIL layout active</span>}
-                    {isSteno && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#f0fdf4', color: '#166534', padding: '2px 6px', borderRadius: '4px' }}>🎙 Steno: text hidden from student, used for scoring only</span>}
-                    {formData.font_group === 'Steno Hindi' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#fef9c3', color: '#713f12', padding: '2px 6px', borderRadius: '4px' }}>⌨ Hindi font: {formData.hindi_font_type || 'Mangal'}</span>}
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Or Upload File (.txt, .docx):</span>
-                    <input type="file" accept=".txt,.docx" onChange={handleTextFileUpload} style={{ fontSize: '0.8rem', width: '200px' }} />
-                  </div>
-                </label>
-                <textarea
-                  rows="10"
-                  value={formData.content_text}
-                  onChange={(e) => setFormData({...formData, content_text: e.target.value, word_count: countWords(e.target.value)})}
-                  placeholder={isSteno ? "Paste the dictation transcript here (hidden from student, used for scoring only)" : "Paste content here or upload a .txt/.docx file..."}
-                  spellCheck={false}
-                  lang={formData.font_group === 'Hindi Mangal' ? 'hi' : 'en'}
-                  style={{
-                    // Kruti Dev / Remington are legacy glyph fonts (Hindi glyphs at ASCII
-                    // positions) and MUST render in the Kruti Dev font or pasted text shows
-                    // as raw English (e.g. "mik/;{k"). Mangal is true Unicode Devanagari.
-                    // The stored value is never transformed — this only controls display.
-                    fontFamily: contentFontFamily,
-                    fontSize: useHindiFont ? '18px' : undefined,
-                    lineHeight: 1.8,
-                  }}
-                  required
-                />
-              </div>
-
-              <div className="input-group">
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Total Word Count</span>
-                  <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                    Auto-calculated: <strong>{countWords(formData.content_text)}</strong> words
-                  </span>
-                </label>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.word_count}
-                    onChange={(e) => setFormData({ ...formData, word_count: e.target.value })}
-                    placeholder="Auto-calculated from transcript"
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setFormData({ ...formData, word_count: countWords(formData.content_text) })}
-                    style={{ padding: '0 14px', whiteSpace: 'nowrap' }}
-                  >
-                    Recalculate
-                  </button>
-                </div>
-                <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
-                  Updated automatically from the transcript above. You can override it manually if needed.
-                </p>
-              </div>
-
-              {isSteno && (
-                <div className="input-group">
-                  <label style={{ fontWeight: 600, color: '#166534' }}>🎙 Default Steno Speed (WPM)</label>
-                  <select
-                    value={formData.steno_speed ?? 100}
-                    onChange={(e) => setFormData({ ...formData, steno_speed: parseInt(e.target.value, 10) })}
-                    style={{ fontSize: '0.9rem' }}
-                  >
-                    {[40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150].map(s => (
-                      <option key={s} value={s}>{s} WPM</option>
-                    ))}
-                  </select>
-                  <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
-                    Students will see three choices centred on this speed: <strong>{(formData.steno_speed ?? 100) - 10}</strong>,{' '}
-                    <strong>{formData.steno_speed ?? 100} (default)</strong> and <strong>{(formData.steno_speed ?? 100) + 10}</strong> WPM.
-                    The audio plays at normal speed for the default and is scaled for the ±10 options.
-                  </p>
-                </div>
-              )}
-
-              {isSteno && (
-                <div className="input-group">
-                  <label style={{ fontWeight: 600, color: '#166534' }}>🎙 Steno Audio Dictation (MP3 / WAV / OGG)</label>
-                  {/* Show existing audio if editing */}
-                  {currentChapter?.audio_url && !audioFile && (
-                    <div style={{ marginBottom: '8px', padding: '8px 12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '6px', fontSize: '0.85rem' }}>
-                      <strong>Current audio:</strong>{' '}
-                      <audio controls src={`${API_BASE_URL}${currentChapter.audio_url}`} style={{ verticalAlign: 'middle', height: '28px' }} />
-                      <span style={{ marginLeft: '8px', color: '#16a34a' }}>✔ Uploaded</span>
-                    </div>
-                  )}
-                  <input
-                    type="file"
-                    accept="audio/mp3,audio/wav,audio/ogg,audio/mpeg,audio/*"
-                    onChange={(e) => setAudioFile(e.target.files[0] || null)}
-                    style={{ fontSize: '0.9rem' }}
-                  />
-                  {audioFile && (
-                    <p style={{ marginTop: '6px', color: '#16a34a', fontSize: '0.85rem' }}>
-                      ✔ Selected: {audioFile.name} ({(audioFile.size / 1024 / 1024).toFixed(2)} MB) — will upload on Save
-                    </p>
-                  )}
-                  <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
-                    This audio will be played to the student during the steno test. Text above is used for grading only and is hidden from the student.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="form-actions-full">
-              <button type="submit" className="btn-primary" disabled={uploading}>
-                {uploading ? 'Saving & Uploading...' : 'Save Chapter'}
-              </button>
-            </div>
-          </form>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Link to="/admin/content/new" className="flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-primary-700">
+            <PlusIcon className="h-4 w-4" aria-hidden="true" /> Add New Test (Live / Preload)
+          </Link>
         </div>
-      )}
+      </div>
 
-      {(() => {
-        const visibleChapters = chapters
-          .filter(c => testTypeFilter === 'All' || c.test_type === testTypeFilter)
-          .filter(c => fontGroupFilter === 'All' || c.font_group === fontGroupFilter)
-          .filter(c => {
-            if (!filterDate) return true;
-            const chapDate = new Date(c.test_date).toISOString().split('T')[0];
-            return chapDate === filterDate;
-          })
-          .filter(c => difficultyFilter === 'All' || (c.difficulty || '') === difficultyFilter)
-          .filter(c => statusFilter === 'All' || (statusFilter === 'Active') === (c.is_active !== false))
-          .filter(c =>
-            !searchTerm ||
-            c.font_group?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(c.chapter_no).includes(searchTerm)
-          );
-        const chapTotalPages = Math.max(1, Math.ceil(visibleChapters.length / chapPageSize));
-        const pagedChapters = visibleChapters.slice((chapPage - 1) * chapPageSize, chapPage * chapPageSize);
-        const visibleIds = pagedChapters.map(c => c.id);
-        const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id));
-        const toggleAll = () => {
-          if (allSelected) {
-            setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)));
-          } else {
-            setSelectedIds(prev => [...new Set([...prev, ...visibleIds])]);
-          }
-        };
-        return (
-          <>
-          <table className="admin-table">
-            <thead>
+      {notice && <p role="status" className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800">
+        <BadgeCheckIcon className="h-4 w-4" aria-hidden="true" /> {notice}
+        <button type="button" onClick={() => setNotice('')} aria-label="Dismiss" className="ml-auto"><XIcon className="h-4 w-4" /></button>
+      </p>}
+
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard icon={<LayersIcon className="h-5 w-5" />} iconBg="#0D6EFD" label="Total Tests" value={counts.total.toLocaleString('en-IN')} sub="All tests in system" />
+        <StatCard icon={<ZapIcon className="h-5 w-5" />} iconBg="#198754" label="Live Tests" value={counts.live.toLocaleString('en-IN')} sub="Real-time exams" />
+        <StatCard icon={<RadioIcon className="h-5 w-5" />} iconBg="#F59E0B" label="Preload Tests" value={counts.preload.toLocaleString('en-IN')} sub="Practice / pre-load" />
+        <StatCard icon={<BadgeCheckIcon className="h-5 w-5" />} iconBg="#6F42C1" label="Active Tests" value={counts.active.toLocaleString('en-IN')} sub="Visible to students" />
+        <StatCard icon={<CircleOffIcon className="h-5 w-5" />} iconBg="#DC3545" label="Inactive Tests" value={counts.inactive.toLocaleString('en-IN')} sub="Hidden from students" />
+      </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white shadow-card">
+        <div role="tablist" className="flex gap-5 border-b border-slate-100 px-4 pt-3">
+          {[['All', 'All Tests', counts.total], [LIVE, 'Live Tests', counts.live], [PRELOAD, 'Preload Tests', counts.preload]].map(([v, label, n]) => (
+            <button key={v} type="button" role="tab" aria-selected={tab === v} onClick={() => { setTab(v); setPage(1); }}
+              className={`-mb-px border-b-2 pb-2.5 text-[12.5px] font-semibold ${tab === v ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-navy-800'}`}>
+              {label} <span className="ml-1 rounded-full bg-slate-100 px-1.5 text-[10.5px] text-slate-600">{n}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-2.5 border-b border-slate-100 p-3.5 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
+          <label className="block lg:col-span-2"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Search</span>
+            <span className="relative block">
+              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input type="search" value={searchTerm} onChange={filterChange(setSearchTerm)} placeholder="Test ID, title, exam, keyword..." aria-label="Search tests" className={`${selectCls} pr-8`} />
+            </span></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Test Type</span>
+            <select aria-label="Filter by test type" value={kindFilter} onChange={filterChange(setKindFilter)} className={selectCls}><option value="All">-- Test Type --</option><option value="Typing">Typing</option><option value="Steno">Steno</option></select></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Category / Exam</span>
+            <select aria-label="Filter by exam" value={examFilter} onChange={filterChange(setExamFilter)} className={selectCls}><option value="All">-- Category / Exam --</option>{exams.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Difficulty</span>
+            <select aria-label="Filter by difficulty" value={difficultyFilter} onChange={filterChange(setDifficultyFilter)} className={selectCls}><option value="All">-- Difficulty Level --</option>{['Easy', 'Moderate', 'Hard'].map((d) => <option key={d}>{d}</option>)}<option value="">Not set</option></select></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Font Group</span>
+            <select aria-label="Filter by font group" value={fontGroupFilter} onChange={filterChange(setFontGroupFilter)} className={selectCls}><option value="All">-- Font Group --</option>{FONT_GROUPS.map((g) => <option key={g}>{g}</option>)}</select></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Status</span>
+            <select aria-label="Filter by status" value={statusFilter} onChange={filterChange(setStatusFilter)} className={selectCls}><option value="All">-- Status --</option><option>Active</option><option>Inactive</option></select></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Test Date</span>
+            <input type="date" aria-label="Filter by test date" value={filterDate} onChange={filterChange(setFilterDate)} className={selectCls} /></label>
+          <div className="flex items-end">
+            <button type="button" onClick={resetFilters} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-[12px] font-medium text-slate-600 hover:bg-slate-50"><RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Reset Filters</button>
+          </div>
+        </div>
+
+        {selectedIds.length > 0 &&
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-rose-50 px-3.5 py-2 text-[12.5px] text-rose-800">
+            <b>{selectedIds.length}</b> selected
+            <button type="button" onClick={handleBulkDelete} className="rounded-md bg-danger px-3 py-1.5 text-[12px] font-semibold text-white hover:opacity-90">Delete Selected ({selectedIds.length})</button>
+            <button type="button" onClick={() => setSelectedIds([])} className="text-[12px] underline">Clear selection</button>
+          </div>}
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1000px] text-left">
+            <thead className="bg-slate-50 text-[11.5px] font-semibold text-slate-600">
               <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
-                    title="Select all on page"
-                  />
-                </th>
-                <th>ID</th>
-                <th>No</th>
-                <th>Title</th>
-                <th>Exam</th>
-                <th>Type</th>
-                <th>Font Group</th>
-                <th>Audio</th>
-                <th>Level</th>
-                <th>Status</th>
-                <th>Date</th>
-                <th>Actions</th>
+                <th scope="col" className="px-3 py-2.5"><input type="checkbox" aria-label="Select all on page" checked={allSelected} onChange={toggleAll} className="h-3.5 w-3.5 accent-primary" /></th>
+                {['Test ID', 'Test Title', 'Type / Mode', 'Category / Exam', 'Level', 'Font Group', 'Words / Dictation', 'Duration', 'Test Date', 'Status', 'Actions'].map((h) => <th key={h} scope="col" className="px-3 py-2.5">{h}</th>)}
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan="12">Loading...</td></tr>
-              ) : pagedChapters.map((c) => (
-                <tr key={c.id} style={selectedIds.includes(c.id) ? { background: '#fef3c7' } : {}}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(c.id)}
-                      onChange={() => toggleSelectId(c.id)}
-                    />
-                  </td>
-                  <td>{c.id.substring(0, 8)}</td>
-                  <td>{c.chapter_no}</td>
-                  <td style={{ maxWidth: '220px' }}>{c.name || <span style={{ color: '#94a3b8' }}>—</span>}</td>
-                  <td>
-                    {(() => {
-                      const names = Array.isArray(c.exams) && c.exams.length > 0
-                        ? c.exams.map(e => e?.name).filter(Boolean)
-                        : (c.exam?.name ? [c.exam.name] : []);
-                      if (names.length === 0) return <span style={{color: '#94a3b8'}}>None</span>;
-                      return (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          {names.map((n, i) => (
-                            <span key={i} style={{ background: '#eff6ff', color: '#1e3a8a', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid #bfdbfe' }}>
-                              {n}
-                            </span>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td><span className={`status-badge ${c.test_type === 'Live Test' ? 'active' : 'pending'}`}>{c.test_type}</span></td>
-                  <td><span className="badge-control">{c.font_group}</span></td>
-                  <td>
-                    {c.audio_url
-                      ? <span style={{ color: '#16a34a', fontSize: '0.8rem' }}>🎙 Audio</span>
-                      : <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>}
-                  </td>
-                  <td>{c.difficulty || <span style={{ color: '#94a3b8' }}>—</span>}</td>
-                  <td>
-                    <span className={`status-badge ${c.is_active === false ? 'inactive' : 'active'}`}>{c.is_active === false ? 'Inactive' : 'Active'}</span>
-                  </td>
-                  <td>{new Date(c.test_date).toLocaleDateString()}</td>
-                  <td>
-                    <button className="btn-action btn-edit" onClick={() => handleEdit(c)}>Edit</button>
-                    <button className="btn-action btn-edit" onClick={() => handleDuplicate(c)} title="Copy this test into a new one">Duplicate</button>
-                    <button className="btn-action btn-edit" onClick={() => toggleActive(c)}>{c.is_active === false ? 'Activate' : 'Deactivate'}</button>
-                    <button className="btn-action btn-delete" onClick={() => handleDelete(c.id)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-slate-100 text-[12px]">
+              {loading ? <tr><td colSpan={12} className="px-3 py-8 text-center text-slate-500"><Loader2Icon className="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />Loading...</td></tr>
+                : filtered.length === 0 ? <tr><td colSpan={12} className="px-3 py-8 text-center text-slate-500">No tests match the current filters.</td></tr>
+                  : paged.map((c) => {
+                    const steno = isStenoGroup(c.font_group);
+                    const names = chapterExamNames(c);
+                    return (
+                      <tr key={c.id} className={`transition-colors duration-150 hover:bg-slate-50/70 ${selectedIds.includes(c.id) ? 'bg-amber-50' : ''}`}>
+                        <td className="px-3 py-2.5"><input type="checkbox" aria-label={`Select ${c.chapter_no}`} checked={selectedIds.includes(c.id)} onChange={() => toggleOne(c.id)} className="h-3.5 w-3.5 accent-primary" /></td>
+                        <td className="px-3 py-2.5"><span className="font-semibold text-navy-800">{c.chapter_no}</span><span className="block font-mono text-[10px] text-slate-400">{c.id.substring(0, 8)}</span></td>
+                        <td className="max-w-[220px] px-3 py-2.5">
+                          <span className="font-medium text-primary-700">{c.name || <span className="text-slate-400">—</span>}</span>
+                          {c.description && <span className="block truncate text-[10.5px] text-slate-500" title={c.description}>{c.description}</span>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="flex flex-col items-start gap-1">
+                            <span className={`rounded px-2 py-[2px] text-[10.5px] font-medium ${steno ? 'bg-violet-50 text-violet-700' : 'bg-sky-50 text-sky-700'}`}>{steno ? 'Steno' : 'Typing'}</span>
+                            <span className={`rounded px-2 py-[2px] text-[10.5px] font-medium ${c.test_type === LIVE ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{c.test_type === LIVE ? 'Live' : 'Preload'}</span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">{names.length ? <span className="flex flex-wrap gap-1">{names.map((n) => <span key={n} className="rounded border border-primary-100 bg-primary-50 px-1.5 py-[1px] text-[10.5px] text-primary-700">{n}</span>)}</span> : <span className="text-slate-400">None</span>}</td>
+                        <td className="px-3 py-2.5">{c.difficulty ? <span className={`rounded px-2 py-[2px] text-[10.5px] font-medium ${LEVEL_TONE[c.difficulty]}`}>{c.difficulty}</span> : <span className="text-slate-400">—</span>}</td>
+                        <td className="px-3 py-2.5 text-slate-600">{c.font_group}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">
+                          {c.word_count ?? '—'} Words
+                          {steno && <span className="block text-[10.5px] text-slate-500">{c.steno_speed ?? 100} WPM {c.audio_url ? <span className="text-emerald-700"><HeadphonesIcon className="inline h-3 w-3" aria-hidden="true" /> Audio</span> : <span className="text-rose-600">· no audio</span>}</span>}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{durationOf(c)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{fmtDate(c.test_date)}<span className="block text-[10px] text-slate-400">Created {fmtDate(c.created_at)}</span></td>
+                        <td className="px-3 py-2.5"><span className={`rounded px-2 py-[2px] text-[10.5px] font-medium ${c.is_active === false ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{c.is_active === false ? 'Inactive' : 'Active'}</span></td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-1">
+                            <Link to={`/admin/content/${c.id}/edit`} title="Edit" aria-label={`Edit ${c.chapter_no}`} className="rounded p-1.5 text-slate-500 hover:bg-primary-50 hover:text-primary"><PencilIcon className="h-4 w-4" /></Link>
+                            <Link to={`/admin/content/new?duplicate=${c.id}`} title="Duplicate" aria-label={`Duplicate ${c.chapter_no}`} className="rounded p-1.5 text-slate-500 hover:bg-primary-50 hover:text-primary"><CopyIcon className="h-4 w-4" /></Link>
+                            <button type="button" onClick={() => toggleActive(c)} title={c.is_active === false ? 'Activate' : 'Deactivate'} aria-label={`${c.is_active === false ? 'Activate' : 'Deactivate'} ${c.chapter_no}`} className={`rounded p-1.5 hover:bg-slate-100 ${c.is_active === false ? 'text-slate-400' : 'text-emerald-600'}`}><PowerIcon className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => handleDelete(c)} title="Delete" aria-label={`Delete ${c.chapter_no}`} className="rounded p-1.5 text-slate-500 hover:bg-rose-50 hover:text-danger"><Trash2Icon className="h-4 w-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
             </tbody>
           </table>
-          <Pagination
-            page={chapPage} totalPages={chapTotalPages} totalItems={visibleChapters.length}
-            pageSize={chapPageSize} onPageChange={setChapPage} onPageSizeChange={p => { setChapPageSize(p); setChapPage(1); }}
-          />
-          </>
-        );
-      })()}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-3.5 pb-1 pt-3">
+          <div className="min-w-0 flex-1">
+            <Pagination page={currentPage} totalPages={totalPages} totalItems={filtered.length} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(p) => { setPageSize(p); setPage(1); }} />
+          </div>
+          <button type="button" onClick={exportExcel} className="mb-2 flex items-center gap-1.5 rounded-md border border-emerald-300 px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50">
+            <FileSpreadsheetIcon className="h-3.5 w-3.5" aria-hidden="true" /> Export Excel
+          </button>
+        </div>
+      </section>
     </div>
   );
 };

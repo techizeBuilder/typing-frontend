@@ -41,6 +41,7 @@ import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminExams from './pages/admin/AdminExams';
 import AdminChapters from './pages/admin/AdminChapters';
+import AdminTestForm from './pages/admin/AdminTestForm';
 import AdminFontGroups from './pages/admin/AdminFontGroups';
 import AdminScreenLayout from './pages/admin/AdminScreenLayout';
 import AdminMagazines from './pages/admin/AdminMagazines';
@@ -122,6 +123,8 @@ function App() {
               <Route path="backup" element={<AdminBackup />} />
               <Route path="subscription" element={<AdminPlans />} />
               <Route path="content" element={<AdminChapters />} />
+              <Route path="content/new" element={<AdminTestForm />} />
+              <Route path="content/:id/edit" element={<AdminTestForm />} />
               <Route path="students" element={<AdminStudents />} />
               <Route path="students/new" element={<AdminStudentForm />} />
               <Route path="students/:id/edit" element={<AdminStudentForm />} />
