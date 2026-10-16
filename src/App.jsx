@@ -47,6 +47,7 @@ import AdminMagazines from './pages/admin/AdminMagazines';
 import AdminBackup from './pages/admin/AdminBackup';
 import AdminPlans from './pages/admin/AdminPlans';
 import AdminStudents from './pages/admin/AdminStudents';
+import AdminStudentForm from './pages/admin/AdminStudentForm';
 import AdminMessages from './pages/admin/AdminMessages';
 import AdminFlashBanner from './pages/admin/AdminFlashBanner';
 import AdminStaff from './pages/admin/AdminStaff';
@@ -122,6 +123,8 @@ function App() {
               <Route path="subscription" element={<AdminPlans />} />
               <Route path="content" element={<AdminChapters />} />
               <Route path="students" element={<AdminStudents />} />
+              <Route path="students/new" element={<AdminStudentForm />} />
+              <Route path="students/:id/edit" element={<AdminStudentForm />} />
               <Route path="messages" element={<AdminMessages />} />
               <Route path="flash-banner" element={<AdminFlashBanner />} />
               <Route path="staff" element={<AdminStaff />} />

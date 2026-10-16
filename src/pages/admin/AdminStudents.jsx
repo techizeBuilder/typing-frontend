@@ -1,413 +1,135 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
+import {
+  BadgeCheckIcon, ClockIcon, EyeIcon, FileSpreadsheetIcon, Loader2Icon, MegaphoneIcon, PencilIcon, PlusIcon, PowerIcon, RefreshCwIcon, RotateCcwIcon,
+  SearchIcon, Trash2Icon, UploadIcon, UserIcon, UserMinusIcon, UserPlusIcon, UsersIcon, XIcon,
+} from 'lucide-react';
 import { userService, resultService } from '../../services/api';
 import Pagination from '../../components/Pagination';
-import { API_BASE_URL } from '../../config';
-import { INDIAN_STATES } from '../../features/students/indianStates';
-import * as XLSX from 'xlsx';
+import { StatCard } from '../../ui/StatCard';
 import { urlParam } from '../../features/admin/urlParams';
+import { StudentImportModal } from '../../features/students/StudentImport';
+import {
+  ALL_CATEGORIES, categoriesOf, errorText, fmtDate, hasLoginWindow, isExpired, photoUrl,
+} from '../../features/students/studentData';
 import './Admin.css';
 
-// Optional student details added in 8.18 (kept in both the Add and Edit forms).
-const EXTRA_FIELDS = { email: '', city: '', state: '', pin_code: '', address: '', guardian_phone: '', remarks: '' };
-const photoUrl = (p) => (p ? (p.startsWith('http') ? p : `${API_BASE_URL}${p}`) : null);
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+const STATUS_TONE = {
+  Active: 'bg-emerald-50 text-emerald-700', Inactive: 'bg-rose-50 text-rose-700', Pending: 'bg-amber-50 text-amber-700', Expired: 'bg-slate-100 text-slate-600',
+};
+const COURSE_COLORS = { 'Typing English': '#0D6EFD', 'Typing Hindi': '#198754', 'Steno English': '#F59E0B', 'Steno Hindi': '#6F42C1' };
+const selectCls = 'w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-[12px] text-slate-700 outline-none focus:border-primary';
+const panelCls = 'rounded-xl border border-slate-200 bg-white p-4 shadow-card';
 
-function ContactFields({ data, onChange }) {
-  const field = (key, label, props = {}) => (
-    <div className="input-group">
-      <label>{label}</label>
-      <input type="text" value={data[key] || ''} onChange={(e) => onChange(key, e.target.value)} {...props} />
-    </div>
-  );
+// Status as students experience it: an Active account past its validity shows as Expired.
+const shownStatus = (s) => (s.status === 'Active' && isExpired(s) ? 'Expired' : s.status || 'Pending');
+
+function Donut({ parts }) {
+  const total = parts.reduce((t, p) => t + p.value, 0);
+  const r = 40; const c = 2 * Math.PI * r;
+  let offset = 0;
   return (
-    <div className="form-section">
-      <h4>Contact & Address</h4>
-      <div className="admin-inline-group">
-        {field('email', 'Email ID', { type: 'email', placeholder: 'name@example.com' })}
-        {field('guardian_phone', 'Parent / Guardian Mobile', { inputMode: 'numeric', placeholder: '10 digit mobile number' })}
-      </div>
-      <div className="admin-inline-group">
-        {field('city', 'City')}
-        {field('state', 'State', { list: 'admin-state-list', placeholder: 'Type or pick a state' })}
-        {field('pin_code', 'Pin Code', { inputMode: 'numeric', maxLength: 6, placeholder: '6 digits' })}
-      </div>
-      <datalist id="admin-state-list">{INDIAN_STATES.map((st) => <option key={st} value={st} />)}</datalist>
-      <div className="input-group">
-        <label>Address</label>
-        <textarea rows={2} value={data.address || ''} onChange={(e) => onChange('address', e.target.value)} />
-      </div>
-      <div className="input-group">
-        <label>Remarks (admin only)</label>
-        <textarea rows={2} placeholder="Notes about this student — not shown to the student" value={data.remarks || ''} onChange={(e) => onChange('remarks', e.target.value)} />
-      </div>
-    </div>
+    <svg viewBox="0 0 100 100" className="h-[110px] w-[110px] shrink-0" role="img" aria-label="Students per course">
+      <circle cx="50" cy="50" r={r} fill="none" stroke="#F1F5F9" strokeWidth="16" />
+      {total > 0 && parts.map((p) => {
+        const len = (p.value / total) * c;
+        const el = <circle key={p.label} cx="50" cy="50" r={r} fill="none" stroke={p.color} strokeWidth="16" strokeDasharray={`${len} ${c - len}`} strokeDashoffset={-offset} transform="rotate(-90 50 50)" />;
+        offset += len;
+        return el;
+      })}
+    </svg>
   );
 }
 
-function PhotoField({ current, file, onFile }) {
-  const preview = file ? URL.createObjectURL(file) : photoUrl(current);
-  return (
-    <div className="input-group">
-      <label>Student Photo</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {preview
-          ? <img src={preview} alt="" style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', border: '1px solid #e2e8f0' }} />
-          : <span style={{ width: 56, height: 56, borderRadius: '50%', background: '#f1f5f9', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.75rem' }}>No photo</span>}
-        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => onFile(e.target.files?.[0] || null)} />
-      </div>
-      <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>JPG, PNG, WEBP or GIF, up to 2 MB.</p>
-    </div>
-  );
-}
+// Bulk edit: unchanged rules — only the enabled fields are sent.
+const BULK_EMPTY = {
+  applyStatus: false, status: 'Active', applyCategories: false, selectedCategories: [], applyLoginTime: false, allowed_login_time_start: '', allowed_login_time_end: '',
+  applyValidityEnd: false, validity_end: '', applyLiveTestsLimit: false, live_tests_limit: '', applyPreloadTestsLimit: false, preload_tests_limit: '',
+  applyStenoTestsLimit: false, steno_tests_limit: '',
+};
 
-const AdminStudents = () => {
-  const [students, setStudents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState(null);
-  const [searchTerm, setSearchTerm] = useState(() => urlParam('search') || '');
-  const navigate = useNavigate();
-
-  // Tests Modal State
-  const [selectedStudentForTests, setSelectedStudentForTests] = useState(null);
-  const [studentTests, setStudentTests] = useState([]);
-  const [loadingTests, setLoadingTests] = useState(false);
-  const [activeTestTab, setActiveTestTab] = useState('typing'); // 'typing' or 'steno'
-  
-  // Edit Modal State
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [currentStudent, setCurrentStudent] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    fathers_name: '',
-    phone: '',
-    ...EXTRA_FIELDS,
-    status: 'Active',
-    validity_start: '',
-    validity_end: '',
-    allowed_login_time_start: '',
-    allowed_login_time_end: '',
-    password_hash: '',
-    last_fees_submitted_date: '',
-    fees_amount: '',
-    roll_no: '',
-    live_tests_limit: '',
-    preload_tests_limit: '',
-    steno_tests_limit: '',
-    category: '',
-    selectedCategories: []
-  });
-
-  const ALL_CATEGORIES = ['Typing English', 'Typing Hindi', 'Steno English', 'Steno Hindi'];
-
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState(() => urlParam('status') || 'All');
-  const [addPhoto, setAddPhoto] = useState(null);
-  const [editPhoto, setEditPhoto] = useState(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-
-  useEffect(() => { setPage(1); }, [searchTerm, categoryFilter, statusFilter]);
-
-  // Bulk Edit State
-  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
-  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
-  const [bulkFormData, setBulkFormData] = useState({
-    applyStatus: false,
-    status: 'Active',
-    applyCategories: false,
-    selectedCategories: [],
-    applyLoginTime: false,
-    allowed_login_time_start: '',
-    allowed_login_time_end: '',
-    applyValidityEnd: false,
-    validity_end: '',
-    applyLiveTestsLimit: false,
-    live_tests_limit: '',
-    applyPreloadTestsLimit: false,
-    preload_tests_limit: '',
-    applyStenoTestsLimit: false,
-    steno_tests_limit: '',
-  });
-
-  const toggleStudentSelect = (id) => {
-    setSelectedStudentIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = (visibleStudents) => {
-    if (visibleStudents.every(s => selectedStudentIds.has(s.id))) {
-      setSelectedStudentIds(new Set());
-    } else {
-      setSelectedStudentIds(new Set(visibleStudents.map(s => s.id)));
-    }
-  };
-
-  const handleBulkEditSubmit = async (e) => {
+function BulkEditModal({ ids, onClose, onSaved }) {
+  const [f, setF] = useState(BULK_EMPTY);
+  const [saving, setSaving] = useState(false);
+  const set = (patch) => setF((x) => ({ ...x, ...patch }));
+  const submit = async (e) => {
     e.preventDefault();
-    if (selectedStudentIds.size === 0) {
-      alert('No students selected.');
-      return;
-    }
     const payload = {};
-    if (bulkFormData.applyStatus) payload.status = bulkFormData.status;
-    if (bulkFormData.applyCategories) payload.category = bulkFormData.selectedCategories.join(', ') || null;
-    if (bulkFormData.applyLoginTime) {
-      payload.allowed_login_time_start = bulkFormData.allowed_login_time_start || null;
-      payload.allowed_login_time_end = bulkFormData.allowed_login_time_end || null;
-    }
-    if (bulkFormData.applyValidityEnd) payload.validity_end = bulkFormData.validity_end || null;
-    if (bulkFormData.applyLiveTestsLimit) {
-      payload.live_tests_limit = bulkFormData.live_tests_limit === ''
-        ? null
-        : parseInt(bulkFormData.live_tests_limit, 10);
-    }
-    if (bulkFormData.applyPreloadTestsLimit) {
-      payload.preload_tests_limit = bulkFormData.preload_tests_limit === ''
-        ? null
-        : parseInt(bulkFormData.preload_tests_limit, 10);
-    }
-    if (bulkFormData.applyStenoTestsLimit) {
-      payload.steno_tests_limit = bulkFormData.steno_tests_limit === ''
-        ? null
-        : parseInt(bulkFormData.steno_tests_limit, 10);
-    }
-
-    if (Object.keys(payload).length === 0) {
-      alert('Please enable and fill at least one field to update.');
-      return;
-    }
+    if (f.applyStatus) payload.status = f.status;
+    if (f.applyCategories) payload.category = f.selectedCategories.join(', ') || null;
+    if (f.applyLoginTime) { payload.allowed_login_time_start = f.allowed_login_time_start || null; payload.allowed_login_time_end = f.allowed_login_time_end || null; }
+    if (f.applyValidityEnd) payload.validity_end = f.validity_end || null;
+    if (f.applyLiveTestsLimit) payload.live_tests_limit = f.live_tests_limit === '' ? null : parseInt(f.live_tests_limit, 10);
+    if (f.applyPreloadTestsLimit) payload.preload_tests_limit = f.preload_tests_limit === '' ? null : parseInt(f.preload_tests_limit, 10);
+    if (f.applyStenoTestsLimit) payload.steno_tests_limit = f.steno_tests_limit === '' ? null : parseInt(f.steno_tests_limit, 10);
+    if (Object.keys(payload).length === 0) { alert('Please enable and fill at least one field to update.'); return; }
+    setSaving(true);
     try {
-      await Promise.all(Array.from(selectedStudentIds).map(id => userService.updateUser(id, payload)));
-      setShowBulkEditModal(false);
-      setSelectedStudentIds(new Set());
-      fetchStudents();
-      alert(`Updated ${selectedStudentIds.size} student(s) successfully.`);
-    } catch (error) {
-      alert('Bulk update error: ' + (error.response?.data?.message || error.message));
-    }
-  };
-
-  // Add Student Modal State
-  const [showAddModal, setShowAddModal] = useState(() => urlParam('new') === '1');
-  const [addFormData, setAddFormData] = useState({
-    name: '',
-    fathers_name: '',
-    phone: '',
-    user_id: '',
-    password_hash: '',
-    category: 'Typing English',
-    selectedCategories: ['Typing English'],
-    status: 'Active',
-    roll_no: '',
-    fees_amount: '',
-    validity_end: '',
-    ...EXTRA_FIELDS
-  });
-
-  useEffect(() => {
-    fetchStudents();
-  }, []);
-
-  const fetchStudents = async () => {
-    try {
-      setLoading(true);
-      setErrorMsg(null);
-      const data = await userService.getUsers();
-      // Newest students first
-      const sorted = [...data].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-      setStudents(sorted);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      setErrorMsg(error.message + ' (Check if Backend is running)');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStatusToggle = async (student) => {
-    const newStatus = student.status === 'Active' ? 'Inactive' : 'Active';
-    try {
-      await userService.updateUser(student.id, { status: newStatus });
-      fetchStudents();
-    } catch (error) {
-      alert('Error updating status: ' + error.message);
-    }
-  };
-
-  const handleDeleteStudent = async (student) => {
-    const ok = window.confirm(
-      `Delete the account for "${student.name}" (${student.user_id || student.phone})?\n\n` +
-      `This permanently removes the student and ALL their test results. This cannot be undone.`
-    );
-    if (!ok) return;
-    try {
-      await userService.deleteUser(student.id);
-      setSelectedStudentIds(prev => {
-        const next = new Set(prev);
-        next.delete(student.id);
-        return next;
-      });
-      fetchStudents();
-    } catch (error) {
-      alert('Error deleting student: ' + (error.response?.data?.message || error.message));
-    }
-  };
-
-  const openEditModal = (student) => {
-    setCurrentStudent(student);
-    const existingCats = student.category
-      ? student.category.split(',').map(c => c.trim()).filter(Boolean)
-      : [];
-    setEditPhoto(null);
-    setFormData({
-      name: student.name || '',
-      fathers_name: student.fathers_name || '',
-      phone: student.phone || '',
-      ...Object.fromEntries(Object.keys(EXTRA_FIELDS).map((k) => [k, student[k] || ''])),
-      status: student.status || 'Active',
-      validity_start: student.validity_start ? new Date(student.validity_start).toISOString().split('T')[0] : '',
-      validity_end: student.validity_end ? new Date(student.validity_end).toISOString().split('T')[0] : '',
-      allowed_login_time_start: student.allowed_login_time_start || '',
-      allowed_login_time_end: student.allowed_login_time_end || '',
-      password_hash: '',
-      last_fees_submitted_date: student.last_fees_submitted_date ? new Date(student.last_fees_submitted_date).toISOString().split('T')[0] : '',
-      fees_amount: student.fees_amount || '',
-      roll_no: student.roll_no || '',
-      live_tests_limit: student.live_tests_limit !== null && student.live_tests_limit !== undefined ? student.live_tests_limit : '',
-      preload_tests_limit: student.preload_tests_limit !== null && student.preload_tests_limit !== undefined ? student.preload_tests_limit : '',
-      steno_tests_limit: student.steno_tests_limit !== null && student.steno_tests_limit !== undefined ? student.steno_tests_limit : '',
-      category: student.category || '',
-      selectedCategories: existingCats
-    });
-    setShowEditModal(true);
-  };
-
-  const handleAddStudent = async (e) => {
-    e.preventDefault();
-    if (addFormData.selectedCategories.length === 0) {
-      alert('Please select at least one course category.');
-      return;
-    }
-    try {
-      const { selectedCategories, ...rest } = addFormData;
-      const payload = { ...rest, role: 'Student', category: selectedCategories.join(', ') };
-      if (!payload.validity_end) delete payload.validity_end;
-      if (payload.fees_amount === '') delete payload.fees_amount;
-      if (!payload.user_id) payload.user_id = payload.phone;
-      const created = await userService.createUser(payload);
-      if (addPhoto && created?.id) {
-        try { await userService.uploadUserAvatar(created.id, addPhoto); } catch (err) { alert('Student created, but the photo was not saved: ' + (err.response?.data?.message || err.message)); }
-      }
-      setShowAddModal(false);
-      setAddPhoto(null);
-      setAddFormData({
-        name: '', fathers_name: '', phone: '', user_id: '', password_hash: '',
-        category: 'Typing English', selectedCategories: ['Typing English'],
-        status: 'Active', roll_no: '', fees_amount: '', validity_end: '', ...EXTRA_FIELDS
-      });
-      fetchStudents();
-    } catch (error) {
-      alert('Error creating student: ' + (error.response?.data?.message || error.message));
-    }
-  };
-
-  // Students matching the search + filters (all pages); used by the table and the export.
-  const getFilteredStudents = () => students
-    .filter(s => s.role === 'Student')
-    .filter(s => {
-      const q = searchTerm.trim().toLowerCase();
-      return !q || [s.name, s.phone, s.user_id, s.roll_no, s.email, s.city].some(v => v && String(v).toLowerCase().includes(q));
-    })
-    .filter(s => categoryFilter === 'All' || (s.category && s.category.split(',').map(c => c.trim()).includes(categoryFilter)))
-    .filter(s => statusFilter === 'All' || s.status === statusFilter);
-
-  const exportStudents = () => {
-    const rows = getFilteredStudents().map(s => ({
-      Name: s.name, "Father's Name": s.fathers_name || '', 'Login ID': s.user_id || '', 'Roll No': s.roll_no || '',
-      Phone: s.phone || '', Email: s.email || '', 'Guardian Mobile': s.guardian_phone || '', City: s.city || '', State: s.state || '',
-      'Pin Code': s.pin_code || '', Address: s.address || '', Category: s.category || '', Status: s.status || '',
-      'Validity End': s.validity_end ? new Date(s.validity_end).toLocaleDateString('en-GB') : '',
-      'Login Window': s.allowed_login_time_start && s.allowed_login_time_end ? `${s.allowed_login_time_start}-${s.allowed_login_time_end}` : 'Anytime',
-      'Fees Amount': s.fees_amount ?? '', 'Last Fees Date': s.last_fees_submitted_date ? new Date(s.last_fees_submitted_date).toLocaleDateString('en-GB') : '',
-      'Joined On': s.created_at ? new Date(s.created_at).toLocaleDateString('en-GB') : '', Remarks: s.remarks || '',
-    }));
-    if (rows.length === 0) { alert('No students match the current filters.'); return; }
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Students');
-    XLSX.writeFile(wb, `students_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  };
-
-  const generatePassword = () => {
-    const randomPass = Math.random().toString(36).slice(-8);
-    setFormData(prev => ({ ...prev, password_hash: randomPass }));
-  };
-
-  const handleEditSubmit = async (e) => {
-    e.preventDefault();
-    if (!formData.name.trim() || !formData.phone.trim()) {
-      alert('Student name and phone are required.');
-      return;
-    }
-    try {
-      const { selectedCategories, ...rest } = formData;
-      const payload = { ...rest, category: selectedCategories.length > 0 ? selectedCategories.join(', ') : null };
-
-      // Clean up empty fields
-      if (!payload.validity_start) payload.validity_start = null;
-      if (!payload.validity_end) payload.validity_end = null;
-      if (!payload.allowed_login_time_start) payload.allowed_login_time_start = null;
-      if (!payload.allowed_login_time_end) payload.allowed_login_time_end = null;
-      if (!payload.last_fees_submitted_date) payload.last_fees_submitted_date = null;
-      if (payload.fees_amount === '') payload.fees_amount = null;
-      if (payload.live_tests_limit === '') {
-        payload.live_tests_limit = null;
-      } else {
-        payload.live_tests_limit = parseInt(payload.live_tests_limit, 10);
-      }
-      if (payload.preload_tests_limit === '') {
-        payload.preload_tests_limit = null;
-      } else {
-        payload.preload_tests_limit = parseInt(payload.preload_tests_limit, 10);
-      }
-      if (payload.steno_tests_limit === '') {
-        payload.steno_tests_limit = null;
-      } else {
-        payload.steno_tests_limit = parseInt(payload.steno_tests_limit, 10);
-      }
-      if (!payload.password_hash || payload.password_hash.trim() === '') {
-        delete payload.password_hash;
-      }
-
-      await userService.updateUser(currentStudent.id, payload);
-      if (editPhoto) await userService.uploadUserAvatar(currentStudent.id, editPhoto);
-      setShowEditModal(false);
-      setEditPhoto(null);
-      fetchStudents();
-    } catch (error) {
-      alert('Error updating user: ' + (error.response?.data?.message || error.message));
-    }
-  };
-
-  const openTestsModal = async (student) => {
-    setSelectedStudentForTests(student);
-    setActiveTestTab('typing'); // reset tab on open
-    setLoadingTests(true);
-    try {
-      const results = await resultService.getUserResults(student.id);
-      // Most recent test first
-      setStudentTests([...results].sort((a, b) => new Date(b.date_taken || 0) - new Date(a.date_taken || 0)));
+      await Promise.all(ids.map((id) => userService.updateUser(id, payload)));
+      onSaved(`Updated ${ids.length} student(s) successfully.`);
     } catch (err) {
-      alert("Error fetching tests: " + err.message);
-    } finally {
-      setLoadingTests(false);
-    }
+      alert('Bulk update error: ' + errorText(err, 'failed'));
+    } finally { setSaving(false); }
   };
+  const row = (flag, title, hint, control) => (
+    <div className="rounded-lg border border-slate-200 p-3">
+      <label className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-navy-800">
+        <input type="checkbox" checked={f[flag]} onChange={(e) => set({ [flag]: e.target.checked })} className="h-3.5 w-3.5 accent-primary" /> {title}
+      </label>
+      <p className="mb-2 text-[11px] text-slate-500">{hint}</p>
+      <div className={f[flag] ? '' : 'pointer-events-none opacity-50'}>{control}</div>
+    </div>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" role="dialog" aria-modal="true" aria-labelledby="bulk-title">
+      <form onSubmit={submit} className="nd flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl">
+        <div className="flex items-center border-b border-slate-100 px-5 py-3.5">
+          <h3 id="bulk-title" className="text-[15px] font-bold text-navy-800">Bulk Edit — {ids.length} student(s) selected</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className="ml-auto rounded p-1 text-slate-400 hover:bg-slate-100"><XIcon className="h-5 w-5" /></button>
+        </div>
+        <div className="scroll-thin grid flex-1 gap-3 overflow-y-auto p-5 sm:grid-cols-2">
+          <p className="text-[12px] text-slate-500 sm:col-span-2">Enable a field to update it for all selected students. Disabled fields are left unchanged.</p>
+          {row('applyStatus', 'Status', 'Update status for selected students',
+            <select value={f.status} onChange={(e) => set({ status: e.target.value })} className={selectCls}>{['Active', 'Inactive', 'Pending'].map((s) => <option key={s}>{s}</option>)}</select>)}
+          {row('applyCategories', 'Course Categories', 'Override categories for selected students',
+            <div className="flex flex-wrap gap-1.5">{ALL_CATEGORIES.map((cat) => (
+              <label key={cat} className="flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-[11.5px]">
+                <input type="checkbox" checked={f.selectedCategories.includes(cat)} onChange={() => set({ selectedCategories: f.selectedCategories.includes(cat) ? f.selectedCategories.filter((c) => c !== cat) : [...f.selectedCategories, cat] })} className="h-3 w-3 accent-primary" /> {cat}
+              </label>))}</div>)}
+          {row('applyLoginTime', 'Login Time Window', 'Leave both blank to remove the restriction',
+            <div className="flex gap-2"><input type="time" aria-label="Start time" value={f.allowed_login_time_start} onChange={(e) => set({ allowed_login_time_start: e.target.value })} className={selectCls} /><input type="time" aria-label="End time" value={f.allowed_login_time_end} onChange={(e) => set({ allowed_login_time_end: e.target.value })} className={selectCls} /></div>)}
+          {row('applyValidityEnd', 'Validity End Date', 'Leave blank to clear it',
+            <input type="date" value={f.validity_end} onChange={(e) => set({ validity_end: e.target.value })} className={selectCls} />)}
+          {row('applyLiveTestsLimit', 'Live Tests Per Day', 'Blank = default 1',
+            <input type="number" min="0" placeholder="Empty = Default 1" value={f.live_tests_limit} onChange={(e) => set({ live_tests_limit: e.target.value })} className={selectCls} />)}
+          {row('applyPreloadTestsLimit', 'Pre-load Tests Limit', 'Blank = default 10',
+            <input type="number" min="0" placeholder="Empty = Default 10" value={f.preload_tests_limit} onChange={(e) => set({ preload_tests_limit: e.target.value })} className={selectCls} />)}
+          {row('applyStenoTestsLimit', 'Steno Tests Limit', 'Blank = default 10',
+            <input type="number" min="0" placeholder="Empty = Default 10" value={f.steno_tests_limit} onChange={(e) => set({ steno_tests_limit: e.target.value })} className={selectCls} />)}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-4 py-2 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button type="submit" disabled={saving} className="rounded-md bg-primary px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-primary-700 disabled:opacity-60">Apply to {ids.length} Student(s)</button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
-  const handleViewResult = (test) => {
+function TestsModal({ student, onClose }) {
+  const navigate = useNavigate();
+  const [tests, setTests] = useState(null);
+  const [tab, setTab] = useState('typing');
+  useEffect(() => {
+    let cancelled = false;
+    resultService.getUserResults(student.id)
+      .then((results) => { if (!cancelled) setTests([...results].sort((a, b) => new Date(b.date_taken || 0) - new Date(a.date_taken || 0))); })
+      .catch((err) => { if (!cancelled) { alert('Error fetching tests: ' + err.message); setTests([]); } });
+    return () => { cancelled = true; };
+  }, [student.id]);
+
+  const viewResult = (test) => {
     // Only steno results use the StenoDiff view (driven by typedText + referenceText).
     // Typing results must leave these unset so ResultScreen renders the full
     // TypingPassageReview with its Test Analysis / Mistake / Compare tabs.
@@ -428,8 +150,8 @@ const AdminStudents = () => {
         exam_name: test.exam ? test.exam.name : 'Practice Mode',
         chapter_no: test.chapter?.chapter_no || null,
         date_taken: test.date_taken,
-        studentName: selectedStudentForTests.name,
-        rollNo: selectedStudentForTests.user_id,
+        studentName: student.name,
+        rollNo: student.user_id,
         mode: test.mode,
         userInput: test.user_input,
         referenceWords: test.reference_words || [],
@@ -437,636 +159,323 @@ const AdminStudents = () => {
         pattern: test.pattern_data,
         originalPassage: fullPassage,
         ...(isSteno ? { typedText: test.user_input, referenceText: fullPassage } : {}),
-      }
+      },
     });
   };
 
+  const shown = (tests || []).filter((t) => (tab === 'steno') === !!t.mode?.toLowerCase().includes('steno'));
   return (
-    <div className="admin-card">
-      <header className="admin-header">
-        <h2>Student Management</h2>
-        <div className="admin-stats-bar" style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div>Total Found: <strong>{students.filter(s => s.role === 'Student').length}</strong></div>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            <option value="All">All Categories</option>
-            <option value="Typing English">Typing English</option>
-            <option value="Typing Hindi">Typing Hindi</option>
-            <option value="Steno English">Steno English</option>
-            <option value="Steno Hindi">Steno Hindi</option>
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label="Filter by status"
-            style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            <option value="All">All Status</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-            <option value="Pending">Pending</option>
-            <option value="Expired">Expired</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Search name, phone, login ID, roll no, email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
-          />
-          <button onClick={fetchStudents} style={{ fontSize: '0.7rem' }}>🔄 Refresh</button>
-          <button onClick={() => exportStudents()} style={{ fontSize: '0.85rem', background: '#0f766e', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-            ⬇ Export Excel
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            style={{ fontSize: '0.85rem', background: '#16a34a', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            + Add Student
-          </button>
-          <button
-            onClick={() => {
-              if (selectedStudentIds.size === 0) { alert('Please select at least one student first.'); return; }
-              setShowBulkEditModal(true);
-            }}
-            style={{ fontSize: '0.85rem', background: '#7c3aed', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            ✏ Bulk Edit {selectedStudentIds.size > 0 ? `(${selectedStudentIds.size})` : ''}
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" role="dialog" aria-modal="true" aria-labelledby="tests-title">
+      <div className="nd flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl">
+        <div className="flex items-center border-b border-slate-100 px-5 py-3.5">
+          <h3 id="tests-title" className="text-[15px] font-bold text-navy-800">Tests History: {student.name}</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className="ml-auto rounded p-1 text-slate-400 hover:bg-slate-100"><XIcon className="h-5 w-5" /></button>
         </div>
-      </header>
-      
-      {(() => {
-        const all = students.filter(s => s.role === 'Student');
-        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-        const chips = [
-          ['Active', all.filter(s => s.status === 'Active').length, '#16a34a'],
-          ['Inactive / Expired', all.filter(s => s.status === 'Inactive' || s.status === 'Expired').length, '#dc2626'],
-          ['Pending', all.filter(s => s.status === 'Pending').length, '#d97706'],
-          ['New This Month', all.filter(s => s.created_at && new Date(s.created_at) >= monthStart).length, '#2563eb'],
-        ];
-        return (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', margin: '0 0 12px' }}>
-            {chips.map(([label, n, color]) => (
-              <div key={label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${color}`, borderRadius: '6px', padding: '6px 14px', fontSize: '0.8rem', color: '#475569' }}>
-                {label}: <strong style={{ color }}>{n}</strong>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
-      {errorMsg && (
-        <div style={{ background: '#fee2e2', color: '#dc2626', padding: '10px', marginBottom: '10px', borderRadius: '4px' }}>
-          <strong>Error:</strong> {errorMsg}
-        </div>
-      )}
-
-      {showBulkEditModal && (
-        <div className="admin-form-container pattern-setup" style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3>Bulk Edit — {selectedStudentIds.size} Student(s) Selected</h3>
-            <button className="btn-secondary" onClick={() => setShowBulkEditModal(false)}>Close X</button>
-          </div>
-          <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px' }}>
-            Enable a field to update it for all selected students. Disabled fields are left unchanged.
-          </p>
-          <form onSubmit={handleBulkEditSubmit} className="admin-grid-form" style={{ marginTop: '12px' }}>
-            <div className="form-section">
-              <h4>Status</h4>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
-                <input type="checkbox" checked={bulkFormData.applyStatus} onChange={e => setBulkFormData(f => ({ ...f, applyStatus: e.target.checked }))} />
-                Update status for selected students
-              </label>
-              <select
-                disabled={!bulkFormData.applyStatus}
-                value={bulkFormData.status}
-                onChange={e => setBulkFormData(f => ({ ...f, status: e.target.value }))}
-                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyStatus ? 1 : 0.5 }}
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Pending">Pending</option>
-              </select>
-            </div>
-
-            <div className="form-section">
-              <h4>Course Categories</h4>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
-                <input type="checkbox" checked={bulkFormData.applyCategories} onChange={e => setBulkFormData(f => ({ ...f, applyCategories: e.target.checked }))} />
-                Override categories for selected students
-              </label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', opacity: bulkFormData.applyCategories ? 1 : 0.5, pointerEvents: bulkFormData.applyCategories ? 'auto' : 'none' }}>
-                {ALL_CATEGORIES.map(cat => (
-                  <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', cursor: 'pointer', background: bulkFormData.selectedCategories.includes(cat) ? '#e0e7ff' : '#f1f5f9', border: bulkFormData.selectedCategories.includes(cat) ? '1.5px solid #6366f1' : '1.5px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontWeight: bulkFormData.selectedCategories.includes(cat) ? 700 : 400 }}>
-                    <input
-                      type="checkbox"
-                      checked={bulkFormData.selectedCategories.includes(cat)}
-                      onChange={() => {
-                        const set = new Set(bulkFormData.selectedCategories);
-                        if (set.has(cat)) set.delete(cat); else set.add(cat);
-                        setBulkFormData(f => ({ ...f, selectedCategories: Array.from(set) }));
-                      }}
-                    />
-                    {cat}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="form-section">
-              <h4>Login Time Window</h4>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
-                <input type="checkbox" checked={bulkFormData.applyLoginTime} onChange={e => setBulkFormData(f => ({ ...f, applyLoginTime: e.target.checked }))} />
-                Update allowed login times (leave blank to remove restriction)
-              </label>
-              <div className="admin-inline-group" style={{ opacity: bulkFormData.applyLoginTime ? 1 : 0.5, pointerEvents: bulkFormData.applyLoginTime ? 'auto' : 'none' }}>
-                <div className="input-group">
-                  <label>Start Time (e.g. 09:00)</label>
-                  <input type="time" value={bulkFormData.allowed_login_time_start} onChange={e => setBulkFormData(f => ({ ...f, allowed_login_time_start: e.target.value }))} />
-                </div>
-                <div className="input-group">
-                  <label>End Time (e.g. 17:00)</label>
-                  <input type="time" value={bulkFormData.allowed_login_time_end} onChange={e => setBulkFormData(f => ({ ...f, allowed_login_time_end: e.target.value }))} />
-                </div>
-              </div>
-            </div>
-
-            <div className="form-section">
-              <h4>Validity End Date</h4>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
-                <input type="checkbox" checked={bulkFormData.applyValidityEnd} onChange={e => setBulkFormData(f => ({ ...f, applyValidityEnd: e.target.checked }))} />
-                Update validity end date (leave blank to clear it)
-              </label>
-              <input
-                type="date"
-                disabled={!bulkFormData.applyValidityEnd}
-                value={bulkFormData.validity_end}
-                onChange={e => setBulkFormData(f => ({ ...f, validity_end: e.target.value }))}
-                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyValidityEnd ? 1 : 0.5 }}
-              />
-            </div>
-
-            <div className="form-section">
-              <h4>Live Tests Per Day Limit</h4>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
-                <input type="checkbox" checked={bulkFormData.applyLiveTestsLimit} onChange={e => setBulkFormData(f => ({ ...f, applyLiveTestsLimit: e.target.checked }))} />
-                Update live tests per day limit (leave blank for default 1)
-              </label>
-              <input
-                type="number"
-                min="0"
-                placeholder="Empty = Default 1"
-                disabled={!bulkFormData.applyLiveTestsLimit}
-                value={bulkFormData.live_tests_limit}
-                onChange={e => setBulkFormData(f => ({ ...f, live_tests_limit: e.target.value }))}
-                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyLiveTestsLimit ? 1 : 0.5 }}
-              />
-            </div>
-
-            <div className="form-section">
-              <h4>Pre-load Tests Limit</h4>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
-                <input type="checkbox" checked={bulkFormData.applyPreloadTestsLimit} onChange={e => setBulkFormData(f => ({ ...f, applyPreloadTestsLimit: e.target.checked }))} />
-                Update pre-load tests limit (leave blank for default 10)
-              </label>
-              <input
-                type="number"
-                min="0"
-                placeholder="Empty = Default 10"
-                disabled={!bulkFormData.applyPreloadTestsLimit}
-                value={bulkFormData.preload_tests_limit}
-                onChange={e => setBulkFormData(f => ({ ...f, preload_tests_limit: e.target.value }))}
-                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyPreloadTestsLimit ? 1 : 0.5 }}
-              />
-            </div>
-
-            <div className="form-section">
-              <h4>Steno Tests Limit</h4>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', fontSize: '0.9rem' }}>
-                <input type="checkbox" checked={bulkFormData.applyStenoTestsLimit} onChange={e => setBulkFormData(f => ({ ...f, applyStenoTestsLimit: e.target.checked }))} />
-                Update steno tests limit (leave blank for default 10)
-              </label>
-              <input
-                type="number"
-                min="0"
-                placeholder="Empty = Default 10"
-                disabled={!bulkFormData.applyStenoTestsLimit}
-                value={bulkFormData.steno_tests_limit}
-                onChange={e => setBulkFormData(f => ({ ...f, steno_tests_limit: e.target.value }))}
-                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', opacity: bulkFormData.applyStenoTestsLimit ? 1 : 0.5 }}
-              />
-            </div>
-
-            <div className="form-actions-full" style={{ gap: '10px' }}>
-              <button type="submit" className="btn-primary">Apply to {selectedStudentIds.size} Student(s)</button>
-              <button type="button" className="btn-secondary" onClick={() => setShowBulkEditModal(false)}>Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {showAddModal && (
-        <div className="admin-form-container pattern-setup" style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3>Add New Student</h3>
-            <button className="btn-secondary" onClick={() => setShowAddModal(false)}>Close X</button>
-          </div>
-          <form onSubmit={handleAddStudent} className="admin-grid-form" style={{ marginTop: '15px' }}>
-            <div className="form-section">
-              <h4>Personal Details</h4>
-              <div className="admin-inline-group">
-                <div className="input-group">
-                  <label>Student Name *</label>
-                  <input type="text" required value={addFormData.name} onChange={(e) => setAddFormData({...addFormData, name: e.target.value})} />
-                </div>
-                <div className="input-group">
-                  <label>Father's Name</label>
-                  <input type="text" value={addFormData.fathers_name} onChange={(e) => setAddFormData({...addFormData, fathers_name: e.target.value})} />
-                </div>
-              </div>
-              <div className="admin-inline-group">
-                <div className="input-group">
-                  <label>Phone *</label>
-                  <input type="text" required value={addFormData.phone} onChange={(e) => setAddFormData({...addFormData, phone: e.target.value})} />
-                </div>
-                <div className="input-group">
-                  <label>User ID / Login ID</label>
-                  <input type="text" placeholder="Defaults to phone" value={addFormData.user_id} onChange={(e) => setAddFormData({...addFormData, user_id: e.target.value})} />
-                </div>
-              </div>
-              <PhotoField file={addPhoto} onFile={setAddPhoto} />
-            </div>
-
-            <ContactFields data={addFormData} onChange={(k, v) => setAddFormData(f => ({ ...f, [k]: v }))} />
-
-            <div className="form-section">
-              <h4>Course & Academic</h4>
-              <div className="admin-inline-group">
-                <div className="input-group">
-                  <label>Category (Course) * — select multiple</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px' }}>
-                    {ALL_CATEGORIES.map(cat => (
-                      <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', cursor: 'pointer', background: addFormData.selectedCategories.includes(cat) ? '#e0e7ff' : '#f1f5f9', border: addFormData.selectedCategories.includes(cat) ? '1.5px solid #6366f1' : '1.5px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontWeight: addFormData.selectedCategories.includes(cat) ? 700 : 400 }}>
-                        <input
-                          type="checkbox"
-                          checked={addFormData.selectedCategories.includes(cat)}
-                          onChange={() => {
-                            const set = new Set(addFormData.selectedCategories);
-                            if (set.has(cat)) set.delete(cat); else set.add(cat);
-                            setAddFormData({ ...addFormData, selectedCategories: Array.from(set) });
-                          }}
-                        />
-                        {cat}
-                      </label>
-                    ))}
-                  </div>
-                  {addFormData.selectedCategories.length === 0 && (
-                    <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '4px' }}>Please select at least one course.</p>
-                  )}
-                </div>
-                <div className="input-group">
-                  <label>Roll No</label>
-                  <input type="text" value={addFormData.roll_no} onChange={(e) => setAddFormData({...addFormData, roll_no: e.target.value})} />
-                </div>
-              </div>
-              <div className="admin-inline-group">
-                <div className="input-group">
-                  <label>Charge / Fees Amount</label>
-                  <input type="number" step="0.01" value={addFormData.fees_amount} onChange={(e) => setAddFormData({...addFormData, fees_amount: e.target.value})} />
-                </div>
-                <div className="input-group">
-                  <label>Validity End Date</label>
-                  <input type="date" value={addFormData.validity_end} onChange={(e) => setAddFormData({...addFormData, validity_end: e.target.value})} />
-                </div>
-              </div>
-            </div>
-
-            <div className="form-section">
-              <h4>Login & Status</h4>
-              <div className="admin-inline-group">
-                <div className="input-group">
-                  <label>Password *</label>
-                  <input type="text" required value={addFormData.password_hash} onChange={(e) => setAddFormData({...addFormData, password_hash: e.target.value})} />
-                </div>
-                <div className="input-group">
-                  <label>Status</label>
-                  <select value={addFormData.status} onChange={(e) => setAddFormData({...addFormData, status: e.target.value})}>
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Pending">Pending</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="form-actions-full" style={{ gap: '10px' }}>
-              <button type="submit" className="btn-primary">Create Student</button>
-              <button type="button" className="btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {showEditModal && (
-        <div className="admin-form-container pattern-setup" style={{ marginBottom: '20px' }}>
-          <h3>Edit Student Details: {currentStudent.name}</h3>
-          <form onSubmit={handleEditSubmit} className="admin-grid-form">
-             <div className="form-section">
-                <h4>Personal Details</h4>
-                <div className="admin-inline-group">
-                  <div className="input-group">
-                    <label>Student Name *</label>
-                    <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
-                  </div>
-                  <div className="input-group">
-                    <label>Father's Name</label>
-                    <input type="text" value={formData.fathers_name} onChange={(e) => setFormData({...formData, fathers_name: e.target.value})} />
-                  </div>
-                  <div className="input-group">
-                    <label>Phone *</label>
-                    <input type="text" required value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
-                  </div>
-                </div>
-                <PhotoField current={currentStudent?.profile_image} file={editPhoto} onFile={setEditPhoto} />
-             </div>
-
-             <ContactFields data={formData} onChange={(k, v) => setFormData(f => ({ ...f, [k]: v }))} />
-
-             <div className="form-section">
-                <h4>Status & Validity</h4>
-                <div className="input-group">
-                  <label>Category (Course) — select multiple</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px' }}>
-                    {ALL_CATEGORIES.map(cat => (
-                      <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', cursor: 'pointer', background: formData.selectedCategories.includes(cat) ? '#e0e7ff' : '#f1f5f9', border: formData.selectedCategories.includes(cat) ? '1.5px solid #6366f1' : '1.5px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontWeight: formData.selectedCategories.includes(cat) ? 700 : 400 }}>
-                        <input
-                          type="checkbox"
-                          checked={formData.selectedCategories.includes(cat)}
-                          onChange={() => {
-                            const set = new Set(formData.selectedCategories);
-                            if (set.has(cat)) set.delete(cat); else set.add(cat);
-                            setFormData({ ...formData, selectedCategories: Array.from(set) });
-                          }}
-                        />
-                        {cat}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div className="input-group">
-                  <label>Status</label>
-                  <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})}>
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Pending">Pending</option>
-                  </select>
-                </div>
-                <div className="input-group">
-                  <label>Validity End Date</label>
-                  <input type="date" value={formData.validity_end} onChange={(e) => setFormData({...formData, validity_end: e.target.value})} />
-                </div>
-             </div>
-             
-             <div className="form-section">
-                <h4>Fee & Academic Details</h4>
-                <div className="admin-inline-group">
-                  <div className="input-group">
-                    <label>Roll No</label>
-                    <input type="text" value={formData.roll_no} onChange={(e) => setFormData({...formData, roll_no: e.target.value})} />
-                  </div>
-                  <div className="input-group">
-                    <label>Live Tests Per Day Limit</label>
-                    <input type="number" min="0" placeholder="Empty = Default 1" value={formData.live_tests_limit} onChange={(e) => setFormData({...formData, live_tests_limit: e.target.value})} />
-                  </div>
-                </div>
-                <div className="admin-inline-group">
-                  <div className="input-group">
-                    <label>Pre-load Tests Limit</label>
-                    <input type="number" min="0" placeholder="Empty = Default 10" value={formData.preload_tests_limit} onChange={(e) => setFormData({...formData, preload_tests_limit: e.target.value})} />
-                  </div>
-                  <div className="input-group">
-                    <label>Steno Tests Limit</label>
-                    <input type="number" min="0" placeholder="Empty = Default 10" value={formData.steno_tests_limit} onChange={(e) => setFormData({...formData, steno_tests_limit: e.target.value})} />
-                  </div>
-                </div>
-                <div className="admin-inline-group">
-                  <div className="input-group">
-                    <label>Last Fees Submitted Date</label>
-                    <input type="date" value={formData.last_fees_submitted_date} onChange={(e) => setFormData({...formData, last_fees_submitted_date: e.target.value})} />
-                  </div>
-                  <div className="input-group">
-                    <label>Fees Amount</label>
-                    <input type="number" step="0.01" value={formData.fees_amount} onChange={(e) => setFormData({...formData, fees_amount: e.target.value})} />
-                  </div>
-                </div>
-             </div>
-
-             <div className="form-section">
-                <h4>Login Control</h4>
-                <div className="input-group" style={{ marginBottom: '15px', padding: '10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px' }}>
-                  <label style={{ color: '#0369a1', fontWeight: 700, marginBottom: '6px', display: 'block' }}>Current Username (Login ID)</label>
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 700, color: '#1e40af', background: '#fff', padding: '6px 12px', borderRadius: '4px', border: '1px solid #93c5fd' }}>
-                      {currentStudent?.user_id || currentStudent?.phone || '—'}
-                    </span>
-                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>This is the student's login username</span>
-                  </div>
-                </div>
-                <div className="admin-inline-group">
-                  <div className="input-group">
-                    <label>Allowed Start Time (e.g. 09:00)</label>
-                    <input type="time" value={formData.allowed_login_time_start} onChange={(e) => setFormData({...formData, allowed_login_time_start: e.target.value})} />
-                  </div>
-                  <div className="input-group">
-                    <label>Allowed End Time (e.g. 17:00)</label>
-                    <input type="time" value={formData.allowed_login_time_end} onChange={(e) => setFormData({...formData, allowed_login_time_end: e.target.value})} />
-                  </div>
-                </div>
-                <p style={{fontSize: '0.8rem', color: '#666', marginTop: '5px'}}>Leave time inputs empty to allow 24/7 access.</p>
-                
-                <div className="input-group" style={{ marginTop: '20px' }}>
-                  <label>Override Password</label>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                     <input 
-                       type="text" 
-                       placeholder="Leave blank to keep unchanged" 
-                       value={formData.password_hash} 
-                       onChange={(e) => setFormData({...formData, password_hash: e.target.value})} 
-                       style={{ flex: 1 }}
-                     />
-                     <button type="button" onClick={generatePassword} className="btn-secondary" style={{ padding: '0 15px' }}>Generate Random</button>
-                  </div>
-                </div>
-             </div>
-
-             <div className="form-actions-full" style={{ gap: '10px' }}>
-               <button type="submit" className="btn-primary">Save Changes</button>
-               <button type="button" className="btn-secondary" onClick={() => setShowEditModal(false)}>Cancel</button>
-             </div>
-          </form>
-        </div>
-      )}
-
-      {selectedStudentForTests && (
-        <div className="admin-form-container pattern-setup" style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3>Tests History: {selectedStudentForTests.name}</h3>
-            <button className="btn-secondary" onClick={() => setSelectedStudentForTests(null)}>Close X</button>
-          </div>
-          
-          <div style={{ display: 'flex', gap: '15px', marginTop: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-            <button 
-              style={{ padding: '6px 12px', background: activeTestTab === 'typing' ? '#2563eb' : '#f1f5f9', color: activeTestTab === 'typing' ? 'white' : '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: activeTestTab === 'typing' ? 'bold' : 'normal', fontSize: '0.9rem' }}
-              onClick={() => setActiveTestTab('typing')}
-            >
-              ⌨ Typing Reports
-            </button>
-            <button 
-              style={{ padding: '6px 12px', background: activeTestTab === 'steno' ? '#2563eb' : '#f1f5f9', color: activeTestTab === 'steno' ? 'white' : '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: activeTestTab === 'steno' ? 'bold' : 'normal', fontSize: '0.9rem' }}
-              onClick={() => setActiveTestTab('steno')}
-            >
-              🎙 Steno Reports
-            </button>
-          </div>
-
-          {loadingTests ? (
-            <p>Loading tests...</p>
-          ) : studentTests.filter(t => activeTestTab === 'steno' ? t.mode?.toLowerCase().includes('steno') : !t.mode?.toLowerCase().includes('steno')).length === 0 ? (
-            <p style={{marginTop: '10px'}}>No {activeTestTab === 'steno' ? 'Steno' : 'Typing'} tests taken yet.</p>
-          ) : (
-            <table className="admin-table" style={{ marginTop: '10px' }}>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Exam</th>
-                  <th>Speed (NWPM)</th>
-                  <th>Accuracy</th>
-                  <th>Errors</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {studentTests.filter(t => activeTestTab === 'steno' ? t.mode?.toLowerCase().includes('steno') : !t.mode?.toLowerCase().includes('steno')).map(test => (
-                  <tr key={test.id}>
-                    <td>{new Date(test.date_taken).toLocaleDateString()}</td>
-                    <td>{test.exam ? test.exam.name : 'Practice'}<br/><span style={{fontSize: '0.75rem', color: '#64748b'}}>{test.mode}</span></td>
-                    <td><strong>{test.nwpm} WPM</strong></td>
-                    <td>{test.accuracy}%</td>
-                    <td>{test.total_errors}</td>
-                    <td>
-                      <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={() => handleViewResult(test)}>View Result</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {(() => {
-        const filteredStudents = getFilteredStudents();
-        const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
-        const pagedStudents = filteredStudents.slice((page - 1) * pageSize, page * pageSize);
-        const allPageSelected = pagedStudents.length > 0 && pagedStudents.every(s => selectedStudentIds.has(s.id));
-        return (
-      <>
-      {/* Scrolls sideways on narrow screens so the action buttons stay reachable. */}
-      <div style={{ overflowX: 'auto' }}>
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th style={{ width: '36px' }}>
-              <input
-                type="checkbox"
-                title="Select all on page"
-                checked={allPageSelected}
-                onChange={() => toggleSelectAll(pagedStudents)}
-              />
-            </th>
-            <th>Name</th>
-            <th>Username (Login ID)</th>
-            <th>Category</th>
-            <th>Role</th>
-            <th>Phone</th>
-            <th>Status</th>
-            <th>Validity</th>
-            <th>Login Window</th>
-            <th>Joined On</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <tr><td colSpan="11">Loading...</td></tr>
-          ) : filteredStudents.length === 0 ? (
-            <tr><td colSpan="11">No students match the current filter.</td></tr>
-          ) : pagedStudents.map((s) => (
-            <tr key={s.id} style={{ background: selectedStudentIds.has(s.id) ? '#ede9fe' : undefined }}>
-              <td><input type="checkbox" checked={selectedStudentIds.has(s.id)} onChange={() => toggleStudentSelect(s.id)} /></td>
-              <td>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {s.profile_image && <img src={photoUrl(s.profile_image)} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />}
-                  <strong>{s.name}</strong>
-                </div>
-              </td>
-              <td>
-                <span style={{ fontFamily: 'monospace', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', color: '#1e40af', fontWeight: 600 }}>
-                  {s.user_id || s.phone || '—'}
-                </span>
-                {s.roll_no && <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '3px' }}>Roll No: {s.roll_no}</div>}
-              </td>
-              <td>
-                {s.category ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {s.category.split(',').map(c => c.trim()).filter(Boolean).map(c => (
-                      <span key={c} style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>-</span>
-                )}
-              </td>
-              <td>{s.role}</td>
-              <td>{s.phone}</td>
-              <td>
-                <span className={`status-badge ${s.status?.toLowerCase() || 'pending'}`}>
-                  {s.status}
-                </span>
-              </td>
-              <td>{s.validity_end ? new Date(s.validity_end).toLocaleDateString() : 'N/A'}</td>
-              <td>
-                {s.allowed_login_time_start && s.allowed_login_time_end
-                  ? `${s.allowed_login_time_start} to ${s.allowed_login_time_end}`
-                  : 'Anytime'}
-              </td>
-              <td style={{ minWidth: '64px' }}>{fmtDate(s.created_at)}</td>
-              <td>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '5px' }}>
-                  <button className="btn-action btn-edit" onClick={() => openEditModal(s)}>Edit</button>
-                  <button className="btn-action btn-edit" onClick={() => handleStatusToggle(s)}>Toggle</button>
-                  <button className="btn-action btn-edit" style={{ background: '#3b82f6', color: 'white' }} onClick={() => openTestsModal(s)}>View Tests</button>
-                  <button className="btn-action btn-delete" style={{ background: '#dc2626', color: 'white' }} onClick={() => handleDeleteStudent(s)}>Delete</button>
-                </div>
-              </td>
-            </tr>
+        <div className="flex gap-2 px-5 pt-3">
+          {[['typing', '⌨ Typing Reports'], ['steno', '🎙 Steno Reports']].map(([k, label]) => (
+            <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 text-[12px] font-semibold ${tab === k ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600'}`}>{label}</button>
           ))}
-        </tbody>
-      </table>
+        </div>
+        <div className="scroll-thin flex-1 overflow-y-auto p-5">
+          {tests === null ? <p className="text-[12.5px] text-slate-500">Loading tests...</p>
+            : shown.length === 0 ? <p className="text-[12.5px] text-slate-500">No {tab === 'steno' ? 'Steno' : 'Typing'} tests taken yet.</p>
+              : (
+                <table className="w-full text-left text-[12px]">
+                  <thead className="bg-slate-50 text-[11.5px] font-semibold text-slate-600">
+                    <tr>{['Date', 'Exam', 'Speed (NWPM)', 'Accuracy', 'Errors', 'Action'].map((h) => <th key={h} scope="col" className="px-3 py-2">{h}</th>)}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {shown.map((t) => (
+                      <tr key={t.id}>
+                        <td className="px-3 py-2">{new Date(t.date_taken).toLocaleDateString()}</td>
+                        <td className="px-3 py-2">{t.exam ? t.exam.name : 'Practice'}<span className="block text-[10.5px] text-slate-500">{t.mode}</span></td>
+                        <td className="px-3 py-2 font-semibold">{t.nwpm} WPM</td>
+                        <td className="px-3 py-2">{t.accuracy}%</td>
+                        <td className="px-3 py-2">{t.total_errors}</td>
+                        <td className="px-3 py-2"><button type="button" onClick={() => viewResult(t)} className="rounded-md bg-primary px-2.5 py-1 text-[11.5px] font-semibold text-white hover:bg-primary-700">View Result</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+        </div>
       </div>
-      <Pagination
-        page={page} totalPages={totalPages} totalItems={filteredStudents.length}
-        pageSize={pageSize} onPageChange={setPage} onPageSizeChange={p => { setPageSize(p); setPage(1); }}
-      />
-      </>
-        );
-      })()}
+    </div>
+  );
+}
+
+const AdminStudents = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [notice, setNotice] = useState(() => location.state?.notice || '');
+  const [searchTerm, setSearchTerm] = useState(() => urlParam('search') || '');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState(() => urlParam('status') || 'All');
+  const [windowFilter, setWindowFilter] = useState('All');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [selected, setSelected] = useState(new Set());
+  const [showBulk, setShowBulk] = useState(false);
+  const [showImport, setShowImport] = useState(() => urlParam('import') === '1');
+  const [testsFor, setTestsFor] = useState(null);
+
+  const fetchStudents = async () => {
+    try {
+      const data = await userService.getUsers();
+      setErrorMsg(null);
+      // Newest students first
+      setStudents([...data].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)));
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      setErrorMsg(error.message + ' (Check if Backend is running)');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { fetchStudents(); }, []);
+
+  const all = useMemo(() => students.filter((s) => s.role === 'Student'), [students]);
+  const filtered = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return all
+      .filter((s) => !q || [s.name, s.phone, s.user_id, s.roll_no, s.email, s.city, s.fathers_name].some((v) => v && String(v).toLowerCase().includes(q)))
+      .filter((s) => categoryFilter === 'All' || categoriesOf(s).includes(categoryFilter))
+      .filter((s) => statusFilter === 'All' || s.status === statusFilter || shownStatus(s) === statusFilter)
+      .filter((s) => windowFilter === 'All' || (windowFilter === 'Fixed' ? hasLoginWindow(s) : !hasLoginWindow(s)));
+  }, [all, searchTerm, categoryFilter, statusFilter, windowFilter]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const allPageSelected = paged.length > 0 && paged.every((s) => selected.has(s.id));
+
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const counts = {
+    total: all.length,
+    active: all.filter((s) => shownStatus(s) === 'Active').length,
+    pending: all.filter((s) => s.status === 'Pending').length,
+    inactive: all.filter((s) => ['Inactive', 'Expired'].includes(shownStatus(s))).length,
+    newMonth: all.filter((s) => s.created_at && new Date(s.created_at) >= monthStart).length,
+  };
+  const pct = (n) => (counts.total ? `${((n / counts.total) * 100).toFixed(1)}% of total` : '—');
+  const courseParts = ALL_CATEGORIES.map((c) => ({ label: c, color: COURSE_COLORS[c], value: all.filter((s) => categoriesOf(s).includes(c)).length }));
+  const fixedCount = all.filter(hasLoginWindow).length;
+
+  const resetFilters = () => { setSearchTerm(''); setCategoryFilter('All'); setStatusFilter('All'); setWindowFilter('All'); setPage(1); };
+  const filterChange = (setter) => (e) => { setter(e.target.value); setPage(1); };
+  const toggleOne = (id) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const togglePage = () => setSelected(allPageSelected ? new Set() : new Set(paged.map((s) => s.id)));
+
+  const toggleStatus = async (s) => {
+    try { await userService.updateUser(s.id, { status: s.status === 'Active' ? 'Inactive' : 'Active' }); fetchStudents(); } catch (error) { alert('Error updating status: ' + error.message); }
+  };
+  const remove = async (s) => {
+    const ok = window.confirm(`Delete the account for "${s.name}" (${s.user_id || s.phone})?\n\nThis permanently removes the student and ALL their test results. This cannot be undone.`);
+    if (!ok) return;
+    try {
+      await userService.deleteUser(s.id);
+      setSelected((prev) => { const n = new Set(prev); n.delete(s.id); return n; });
+      fetchStudents();
+    } catch (error) { alert('Error deleting student: ' + errorText(error, 'failed')); }
+  };
+
+  const exportStudents = () => {
+    const rows = filtered.map((s) => ({
+      Name: s.name, "Father's Name": s.fathers_name || '', 'Login ID': s.user_id || '', 'Roll No': s.roll_no || '',
+      Phone: s.phone || '', Email: s.email || '', 'Guardian Mobile': s.guardian_phone || '', City: s.city || '', State: s.state || '',
+      'Pin Code': s.pin_code || '', Address: s.address || '', Category: s.category || '', Status: shownStatus(s),
+      'Validity End': s.validity_end ? new Date(s.validity_end).toLocaleDateString('en-GB') : '',
+      'Login Window': hasLoginWindow(s) ? `${s.allowed_login_time_start}-${s.allowed_login_time_end}` : 'Anytime',
+      'Fees Amount': s.fees_amount ?? '', 'Last Fees Date': s.last_fees_submitted_date ? new Date(s.last_fees_submitted_date).toLocaleDateString('en-GB') : '',
+      'Joined On': s.created_at ? new Date(s.created_at).toLocaleDateString('en-GB') : '', Remarks: s.remarks || '',
+    }));
+    if (rows.length === 0) { alert('No students match the current filters.'); return; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Students');
+    XLSX.writeFile(wb, `students_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  // Old links (?new=1) open the Add Student page.
+  if (urlParam('new') === '1') return <Navigate to="/admin/students/new" replace />;
+
+  return (
+    <div className="nd">
+      <div className="mb-4 flex flex-wrap items-start gap-4">
+        <div>
+          <h2 className="font-display text-[24px] font-bold leading-tight text-navy-800">Students Management</h2>
+          <p className="text-[12.5px] text-slate-500">View, manage and organize all students. Add new students and track their activity.</p>
+        </div>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Link to="/admin/students/new" className="flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-primary-700">
+            <PlusIcon className="h-4 w-4" aria-hidden="true" /> Add Student
+          </Link>
+          <button type="button" onClick={() => setShowImport(true)} className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-[12.5px] font-medium text-navy-800 hover:bg-slate-50">
+            <UploadIcon className="h-4 w-4" aria-hidden="true" /> Import Students
+          </button>
+        </div>
+      </div>
+
+      {notice && <p role="status" className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800">
+        <BadgeCheckIcon className="h-4 w-4" aria-hidden="true" /> {notice}
+        <button type="button" onClick={() => setNotice('')} aria-label="Dismiss" className="ml-auto text-emerald-700"><XIcon className="h-4 w-4" /></button>
+      </p>}
+      {errorMsg && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-danger"><strong>Error:</strong> {errorMsg}</p>}
+
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard icon={<UsersIcon className="h-5 w-5" />} iconBg="#0D6EFD" label="Total Students" value={counts.total.toLocaleString('en-IN')} sub="All students in system" />
+        <StatCard icon={<BadgeCheckIcon className="h-5 w-5" />} iconBg="#198754" label="Active Students" value={counts.active.toLocaleString('en-IN')} sub={pct(counts.active)} />
+        <StatCard icon={<ClockIcon className="h-5 w-5" />} iconBg="#F59E0B" label="Pending Requests" value={counts.pending.toLocaleString('en-IN')} sub="Approval required" action={counts.pending ? 'Review' : undefined} onAction={() => { setStatusFilter('Pending'); setPage(1); }} />
+        <StatCard icon={<UserMinusIcon className="h-5 w-5" />} iconBg="#6F42C1" label="Inactive / Expired" value={counts.inactive.toLocaleString('en-IN')} sub={pct(counts.inactive)} />
+        <StatCard icon={<UserPlusIcon className="h-5 w-5" />} iconBg="#0EA5E9" label="New This Month" value={counts.newMonth.toLocaleString('en-IN')} sub="Joined this month" />
+      </div>
+
+      <section className="mb-4 rounded-xl border border-slate-200 bg-white shadow-card">
+        <div className="grid gap-2.5 border-b border-slate-100 p-3.5 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.4fr)_repeat(3,minmax(140px,1fr))_auto]">
+          <label className="block">
+            <span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Search</span>
+            <span className="relative block">
+              <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input type="search" value={searchTerm} onChange={filterChange(setSearchTerm)} placeholder="Name, roll no., login ID, mobile, email..." aria-label="Search students" className={`${selectCls} pr-8`} />
+            </span>
+          </label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Status</span>
+            <select aria-label="Filter by status" value={statusFilter} onChange={filterChange(setStatusFilter)} className={selectCls}>
+              <option value="All">-- All Status --</option>{['Active', 'Inactive', 'Pending', 'Expired'].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Course / Type</span>
+            <select aria-label="Filter by course" value={categoryFilter} onChange={filterChange(setCategoryFilter)} className={selectCls}>
+              <option value="All">-- All Course --</option>{ALL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Login Window</span>
+            <select aria-label="Filter by login window" value={windowFilter} onChange={filterChange(setWindowFilter)} className={selectCls}>
+              <option value="All">-- All Login Window --</option><option value="Anytime">Anytime</option><option value="Fixed">Fix Time</option>
+            </select></label>
+          <div className="flex items-end gap-2">
+            <button type="button" onClick={resetFilters} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-[12px] font-medium text-slate-600 hover:bg-slate-50"><RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Reset</button>
+            <button type="button" onClick={fetchStudents} title="Reload students" aria-label="Refresh" className="rounded-md border border-slate-300 p-2 text-slate-600 hover:bg-slate-50"><RefreshCwIcon className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+
+        {selected.size > 0 &&
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-primary-50 px-3.5 py-2 text-[12.5px] text-primary-700">
+            <b>{selected.size}</b> selected
+            <button type="button" onClick={() => setShowBulk(true)} className="rounded-md bg-[#7c3aed] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#6d28d9]">✏ Bulk Edit ({selected.size})</button>
+            <button type="button" onClick={() => setSelected(new Set())} className="text-[12px] underline">Clear selection</button>
+          </div>}
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1100px] text-left">
+            <thead className="bg-slate-50 text-[11.5px] font-semibold text-slate-600">
+              <tr>
+                <th scope="col" className="px-3 py-2.5"><input type="checkbox" aria-label="Select all on page" checked={allPageSelected} onChange={togglePage} className="h-3.5 w-3.5 accent-primary" /></th>
+                {['Roll No.', 'Student Name', 'Username (Login ID)', 'Course / Type', 'Login Window', 'Mobile', 'Validity', 'Status', 'Joined On', 'Actions'].map((h) => <th key={h} scope="col" className="px-3 py-2.5">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-[12px]">
+              {loading ? <tr><td colSpan={11} className="px-3 py-8 text-center text-slate-500"><Loader2Icon className="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />Loading...</td></tr>
+                : filtered.length === 0 ? <tr><td colSpan={11} className="px-3 py-8 text-center text-slate-500">No students match the current filter.</td></tr>
+                  : paged.map((s) => {
+                    const status = shownStatus(s);
+                    return (
+                      <tr key={s.id} className={`transition-colors duration-150 hover:bg-slate-50/70 ${selected.has(s.id) ? 'bg-violet-50' : ''}`}>
+                        <td className="px-3 py-2.5"><input type="checkbox" aria-label={`Select ${s.name}`} checked={selected.has(s.id)} onChange={() => toggleOne(s.id)} className="h-3.5 w-3.5 accent-primary" /></td>
+                        <td className="px-3 py-2.5 text-slate-600">{s.roll_no || '—'}</td>
+                        <td className="px-3 py-2.5">
+                          <span className="flex items-center gap-2">
+                            {s.profile_image
+                              ? <img src={photoUrl(s.profile_image)} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                              : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-400"><UserIcon className="h-4 w-4" aria-hidden="true" /></span>}
+                            <span className="leading-tight">
+                              <span className="block font-semibold text-navy-800">{s.name}</span>
+                              {(s.email || s.fathers_name) && <span className="block text-[10.5px] text-slate-500">{s.email || `S/o ${s.fathers_name}`}</span>}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5"><span className="rounded bg-slate-100 px-1.5 py-[2px] font-mono text-[11px] font-semibold text-primary-700">{s.user_id || s.phone || '—'}</span></td>
+                        <td className="px-3 py-2.5">
+                          <span className="flex flex-wrap gap-1">{categoriesOf(s).length ? categoriesOf(s).map((c) => <span key={c} className="rounded px-1.5 py-[1px] text-[10.5px] font-medium" style={{ backgroundColor: `${COURSE_COLORS[c] || '#64748B'}14`, color: COURSE_COLORS[c] || '#475569' }}>{c}</span>) : <span className="text-slate-400">—</span>}</span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {hasLoginWindow(s)
+                            ? <><span className="inline-block rounded bg-amber-50 px-2 py-[2px] text-[10.5px] font-medium text-amber-700">Fix Time</span><span className="mt-0.5 block text-[10px] text-slate-500">{s.allowed_login_time_start} – {s.allowed_login_time_end}</span></>
+                            : <span className="inline-block rounded bg-emerald-50 px-2 py-[2px] text-[10.5px] font-medium text-emerald-700">Anytime</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-600">{s.phone}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{s.validity_end ? fmtDate(s.validity_end) : 'N/A'}</td>
+                        <td className="px-3 py-2.5"><span className={`rounded px-2 py-[2px] text-[10.5px] font-medium ${STATUS_TONE[status] || STATUS_TONE.Pending}`}>{status}</span></td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{fmtDate(s.created_at)}</td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => setTestsFor(s)} title="View tests" aria-label={`View tests of ${s.name}`} className="rounded p-1.5 text-slate-500 hover:bg-primary-50 hover:text-primary"><EyeIcon className="h-4 w-4" /></button>
+                            <Link to={`/admin/students/${s.id}/edit`} title="Edit" aria-label={`Edit ${s.name}`} className="rounded p-1.5 text-slate-500 hover:bg-primary-50 hover:text-primary"><PencilIcon className="h-4 w-4" /></Link>
+                            <button type="button" onClick={() => toggleStatus(s)} title={s.status === 'Active' ? 'Deactivate' : 'Activate'} aria-label={`${s.status === 'Active' ? 'Deactivate' : 'Activate'} ${s.name}`} className={`rounded p-1.5 hover:bg-slate-100 ${s.status === 'Active' ? 'text-emerald-600' : 'text-slate-400'}`}><PowerIcon className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => remove(s)} title="Delete" aria-label={`Delete ${s.name}`} className="rounded p-1.5 text-slate-500 hover:bg-rose-50 hover:text-danger"><Trash2Icon className="h-4 w-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-3.5 pb-1 pt-3">
+          <div className="min-w-0 flex-1">
+            <Pagination page={currentPage} totalPages={totalPages} totalItems={filtered.length} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(p) => { setPageSize(p); setPage(1); }} />
+          </div>
+          <button type="button" onClick={exportStudents} className="mb-2 flex items-center gap-1.5 rounded-md border border-emerald-300 px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50">
+            <FileSpreadsheetIcon className="h-3.5 w-3.5" aria-hidden="true" /> Export Students
+          </button>
+        </div>
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <section className={panelCls}>
+          <h3 className="mb-3 text-[13.5px] font-bold text-navy-800">Course / Type Wise Students</h3>
+          <div className="flex items-center gap-4">
+            <Donut parts={courseParts} />
+            <ul className="flex-1 space-y-1.5 text-[11.5px]">
+              {courseParts.map((p) => (
+                <li key={p.label} className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: p.color }} aria-hidden="true" />
+                  <span className="text-slate-600">{p.label}</span>
+                  <span className="ml-auto font-medium text-navy-800">{p.value}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p className="mt-2 text-[10.5px] text-slate-400">A student can be in more than one course.</p>
+        </section>
+        <section className={panelCls}>
+          <h3 className="mb-3 text-[13.5px] font-bold text-navy-800">Login Window Wise Students</h3>
+          <ul className="space-y-4 pt-2">
+            {[['Anytime', counts.total - fixedCount, '#0D6EFD'], ['Fix Time', fixedCount, '#198754']].map(([label, n, color]) => {
+              const share = counts.total ? (n / counts.total) * 100 : 0;
+              return (
+                <li key={label}>
+                  <p className="mb-1.5 flex text-[11.5px]"><span className="text-slate-600">{label}</span><span className="ml-auto font-medium text-navy-800">{n} ({share.toFixed(1)}%)</span></p>
+                  <span className="block h-1.5 w-full rounded-full bg-slate-100"><span className="block h-full rounded-full" style={{ width: `${share}%`, backgroundColor: color }} /></span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+        <section className={panelCls}>
+          <h3 className="mb-3 text-[13.5px] font-bold text-navy-800">Quick Actions</h3>
+          <ul className="grid grid-cols-2 gap-2.5 text-[11.5px] font-medium text-navy-800">
+            <li><Link to="/admin/students/new" className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 hover:border-primary hover:bg-primary-50/40"><UserPlusIcon className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Add New Student</Link></li>
+            <li><button type="button" onClick={() => setShowImport(true)} className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 hover:border-primary hover:bg-primary-50/40"><UploadIcon className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Import Students</button></li>
+            <li><button type="button" onClick={() => { setStatusFilter('Pending'); setPage(1); }} className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 hover:border-primary hover:bg-primary-50/40"><ClockIcon className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Approve Pending {counts.pending > 0 && <span className="rounded bg-rose-500 px-1.5 text-[9.5px] font-bold text-white">{counts.pending}</span>}</button></li>
+            <li><Link to="/admin/messages" className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 hover:border-primary hover:bg-primary-50/40"><MegaphoneIcon className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Send Message</Link></li>
+            <li className="col-span-2"><button type="button" onClick={exportStudents} className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 hover:border-primary hover:bg-primary-50/40"><FileSpreadsheetIcon className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Export Student List (Excel)</button></li>
+          </ul>
+        </section>
+      </div>
+
+      {showBulk && <BulkEditModal ids={[...selected]} onClose={() => setShowBulk(false)} onSaved={(msg) => { setShowBulk(false); setSelected(new Set()); setNotice(msg); fetchStudents(); }} />}
+      {showImport && <StudentImportModal existing={students} onClose={() => { setShowImport(false); if (urlParam('import')) navigate('/admin/students', { replace: true }); }} onDone={fetchStudents} />}
+      {testsFor && <TestsModal student={testsFor} onClose={() => setTestsFor(null)} />}
     </div>
   );
 };

@@ -36,7 +36,7 @@ const adminOnly = ({ role }) => isAdminRole(role);
 export const adminNav = [
   { label: 'Dashboard', icon: 'home', to: '/admin', end: true, color: '#38BDF8' },
   { label: 'Students Management', icon: 'users', to: '/admin/students', color: '#A78BFA', visible: can('students'),
-    children: [{ label: 'All Students', to: '/admin/students' }, { label: 'Add Student', to: '/admin/students?new=1' }, { label: 'Pending Requests', to: '/admin/students?status=Pending' }] },
+    children: [{ label: 'All Students', to: '/admin/students' }, { label: 'Add Student', to: '/admin/students/new' }, { label: 'Import Students', to: '/admin/students?import=1' }, { label: 'Pending Requests', to: '/admin/students?status=Pending' }] },
   { label: 'Exam Management', icon: 'layers', to: '/admin/exams', color: '#FB923C', visible: can('exams'),
     children: [{ label: 'Manage Exams', to: '/admin/exams' }, { label: 'Add New Exam', to: '/admin/exams?new=1' }, { label: 'Result Patterns', to: '/admin/exams?tab=patterns' }] },
   { label: 'Font Groups', icon: 'type', to: '/admin/font-groups', color: '#60A5FA', visible: can('exams') },
