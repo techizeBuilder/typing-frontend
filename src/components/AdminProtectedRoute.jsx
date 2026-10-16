@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 
 const AdminProtectedRoute = () => {
   const token = localStorage.getItem('token');
@@ -18,7 +18,7 @@ const AdminProtectedRoute = () => {
         <h2>Admin Access Required</h2>
         <p>You need admin privileges to access this page</p>
         <button 
-          onClick={() => window.location.href = '/login'}
+          onClick={() => { window.location.hash = '#/login'; }}
           style={{
             padding: '10px 20px',
             backgroundColor: '#007bff',

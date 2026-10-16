@@ -85,7 +85,9 @@ export default function StenoPractice() {
   const markSeen = (value) => { setSeen(chapterId, value); setSeenMark({ id: chapterId, seen: value }); };
 
   // ─── Dictation audio ───────────────────────────────────────────────────────
-  const { url: audioUrl, ready: audioReady } = useDictationAudio(chapter?.id);
+  // No audio uploaded for this dictation (the test data says so) — don't request it.
+  const noAudio = !!chapter && 'audio_url' in chapter && !chapter.audio_url;
+  const { url: audioUrl, ready: audioReady } = useDictationAudio(noAudio ? null : chapter?.id);
   const audioRef = useRef(null);
   const fluctRef = useRef(1);
   const [playing, setPlaying] = useState(false);
@@ -346,7 +348,9 @@ export default function StenoPractice() {
             <span className="ml-auto">{duration ? fmt(segLength) : '--:--'}{range && duration ? ' (estimated part)' : ''}</span>
           </div>
         </div>
-        {audioReady && !audioUrl && <p className="mt-2 text-[12px] text-amber-700">Audio is not available offline for this dictation.</p>}
+        {noAudio
+          ? <p role="status" className="mt-2 text-[12px] text-amber-700">No audio is attached to this dictation yet. You can still read the passage and transcribe it.</p>
+          : audioReady && !audioUrl && <p className="mt-2 text-[12px] text-amber-700">Audio is not available offline for this dictation.</p>}
         {audioError && <p role="alert" className="mt-2 text-[12px] font-medium text-danger">{audioError}</p>}
 
         {/* Hindi font (fixed by the institute so grading matches the passage) */}
@@ -368,10 +372,10 @@ export default function StenoPractice() {
 
         {/* Actions */}
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={playing ? pause : play}
-            className="flex min-w-[200px] items-center justify-center gap-2 rounded-md bg-primary py-3 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-primary-700">
+          <button type="button" onClick={playing ? pause : play} disabled={noAudio} title={noAudio ? 'No audio for this dictation' : undefined}
+            className="flex min-w-[200px] items-center justify-center gap-2 rounded-md bg-primary py-3 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50">
             {playing ? <PauseIcon className="h-4 w-4 fill-current" aria-hidden="true" /> : <PlayIcon className="h-4 w-4 fill-current" aria-hidden="true" />}
-            {playing ? 'Pause' : 'Play'}
+            {noAudio ? 'No Audio' : playing ? 'Pause' : 'Play'}
           </button>
           <button type="button" onClick={openPicker}
             className="flex min-w-[200px] items-center justify-center gap-2 rounded-md bg-danger py-3 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-[#bb2d3b]">

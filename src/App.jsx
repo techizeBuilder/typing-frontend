@@ -1,4 +1,3 @@
-import React from 'react';
 // HashRouter (not BrowserRouter) so routing works when the packaged desktop app
 // is loaded from a file:// URL — BrowserRouter reads window.location.pathname,
 // which is the .html file path under file:// and matches no route.
@@ -8,7 +7,6 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import TestEngine from './pages/TestEngine';
 import StenoTestEngine from './pages/StenoTestEngine';
-import ResultScreen from './pages/ResultScreen';
 import MyResults from './pages/MyResults';
 import Leaderboard from './pages/Leaderboard';
 import StudentProfile from './pages/StudentProfile';
@@ -59,6 +57,8 @@ import AdminResults from './pages/admin/AdminResults';
 import AdminLeaderboard from './pages/admin/AdminLeaderboard';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
+import NotFoundPage from './components/NotFoundPage';
+import ResultRoute from './components/ResultRoute';
 import SelfAssessmentSetup from './pages/SelfAssessmentSetup';
 import FullscreenToggle from './components/FullscreenToggle';
 
@@ -112,7 +112,7 @@ function App() {
             <Route path="/test" element={<TestEngine />} />
             <Route path="/steno-test" element={<StenoTestEngine />} />
             <Route path="/typing-games/:gameId" element={<TypingGamePlay />} />
-            <Route path="/result" element={<ResultScreen />} />
+            <Route path="/result" element={<ResultRoute />} />
           </Route>
 
           {/* Admin Routes */}
@@ -144,8 +144,11 @@ function App() {
               <Route path="support" element={<AdminSupportTickets />} />
               <Route path="reviews" element={<AdminReviews />} />
               <Route path="settings" element={<AdminSettings />} />
+              <Route path="*" element={<NotFoundPage inAdmin />} />
             </Route>
           </Route>
+
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </HashRouter>
   );

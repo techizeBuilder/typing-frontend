@@ -4,7 +4,8 @@ import {
   BellIcon, ChevronDownIcon, CornerDownLeftIcon, LogOutIcon, MenuIcon, MessageSquareIcon, RepeatIcon, SearchIcon, SettingsIcon, UserIcon, ZapIcon,
 } from 'lucide-react';
 import { AdminSidebar } from '../../layouts/AdminSidebar';
-import { adminNav, getSessionUser } from '../../layouts/navigation';
+import { adminNav, getSessionUser, isItemActive } from '../../layouts/navigation';
+import NotFoundPage from '../../components/NotFoundPage';
 import { adminSummaryService, authService } from '../../services/api';
 import './Admin.css';
 import './admin-theme.css';
@@ -201,6 +202,9 @@ const AdminLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { pathname, search } = useLocation();
   const { role, permissions, name } = getSessionUser();
+  // Typed address of a section this account can't open: same rule as the sidebar.
+  const section = adminNav.find((item) => isItemActive(item, pathname, search));
+  const blocked = !!section?.visible && !section.visible({ role, permissions });
   const isAdmin = role === 'Admin' || role === 'SuperAdmin';
   const permKey = permissions.join(',');
   const can = useMemo(() => {
@@ -248,7 +252,7 @@ const AdminLayout = () => {
         <main className="admin-v2 scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-5 lg:p-8">
           {/* Keyed by the URL so sidebar sub-links (?new=1, ?search=…) re-open the page in that state. */}
           <div key={pathname + search}>
-            <Outlet />
+            {blocked ? <NotFoundPage kind="noAccess" inAdmin /> : <Outlet />}
           </div>
         </main>
       </div>
