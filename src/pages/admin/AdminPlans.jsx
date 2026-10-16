@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
+import { Donut } from '../../features/results/adminCharts';
 import {
+  BellRingIcon,
   CheckCircle2Icon,
+  CircleCheckIcon,
+  CircleXIcon,
+  PhoneIcon,
   CrownIcon,
   DownloadIcon,
   HourglassIcon,
@@ -327,10 +333,116 @@ function ReferralSettings() {
   );
 }
 
+// Days from today until a YYYY-MM-DD date (0 = last day).
+const daysLeft = (ymd) => Math.max(0, Math.round((new Date(`${ymd}T00:00:00`) - new Date(new Date().toDateString())) / 86400000));
+function DaysLeft({ ymd }) {
+  const n = daysLeft(ymd);
+  return <span className={n <= 7 ? 'font-semibold text-amber-700' : ''}>{n} day{n === 1 ? '' : 's'}</span>;
+}
+const PLAN_COLORS = ['#0D6EFD', '#198754', '#F59E0B', '#6F42C1', '#0EA5E9', '#DC3545', '#14B8A6', '#F472B6'];
+
+function Overview({ plans, subs, pending, onTab, onEdit }) {
+  const active = subs.filter((s) => s.display_status === 'Active');
+  const byPlan = plans.map((p, i) => ({
+    label: p.name, color: PLAN_COLORS[i % PLAN_COLORS.length],
+    value: active.filter((s) => s.plan_id === p.id).length,
+    revenue: subs.filter((s) => s.plan_id === p.id && s.status === 'Active').reduce((n, s) => n + (s.amount_paid || 0), 0),
+  })).filter((p) => p.value > 0 || p.revenue > 0);
+  const expiring = active.filter((s) => daysLeft(s.ends_on) <= 7).sort((a, b) => a.ends_on.localeCompare(b.ends_on));
+  const recent = subs.filter((s) => s.status === 'Active' && s.activated_at).sort((a, b) => new Date(b.activated_at) - new Date(a.activated_at)).slice(0, 5);
+  return (
+    <div className="space-y-4">
+      {pending > 0 &&
+        <button type="button" onClick={() => onTab('requests')} className="flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-left text-[12.5px] text-amber-900 hover:bg-amber-100">
+          <BellRingIcon className="h-4 w-4" aria-hidden="true" /> <b>{pending}</b> purchase request{pending === 1 ? '' : 's'} waiting for activation <span className="ml-auto font-semibold">Review →</span>
+        </button>}
+
+      <section className={card}>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h3 className="text-[13.5px] font-bold text-navy-800">Subscription Plans</h3>
+          <button type="button" onClick={() => onEdit(null)} className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-primary-700"><PlusIcon className="h-3.5 w-3.5" aria-hidden="true" /> Add New Plan</button>
+          <button type="button" onClick={() => onTab('plans')} className="rounded-md border border-slate-300 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50">Manage Plans</button>
+        </div>
+        {plans.length === 0 ? <p className="py-6 text-center text-[12.5px] text-slate-500">No plans yet.</p> : (
+          <div className="scroll-thin flex gap-3 overflow-x-auto pb-1">
+            {plans.map((p) => (
+              <article key={p.id} className={`flex w-[220px] shrink-0 flex-col rounded-lg border p-3 ${p.popular ? 'border-primary ring-1 ring-primary' : 'border-slate-200'} ${p.is_active ? '' : 'opacity-60'}`}>
+                <div className="flex items-start gap-1">
+                  <h4 className="text-[13.5px] font-bold text-navy-800">{p.name}</h4>
+                  {p.popular && <span className="ml-auto rounded bg-success px-1.5 py-[1px] text-[9.5px] font-bold text-white">Most Popular</span>}
+                </div>
+                <p className="text-[11px] text-slate-500">{categoryLabel(p.category)}{p.is_active ? '' : ' · Hidden'}</p>
+                <p className="mt-1.5 font-display text-[19px] font-bold text-primary">{rupees(p.price)} <span className="text-[11px] font-medium text-slate-500">/ {durationLabel(p.duration_days)}</span></p>
+                <ul className="mt-2 flex-1 space-y-1 text-[11.5px]">
+                  {(p.features || []).slice(0, 5).map((f) => (
+                    <li key={f.label} className={`flex items-start gap-1.5 ${f.included ? 'text-slate-700' : 'text-slate-400'}`}>
+                      {f.included ? <CircleCheckIcon className="mt-[1px] h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden="true" /> : <CircleXIcon className="mt-[1px] h-3.5 w-3.5 shrink-0 text-rose-400" aria-hidden="true" />} {f.label}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2">
+                  <span className="text-[11.5px] font-semibold text-navy-800">{p.active_subscriptions} Active</span>
+                  <button type="button" onClick={() => onEdit(p)} aria-label={`Edit ${p.name}`} className="inline-flex items-center gap-1 rounded border border-primary px-2 py-0.5 text-[11.5px] text-primary hover:bg-primary-50"><PencilIcon className="h-3 w-3" aria-hidden="true" /> Edit Plan</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <section className={card}>
+          <h3 className="mb-3 text-[13.5px] font-bold text-navy-800">Subscription Summary</h3>
+          {byPlan.length === 0 ? <p className="py-6 text-center text-[12.5px] text-slate-500">No active subscriptions yet.</p> : (
+            <div className="flex items-center gap-4">
+              <Donut parts={byPlan} label="Active subscriptions by plan" />
+              <ul className="flex-1 space-y-1.5 text-[11.5px]">
+                {byPlan.map((p) => <li key={p.label} className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: p.color }} /><span className="text-slate-600">{p.label}</span><span className="ml-auto text-right font-medium text-navy-800">{p.value}<span className="block text-[10px] font-normal text-slate-400">{rupees(p.revenue)}</span></span></li>)}
+              </ul>
+            </div>
+          )}
+          <p className="mt-2 text-[10.5px] text-slate-400">Active subscriptions per plan, with revenue collected.</p>
+        </section>
+        <section className={card}>
+          <h3 className="mb-3 flex items-center gap-2 text-[13.5px] font-bold text-navy-800"><HourglassIcon className="h-4 w-4 text-amber-500" aria-hidden="true" /> Expiring in 7 Days</h3>
+          {expiring.length === 0 ? <p className="py-6 text-center text-[12.5px] text-slate-500">Nothing expiring this week.</p> : (
+            <ul className="divide-y divide-slate-100 text-[12px]">
+              {expiring.map((s) => (
+                <li key={s.id} className="flex items-center gap-2 py-2">
+                  <span className="min-w-0 flex-1"><span className="block truncate font-semibold text-navy-800">{s.student?.name}</span><span className="text-[10.5px] text-slate-500">{s.plan_name} · ends {fmtDate(s.ends_on)}</span></span>
+                  {s.student?.phone && <a href={`tel:${s.student.phone}`} className="inline-flex items-center gap-1 text-[11px] text-primary"><PhoneIcon className="h-3 w-3" aria-hidden="true" />{s.student.phone}</a>}
+                  <span className="rounded bg-amber-50 px-1.5 py-[1px] text-[10.5px] font-semibold text-amber-700">{daysLeft(s.ends_on) === 0 ? 'Today' : `${daysLeft(s.ends_on)}d`}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className={card}>
+          <h3 className="mb-3 text-[13.5px] font-bold text-navy-800">Recent Activations</h3>
+          {recent.length === 0 ? <p className="py-6 text-center text-[12.5px] text-slate-500">No activations yet.</p> : (
+            <ul className="divide-y divide-slate-100 text-[12px]">
+              {recent.map((s) => (
+                <li key={s.id} className="flex items-center gap-2 py-2">
+                  <span className="min-w-0 flex-1"><span className="block truncate font-semibold text-navy-800">{s.student?.name}</span><span className="text-[10.5px] text-slate-500">{s.plan_name} · {fmtDate(s.activated_at)}</span></span>
+                  <span className="font-semibold text-emerald-700">{s.amount_paid === null ? '—' : rupees(s.amount_paid)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" onClick={() => onTab('subscriptions')} className="mt-2 text-[12px] font-semibold text-primary">All subscriptions →</button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPlans() {
   const [plans, setPlans] = useState(null);
   const [data, setData] = useState(null);
-  const [tab, setTab] = useState('requests');
+  const [tab, setTab] = useState('overview');
+  const [planFilter, setPlanFilter] = useState('');
+  const [startFrom, setStartFrom] = useState('');
+  const [startTo, setStartTo] = useState('');
   const [editing, setEditing] = useState(undefined); // undefined closed, null new, plan edit
   const [activating, setActivating] = useState(null);
   const [assigning, setAssigning] = useState(false);
@@ -349,6 +461,9 @@ export default function AdminPlans() {
   const ov = data?.overview || {};
   const list = subs.filter((s) => s.status !== 'Requested'
     && (!filter || s.display_status === filter)
+    && (!planFilter || s.plan_name === planFilter)
+    && (!startFrom || (s.starts_on && s.starts_on >= startFrom))
+    && (!startTo || (s.starts_on && s.starts_on <= startTo))
     && `${s.student?.name || ''} ${s.student?.user_id || ''} ${s.plan_name} ${s.payment_ref || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   const reject = async (s) => {
@@ -364,23 +479,23 @@ export default function AdminPlans() {
       await load();
     } catch (err) { setStatus({ kind: 'error', text: errorMessage(err, 'Could not delete.') }); }
   };
-  const exportCsv = () => {
-    const head = ['Student', 'Login ID', 'Phone', 'Plan', 'Amount', 'Reference', 'Start', 'Expiry', 'Status', 'Activated On'];
-    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const csv = [head, ...list.map((s) => [s.student?.name, s.student?.user_id, s.student?.phone, s.plan_name, s.amount_paid ?? '', s.payment_ref, s.starts_on, s.ends_on, statusLabel(s.display_status), s.activated_at ? new Date(s.activated_at).toLocaleDateString('en-GB') : ''])]
-      .map((r) => r.map(esc).join(',')).join('\r\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'subscriptions.csv';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  const exportXlsx = () => {
+    const rows = list.map((s) => ({
+      Student: s.student?.name || '', 'Login ID': s.student?.user_id || '', Phone: s.student?.phone || '', Plan: s.plan_name, Amount: s.amount_paid ?? '',
+      Reference: s.payment_ref || '', Start: s.starts_on || '', Expiry: s.ends_on || '', 'Days Left': s.display_status === 'Active' ? daysLeft(s.ends_on) : '',
+      Status: statusLabel(s.display_status), 'Activated On': s.activated_at ? new Date(s.activated_at).toLocaleDateString('en-GB') : '',
+    }));
+    if (rows.length === 0) { setStatus({ kind: 'error', text: 'No subscriptions match the filters.' }); return; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Subscriptions');
+    XLSX.writeFile(wb, `subscriptions_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
   const done = async (r) => {
     setStatus({ kind: 'ok', text: `Plan activated for ${r.student?.name || 'the student'}: valid ${fmtDate(r.starts_on)} – ${fmtDate(r.ends_on)}.${r.referral_commission ? ` Referral commission of ${rupees(r.referral_commission)} credited to the referrer.` : ''}${r.student?.status === 'Inactive' ? ' Note: this student account is marked Inactive in Students Management.' : ''}` });
     await load();
   };
 
-  const tabs = [['requests', `Purchase Requests${pending.length ? ` (${pending.length})` : ''}`], ['subscriptions', 'Subscriptions'], ['plans', 'Plans'], ['referrals', 'Referrals'], ['settings', 'Payment Details']];
+  const tabs = [['overview', 'Overview'], ['requests', `Purchase Requests${pending.length ? ` (${pending.length})` : ''}`], ['subscriptions', 'Subscriptions'], ['plans', 'Plans'], ['referrals', 'Referrals'], ['settings', 'Payment Details']];
 
   return (
     <div className="nd">
@@ -394,12 +509,12 @@ export default function AdminPlans() {
         } />
 
       <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <StatCard icon={<UsersIcon className="h-5 w-5" />} iconBg="#0D6EFD" label="Total Subscriptions" value={data ? ov.total : '—'} />
-        <StatCard icon={<CheckCircle2Icon className="h-5 w-5" />} iconBg="#198754" label="Active" value={data ? ov.active : '—'} />
-        <StatCard icon={<HourglassIcon className="h-5 w-5" />} iconBg="#F59E0B" label="Expiring in 7 Days" value={data ? ov.expiring_soon : '—'} />
-        <StatCard icon={<XCircleIcon className="h-5 w-5" />} iconBg="#DC3545" label="Expired" value={data ? ov.expired : '—'} />
-        <StatCard icon={<IndianRupeeIcon className="h-5 w-5" />} iconBg="#6F42C1" label="Total Revenue" value={data ? rupees(ov.revenue_total) : '—'} />
-        <StatCard icon={<TrendingUpIcon className="h-5 w-5" />} iconBg="#0EA5E9" label="This Month" value={data ? rupees(ov.revenue_month) : '—'} />
+        <StatCard icon={<UsersIcon className="h-5 w-5" />} iconBg="#0D6EFD" label="Total Subscriptions" value={data ? ov.total : '—'} sub="All time" />
+        <StatCard icon={<CheckCircle2Icon className="h-5 w-5" />} iconBg="#198754" label="Active" value={data ? ov.active : '—'} sub={data && ov.total ? `${((ov.active / ov.total) * 100).toFixed(1)}% of total` : undefined} subClass="text-emerald-700" />
+        <StatCard icon={<HourglassIcon className="h-5 w-5" />} iconBg="#F59E0B" label="Expiring in 7 Days" value={data ? ov.expiring_soon : '—'} sub="Follow up before expiry" action={ov.expiring_soon ? 'See list' : undefined} onAction={() => setTab('overview')} />
+        <StatCard icon={<XCircleIcon className="h-5 w-5" />} iconBg="#DC3545" label="Expired" value={data ? ov.expired : '—'} sub={data && ov.total ? `${((ov.expired / ov.total) * 100).toFixed(1)}% of total` : undefined} subClass="text-danger" />
+        <StatCard icon={<IndianRupeeIcon className="h-5 w-5" />} iconBg="#6F42C1" label="Total Revenue" value={data ? rupees(ov.revenue_total) : '—'} sub="All time" />
+        <StatCard icon={<TrendingUpIcon className="h-5 w-5" />} iconBg="#0EA5E9" label="This Month" value={data ? rupees(ov.revenue_month) : '—'} sub={new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })} />
       </div>
 
       {status.text && <p role={status.kind === 'error' ? 'alert' : 'status'} className={`mb-4 rounded-lg border px-3 py-2 text-[12.5px] ${status.kind === 'error' ? 'border-rose-200 bg-rose-50 text-danger' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{status.text}</p>}
@@ -412,6 +527,8 @@ export default function AdminPlans() {
       </div>
 
       {(plans === null || data === null) && tab !== 'settings' ? <LoadingState>Loading…</LoadingState> : null}
+
+      {tab === 'overview' && data && plans && <Overview plans={plans} subs={subs} pending={pending.length} onTab={setTab} onEdit={setEditing} />}
 
       {tab === 'requests' && data &&
         <section className="rounded-xl border border-slate-200 bg-white shadow-card">
@@ -439,19 +556,24 @@ export default function AdminPlans() {
             <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter by status" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-[12px] text-slate-600 outline-none focus:border-primary">
               <option value="">All Statuses</option><option>Active</option><option>Expired</option><option>Rejected</option><option>Cancelled</option>
             </select>
+            <select value={planFilter} onChange={(e) => setPlanFilter(e.target.value)} aria-label="Filter by plan" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-[12px] text-slate-600 outline-none focus:border-primary">
+              <option value="">All Plans</option>{[...new Set(subs.map((x) => x.plan_name))].sort().map((n) => <option key={n}>{n}</option>)}
+            </select>
+            <label className="flex items-center gap-1.5 text-[11.5px] text-slate-600">Start from <input type="date" value={startFrom} onChange={(e) => setStartFrom(e.target.value)} aria-label="Start date from" className="rounded-md border border-slate-300 px-2 py-1 text-[12px]" /></label>
+            <label className="flex items-center gap-1.5 text-[11.5px] text-slate-600">to <input type="date" value={startTo} onChange={(e) => setStartTo(e.target.value)} aria-label="Start date to" className="rounded-md border border-slate-300 px-2 py-1 text-[12px]" /></label>
             <div className="relative ml-auto">
               <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search student, plan, reference..." aria-label="Search subscriptions" className="w-[260px] rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-[12px] outline-none focus:border-primary" />
             </div>
-            <button type="button" onClick={exportCsv} className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50"><DownloadIcon className="h-3.5 w-3.5" aria-hidden="true" /> Export Excel</button>
+            <button type="button" onClick={exportXlsx} className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50"><DownloadIcon className="h-3.5 w-3.5" aria-hidden="true" /> Export Excel</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-[12px]">
               <thead className="bg-slate-50 text-[11.5px] font-semibold text-slate-600">
-                <tr>{['Student', 'Plan', 'Amount', 'Reference', 'Start Date', 'Expiry Date', 'Status'].map((h) => <th key={h} scope="col" className="px-3 py-2.5">{h}</th>)}</tr>
+                <tr>{['Student', 'Plan', 'Amount', 'Reference', 'Start Date', 'Expiry Date', 'Days Left', 'Status'].map((h) => <th key={h} scope="col" className="px-3 py-2.5">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {list.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-500">No subscriptions.</td></tr>}
+                {list.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-slate-500">No subscriptions.</td></tr>}
                 {list.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-50/70">
                     <td className="px-3 py-2.5"><span className="block font-semibold text-navy-800">{s.student?.name}</span><span className="block text-[10.5px] text-slate-500">{s.student?.user_id}</span></td>
@@ -460,6 +582,7 @@ export default function AdminPlans() {
                     <td className="px-3 py-2.5 text-slate-600">{s.payment_ref || '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{fmtDate(s.starts_on)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{fmtDate(s.ends_on)}</td>
+                    <td className="px-3 py-2.5 text-slate-600">{s.display_status === 'Active' ? <DaysLeft ymd={s.ends_on} /> : '—'}</td>
                     <td className="px-3 py-2.5"><span className={`rounded px-2 py-[2px] text-[10.5px] font-semibold ${STATUS_TONE[s.display_status]}`}>{statusLabel(s.display_status)}</span></td>
                   </tr>
                 ))}
