@@ -446,7 +446,7 @@ export const resultService = {
   },
   // Server-side paged + filtered admin results list → { rows, total }.
   // Pass pageSize: 0 to fetch ALL rows matching the filters (exports).
-  getResultsPage: async ({ page = 1, pageSize = 25, search, from, to, course, testType, examName } = {}) => {
+  getResultsPage: async ({ page = 1, pageSize = 25, search, from, to, course, testType, examName, kind, chapterId } = {}) => {
     const params = { page, pageSize };
     if (search) params.search = search;
     if (from) params.from = from;
@@ -454,8 +454,15 @@ export const resultService = {
     if (course) params.course = course;
     if (testType) params.testType = testType;
     if (examName) params.examName = examName;
+    if (kind) params.kind = kind;
+    if (chapterId) params.chapterId = chapterId;
     const response = await api.get('/results', { params });
     return response.data;
+  },
+  // Admin statistics (cards + charts) over every result matching the same filters.
+  getResultStats: async (filters = {}) => {
+    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined && v !== ''));
+    return (await api.get('/results/stats', { params })).data;
   },
   // Full single-result detail including the chapter's complete passage text.
   getResultById: async (id) => {
