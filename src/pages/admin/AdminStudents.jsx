@@ -5,6 +5,7 @@ import Pagination from '../../components/Pagination';
 import { API_BASE_URL } from '../../config';
 import { INDIAN_STATES } from '../../features/students/indianStates';
 import * as XLSX from 'xlsx';
+import { urlParam } from '../../features/admin/urlParams';
 import './Admin.css';
 
 // Optional student details added in 8.18 (kept in both the Add and Edit forms).
@@ -64,7 +65,7 @@ const AdminStudents = () => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => urlParam('search') || '');
   const navigate = useNavigate();
 
   // Tests Modal State
@@ -100,7 +101,7 @@ const AdminStudents = () => {
   const ALL_CATEGORIES = ['Typing English', 'Typing Hindi', 'Steno English', 'Steno Hindi'];
 
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState(() => urlParam('status') || 'All');
   const [addPhoto, setAddPhoto] = useState(null);
   const [editPhoto, setEditPhoto] = useState(null);
   const [page, setPage] = useState(1);
@@ -191,7 +192,7 @@ const AdminStudents = () => {
   };
 
   // Add Student Modal State
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(() => urlParam('new') === '1');
   const [addFormData, setAddFormData] = useState({
     name: '',
     fathers_name: '',

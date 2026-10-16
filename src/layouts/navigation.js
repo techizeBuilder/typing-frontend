@@ -35,11 +35,14 @@ const adminOnly = ({ role }) => isAdminRole(role);
 
 export const adminNav = [
   { label: 'Dashboard', icon: 'home', to: '/admin', end: true, color: '#38BDF8' },
-  { label: 'Students Management', icon: 'users', to: '/admin/students', color: '#A78BFA', visible: can('students') },
-  { label: 'Exam Management', icon: 'layers', to: '/admin/exams', color: '#FB923C', visible: can('exams') },
+  { label: 'Students Management', icon: 'users', to: '/admin/students', color: '#A78BFA', visible: can('students'),
+    children: [{ label: 'All Students', to: '/admin/students' }, { label: 'Add Student', to: '/admin/students?new=1' }, { label: 'Pending Requests', to: '/admin/students?status=Pending' }] },
+  { label: 'Exam Management', icon: 'layers', to: '/admin/exams', color: '#FB923C', visible: can('exams'),
+    children: [{ label: 'Manage Exams', to: '/admin/exams' }, { label: 'Add New Exam', to: '/admin/exams?new=1' }, { label: 'Result Patterns', to: '/admin/exams?tab=patterns' }] },
   { label: 'Font Groups', icon: 'type', to: '/admin/font-groups', color: '#60A5FA', visible: can('exams') },
   { label: 'Screen Layout', icon: 'monitor', to: '/admin/screen-layout', color: '#2DD4BF', visible: adminOnly },
-  { label: 'Test Management', icon: 'clipboard', to: '/admin/content', color: '#34D399', visible: can('chapters') },
+  { label: 'Test Management', icon: 'clipboard', to: '/admin/content', color: '#34D399', visible: can('chapters'),
+    children: [{ label: 'Manage Test (Live, Preload)', to: '/admin/content' }, { label: 'Add New Test (Live, Preload)', to: '/admin/content?new=1' }] },
   { label: 'Message Center', icon: 'mail', to: '/admin/messages', color: '#0EA5E9', visible: can('messages') },
   { label: 'Flash Banner', icon: 'zap', to: '/admin/flash-banner', color: '#F59E0B', visible: can('flash_banner') },
   { label: 'Staff Management', icon: 'shield', to: '/admin/staff', color: '#F472B6', visible: can('staff') },
@@ -68,6 +71,12 @@ export function getSessionUser() {
     permissions,
     name: localStorage.getItem('name') || localStorage.getItem('username') || '',
   };
+}
+
+// Sub-links (admin groups) carry their own query string: active only on an exact match.
+export function isChildActive(child, pathname, search = '') {
+  const [path, query = ''] = child.to.split('?');
+  return pathname === path && new URLSearchParams(search).toString() === new URLSearchParams(query).toString();
 }
 
 export function isItemActive(item, pathname, search = '') {

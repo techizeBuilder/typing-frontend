@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { urlParam } from '../../features/admin/urlParams';
 import { resultService, examService } from '../../services/api';
 import { computeResultMetrics } from '../../utils/resultMetrics';
 import Pagination from '../../components/Pagination';
@@ -21,7 +22,7 @@ const AdminResults = () => {
   const [loading, setLoading] = useState(true);
 
   // Filters
-  const [usernameSearch, setUsernameSearch] = useState('');
+  const [usernameSearch, setUsernameSearch] = useState(() => urlParam('search') || '');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');

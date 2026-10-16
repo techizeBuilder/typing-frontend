@@ -1,20 +1,62 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogOutIcon, RepeatIcon, XIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, LogOutIcon, RepeatIcon, XIcon } from 'lucide-react';
 import { authService } from '../services/api';
 import { NavIcon } from '../ui/NavIcon';
 import { LOGO_URL, COLLEGE_NAME } from '../ui/brand';
-import { adminNav, getSessionUser, isItemActive } from './navigation';
+import { adminNav, getSessionUser, isChildActive, isItemActive } from './navigation';
 
-export function AdminSidebar({ mobileOpen = false, onClose }) {
-  const { pathname } = useLocation();
+const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+
+// "System Summary" card (real counts from GET /admin/summary).
+function SummaryCard({ summary }) {
+  if (!summary) return null;
+  const rows = [
+    ['Total Students', fmt(summary.students)],
+    ['Active Students', fmt(summary.active_students)],
+    ['Total Exams', fmt(summary.exams)],
+    ['Typing Tests', fmt(summary.typing_tests)],
+    ['Steno Tests', fmt(summary.steno_tests)],
+    ['Results Recorded', fmt(summary.results)],
+  ];
+  return (
+    <div className="mx-3 mb-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+      <p className="mb-2 text-[11.5px] font-semibold text-navy-800">System Summary</p>
+      <ul className="space-y-1.5">
+        {rows.map(([label, value]) => (
+          <li key={label} className="flex items-center justify-between text-[11.5px]">
+            <span className="text-slate-500">{label}</span>
+            <span className="font-semibold text-navy-800">{value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function AdminSidebar({ mobileOpen = false, onClose, summary }) {
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const user = getSessionUser();
   const items = adminNav.filter((item) => !item.visible || item.visible(user));
+  // Groups open automatically on their own pages; the admin can also toggle them.
+  const [toggled, setToggled] = useState({});
+  const isOpen = (item) => toggled[item.label] ?? isItemActive(item, pathname, search);
 
   const handleLogout = () => {
     authService.logout();
     navigate('/login');
   };
+
+  const rowClass = (active) => `flex w-full items-center gap-2.5 border-l-4 px-4 py-2.5 text-[13px] transition-all duration-200 ease-out hover:translate-x-1 ${
+    active ? 'border-amber-400 bg-primary font-semibold text-white hover:bg-primary-700' : 'border-transparent text-slate-600 hover:bg-slate-50'}`;
+  const icon = (item, active) => (
+    <span
+      className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
+      style={{ backgroundColor: active ? 'rgba(255,255,255,0.25)' : `${item.color ?? '#38BDF8'}1F` }}>
+      <NavIcon name={item.icon} className="h-4 w-4" style={{ color: active ? '#fff' : item.color ?? '#38BDF8' }} />
+    </span>
+  );
 
   return (
     <>
@@ -47,39 +89,71 @@ export function AdminSidebar({ mobileOpen = false, onClose }) {
           </button>
         </div>
 
-        <p className="px-4 pb-1.5 pt-3 text-[10px] font-semibold tracking-wide text-slate-400">
-          MAIN NAVIGATION
-        </p>
+        <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <p className="px-4 pb-1.5 pt-3 text-[10px] font-semibold tracking-wide text-slate-400">
+            MAIN NAVIGATION
+          </p>
 
-        <nav className="scroll-thin flex-1 overflow-y-auto pb-3" aria-label="Admin navigation">
-          <ul>
-            {items.map((item) => {
-              const color = item.color ?? '#38BDF8';
-              const active = isItemActive(item, pathname);
-              return (
-                <li key={item.label}>
-                  <Link
-                    to={item.to}
-                    onClick={onClose}
-                    aria-current={active ? 'page' : undefined}
-                    className={`flex items-center gap-2.5 border-l-4 px-4 py-2.5 text-[13px] transition-all duration-200 ease-out hover:translate-x-1 ${
-                      active ?
-                        'border-amber-400 bg-primary font-semibold text-white hover:bg-primary-700' :
-                        'border-transparent text-slate-600 hover:bg-slate-50'}`}>
-                    <span
-                      className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
-                      style={{ backgroundColor: active ? 'rgba(255,255,255,0.25)' : `${color}1F` }}>
-                      <NavIcon name={item.icon} className="h-4 w-4" style={{ color: active ? '#fff' : color }} />
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+          <nav className="pb-3" aria-label="Admin navigation">
+            <ul>
+              {items.map((item) => {
+                const active = isItemActive(item, pathname, search);
+                if (!item.children) {
+                  return (
+                    <li key={item.label}>
+                      <Link to={item.to} onClick={onClose} aria-current={active ? 'page' : undefined} className={rowClass(active)}>
+                        {icon(item, active)}
+                        <span className="truncate">{item.label}</span>
+                      </Link>
+                    </li>
+                  );
+                }
+                const open = isOpen(item);
+                return (
+                  <li key={item.label}>
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => setToggled((t) => ({ ...t, [item.label]: !open }))}
+                      className={rowClass(active)}>
+                      {icon(item, active)}
+                      <span className="truncate">{item.label}</span>
+                      {open ? <ChevronUpIcon className="ml-auto h-3.5 w-3.5" /> : <ChevronDownIcon className="ml-auto h-3.5 w-3.5" />}
+                    </button>
+                    {open &&
+                      <ul>
+                        {item.children.map((child) => {
+                          const childActive = isChildActive(child, pathname, search);
+                          return (
+                            <li key={child.to}>
+                              <Link
+                                to={child.to}
+                                onClick={onClose}
+                                aria-current={childActive ? 'page' : undefined}
+                                className={`block border-l-4 py-2 pl-11 pr-4 text-[12.5px] font-medium transition-all duration-200 ease-out hover:translate-x-1 ${
+                                  childActive ? 'border-amber-400 bg-primary-50 text-primary-700' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
+                                — {child.label}
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    }
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          <SummaryCard summary={summary} />
+        </div>
 
         <div className="space-y-1.5 border-t border-slate-100 px-3 py-3">
+          <Link
+            to="/"
+            className="flex items-center justify-center gap-2 rounded-md bg-primary py-2 text-[12.5px] font-semibold text-white transition-colors duration-150 hover:bg-primary-700">
+            <ExternalLinkIcon className="h-4 w-4" /> Visit Website
+          </Link>
           <Link
             to="/dashboard"
             className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[12.5px] font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50">

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { examService, resultPatternService } from '../../services/api';
 import Pagination from '../../components/Pagination';
 import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
+import { urlParam } from '../../features/admin/urlParams';
 import './Admin.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3012/api';
@@ -34,7 +35,7 @@ const getExamFontGroups = (exam) => {
 
 const AdminExams = () => {
   const { isActive: isFontGroupActive } = useFontGroupSettings();
-  const [activeTab, setActiveTab] = useState('exams'); // 'patterns' or 'exams'
+  const [activeTab, setActiveTab] = useState(() => (urlParam('tab') === 'patterns' ? 'patterns' : 'exams')); // 'patterns' or 'exams'
   const [fontGroupDropdownOpen, setFontGroupDropdownOpen] = useState(false);
   
   const defaultPatternData = {
@@ -101,7 +102,7 @@ const AdminExams = () => {
   // Exam States
   const [exams, setExams] = useState([]);
   const [currentExam, setCurrentExam] = useState(null);
-  const [showExamForm, setShowExamForm] = useState(false);
+  const [showExamForm, setShowExamForm] = useState(() => urlParam('new') === '1');
   const [examSearch, setExamSearch] = useState('');
   const [examPage, setExamPage] = useState(1);
   const [examPageSize, setExamPageSize] = useState(10);

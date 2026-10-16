@@ -4,6 +4,7 @@ import { API_BASE_URL } from '../../config';
 import { fontFamilyForFontGroup, fontFamilyForHindiType } from '../../utils/hindiFonts';
 import mammoth from 'mammoth';
 import Pagination from '../../components/Pagination';
+import { urlParam } from '../../features/admin/urlParams';
 import './Admin.css';
 import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 
@@ -31,8 +32,8 @@ const AdminChapters = () => {
   const [chapters, setChapters] = useState([]);
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [showForm, setShowForm] = useState(() => urlParam('new') === '1');
+  const [searchTerm, setSearchTerm] = useState(() => urlParam('search') || '');
   const [testTypeFilter, setTestTypeFilter] = useState('All');
   const [fontGroupFilter, setFontGroupFilter] = useState('All');
   const [filterDate, setFilterDate] = useState('');
