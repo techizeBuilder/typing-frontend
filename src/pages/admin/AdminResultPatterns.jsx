@@ -89,7 +89,11 @@ export default function AdminResultPatterns() {
                     return (
                       <tr key={p.id} className="hover:bg-slate-50/70">
                         <td className="px-3 py-2.5 text-slate-500">{(currentPage - 1) * pageSize + i + 1}</td>
-                        <td className="px-3 py-2.5 font-semibold text-navy-800">{p.name}</td>
+                        <td className="px-3 py-2.5">
+                          <span className="font-semibold text-navy-800">{p.name}</span>
+                          {p.is_default && <span className="ml-1.5 rounded bg-emerald-50 px-1.5 py-[1px] text-[10px] font-bold text-emerald-700">DEFAULT</span>}
+                          <span className="block text-[10.5px] text-slate-500">{[p.applicable_typing !== false && 'Typing', p.applicable_steno !== false && 'Steno'].filter(Boolean).join(' + ')}</span>
+                        </td>
                         <td className="px-3 py-2.5 text-slate-600">{p.speed_count}</td>
                         <td className="px-3 py-2.5 text-slate-600">{p.penalty_value} {p.penalty_type}s</td>
                         <td className="px-3 py-2.5 text-slate-600">{p.required_speed} {p.qualify_on} / {p.required_accuracy}%</td>

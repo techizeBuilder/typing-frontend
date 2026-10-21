@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from 'react-router-dom';
+import { clearSessionStorage } from '../services/device';
 import { useState, useEffect } from 'react';
 
 const ProtectedRoute = () => {
@@ -31,7 +32,7 @@ const ProtectedRoute = () => {
             setIsAuthenticated(true);
           } else {
             console.log('ProtectedRoute: Token expired');
-            localStorage.clear();
+            clearSessionStorage();
             setIsAuthenticated(false);
           }
         } else {
@@ -45,7 +46,7 @@ const ProtectedRoute = () => {
           // Don't wipe offline cache for a malformed token when offline
           setIsAuthenticated(false);
         } else {
-          localStorage.clear();
+          clearSessionStorage();
           setIsAuthenticated(false);
         }
       }

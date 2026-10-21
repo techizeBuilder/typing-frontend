@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { BarChart3Icon, FilterIcon, XIcon, EyeIcon, AlertTriangleIcon, TrophyIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { resultService, getCurrentUserUuid } from '../services/api';
 import { LoadingState, EmptyState } from '../features/exams/ExamUI';
+import { releaseLabel, resultReleaseAt, timingOf } from '../features/results/resultTiming';
 
 const TABS = [
   { id: 'typing', label: 'Typing' },
@@ -82,6 +83,8 @@ const MyResults = () => {
         wordStatuses: result.word_statuses || [],
         pattern: result.pattern_data,
         originalPassage: fullPassage,
+        testType: result.test_type,
+        resultTiming: timingOf(result.exam?.result_pattern),
         ...(isSteno ? { typedText: result.user_input, referenceText: fullPassage } : {}),
       }
     });
@@ -127,11 +130,14 @@ const MyResults = () => {
     return true;
   });
 
+  // Results whose pattern releases them later stay hidden until then.
+  const releaseOf = (r) => resultReleaseAt(timingOf(r.exam?.result_pattern), r.test_type, r.date_taken);
+  const released = filteredResults.filter((r) => !releaseOf(r));
   // Summary of the rows currently shown (stored values, as listed below).
-  const avgNwpm = filteredResults.length
-    ? Math.round(filteredResults.reduce((sum, r) => sum + (Number(r.nwpm) || 0), 0) / filteredResults.length)
+  const avgNwpm = released.length
+    ? Math.round(released.reduce((sum, r) => sum + (Number(r.nwpm) || 0), 0) / released.length)
     : 0;
-  const bestNwpm = filteredResults.reduce((best, r) => Math.max(best, Math.round(Number(r.nwpm) || 0)), 0);
+  const bestNwpm = released.reduce((best, r) => Math.max(best, Math.round(Number(r.nwpm) || 0)), 0);
 
   const pageCount = Math.max(1, Math.ceil(filteredResults.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -259,6 +265,7 @@ const MyResults = () => {
                     <tbody className="divide-y divide-slate-100 text-[12.5px]">
                       {pageRows.map((result, i) => {
                         const dateObj = new Date(result.date_taken);
+                        const releaseAt = releaseOf(result);
                         return (
                           <tr key={result.id} className="transition-colors duration-150 hover:bg-slate-50/70">
                             <td className="px-4 py-3 text-slate-500">{(currentPage - 1) * PAGE_SIZE + i + 1}</td>
@@ -269,10 +276,14 @@ const MyResults = () => {
                               {dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })},{' '}
                               {dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                             </td>
-                            <td className="px-4 py-3 font-semibold text-primary">{Math.round(result.nwpm)} WPM</td>
-                            <td className="px-4 py-3 text-slate-700">{parseFloat(result.accuracy).toFixed(2)}%</td>
+                            {releaseAt ? <>
+                              <td colSpan={2} className="px-4 py-3 text-[11.5px] font-medium text-slate-500">Result at {releaseLabel(releaseAt)}</td>
+                            </> : <>
+                              <td className="px-4 py-3 font-semibold text-primary">{Math.round(result.nwpm)} WPM</td>
+                              <td className="px-4 py-3 text-slate-700">{parseFloat(result.accuracy).toFixed(2)}%</td>
+                            </>}
                             <td className="px-4 py-3">
-                              {result.rank ?
+                              {releaseAt ? <span className="rounded bg-slate-100 px-2 py-[2px] text-[11.5px] font-semibold text-slate-600">Submitted</span> : result.rank ?
                                 <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-[2px] text-[11.5px] font-semibold text-amber-700">
                                   <TrophyIcon className="h-3 w-3" aria-hidden="true" /> {result.rank}Th Rank
                                 </span> :
@@ -282,8 +293,10 @@ const MyResults = () => {
                             <td className="px-4 py-3 text-right">
                               <button
                                 type="button"
+                                disabled={!!releaseAt}
+                                title={releaseAt ? `Available at ${releaseLabel(releaseAt)}` : undefined}
                                 onClick={() => handleViewResult(result)}
-                                className="inline-flex items-center gap-1 rounded bg-navy-800 px-3 py-1 text-[11.5px] font-semibold text-white transition-colors duration-150 hover:bg-navy-900">
+                                className="inline-flex items-center gap-1 rounded bg-navy-800 px-3 py-1 text-[11.5px] font-semibold text-white transition-colors duration-150 hover:bg-navy-900 disabled:cursor-not-allowed disabled:opacity-40">
                                 <EyeIcon className="h-3 w-3" aria-hidden="true" /> View Report
                               </button>
                             </td>

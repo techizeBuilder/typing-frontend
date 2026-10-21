@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { settingService } from '../services/api';
 import Testimonials from '../features/reviews/Testimonials';
+import { FooterLinks } from '../features/siteInfo/SiteInfoUI';
 import { LOGO_URL, COLLEGE_NAME, TAGLINE } from '../ui/brand';
 
 const heroSlides = [
@@ -510,6 +511,7 @@ const LandingPage = () => {
           </div>
         </section>
 
+        <FooterLinks className="pt-1" />
         <p className="pb-2 pt-1 text-center text-[11.5px] text-slate-400">
           © {new Date().getFullYear()} {COLLEGE_NAME}. All rights reserved.
         </p>

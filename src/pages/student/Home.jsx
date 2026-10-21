@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import api, { flashBannerService, resultService } from '../../services/api';
 import { useExamList } from '../../features/exams/useExamData';
+import { HomeSiteLinks } from '../../features/siteInfo/SiteInfoUI';
 
 const primaryCards = [
   {
@@ -250,6 +251,9 @@ export default function Home() {
           Start Practice <ArrowRightIcon className="h-4 w-4" aria-hidden="true" />
         </span>
       </Link>
+
+      {/* Quick links + Telegram / YouTube (set on the admin Settings page) */}
+      <div className="mt-4 space-y-4"><HomeSiteLinks /></div>
     </div>
   );
 }

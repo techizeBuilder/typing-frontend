@@ -28,7 +28,7 @@ function useOutsideClose(ref, open, close) {
   }, [ref, open, close]);
 }
 
-// Counts for the sidebar summary and the bell; refreshed every minute.
+// Counts for the notification bell; refreshed every minute.
 function useAdminSummary() {
   const [summary, setSummary] = useState(null);
   useEffect(() => {
@@ -215,7 +215,7 @@ const AdminLayout = () => {
 
   return (
     <div className="flex h-screen w-full bg-canvas">
-      <AdminSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} summary={summary} />
+      <AdminSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="nd flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-3 py-2.5 sm:gap-4 sm:px-5">

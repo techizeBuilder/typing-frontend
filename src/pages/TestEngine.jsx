@@ -5,6 +5,7 @@ import { chapterService, resultService, getCurrentUserUuid, userService } from '
 import { API_BASE_URL } from '../config';
 import { detectRepeatedSequences } from '../utils/repeatDetection';
 import './TestEngine.css';
+import { timingOf } from '../features/results/resultTiming';
 
 
 
@@ -1003,6 +1004,9 @@ const TestEngine = () => {
       chapter_no: chapter?.chapter_no || null,
       date_taken: new Date().toISOString(),
       mode,
+      // Display only: when the pattern lets the student see this result.
+      testType: testType || chapter?.test_type || null,
+      resultTiming: timingOf(exam?.result_pattern),
       // Actual font group used (resolves self-assessment to the chosen font) so the
       // result screen renders the passage in the correct Hindi font (Kruti Dev / Mangal).
       fontGroup: activeMode,

@@ -61,6 +61,7 @@ import NotFoundPage from './components/NotFoundPage';
 import ResultRoute from './components/ResultRoute';
 import SelfAssessmentSetup from './pages/SelfAssessmentSetup';
 import FullscreenToggle from './components/FullscreenToggle';
+import { SitePage } from './features/siteInfo/SiteInfoUI';
 
 function App() {
   return (
@@ -71,6 +72,11 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/plans" element={<PlanPricing publicView />} />
+          {/* Public policy pages + Contact Us (text set on the admin Settings page) */}
+          <Route path="/terms" element={<SitePage page="terms" />} />
+          <Route path="/privacy-policy" element={<SitePage page="privacy-policy" />} />
+          <Route path="/refund-policy" element={<SitePage page="refund-policy" />} />
+          <Route path="/contact" element={<SitePage page="contact" />} />
 
           {/* Protected Student Routes */}
           <Route element={<ProtectedRoute />}>

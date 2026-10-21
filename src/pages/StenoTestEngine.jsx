@@ -7,6 +7,7 @@ import { matchContractions, matchAlternateForms } from '../utils/stenoAlternateF
 import PracticeExam from '../features/steno/ExamScreens';
 import { findInterface } from '../features/steno/stenoPractice';
 import './StenoTestEngine.css';
+import { timingOf } from '../features/results/resultTiming';
 
 // ─── Steno error-classification helpers (module-level, pure functions) ────────
 const _lev = (a, b) => {
@@ -634,6 +635,7 @@ const StenoTestEngine = () => {
       fontGroup:   resolvedFontGroup || mode,
       hindiFontType,
       testType,
+      resultTiming: timingOf(exam?.result_pattern), // display only: when the student may see it
       typedText,
       referenceText,
       originalPassage: referenceText,   // full passage for the "Original Passage" column

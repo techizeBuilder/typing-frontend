@@ -26,7 +26,7 @@ import { PageHeading } from '../../ui/PageHeading';
 import { StatCard } from '../../ui/StatCard';
 import { LoadingState } from '../../features/exams/ExamUI';
 import {
-  PLAN_CATEGORIES, STATUS_TONE, categoryLabel, discountPct, durationLabel, errorMessage, fmtDate, rupees, statusLabel,
+  PLAN_CATEGORIES, STATUS_TONE, categoryLabel, planCategories, discountPct, durationLabel, errorMessage, fmtDate, rupees, statusLabel,
 } from '../../features/plans/planData';
 
 const card = 'rounded-xl border border-slate-200 bg-white p-4 shadow-card';
@@ -64,6 +64,7 @@ function PlanEditor({ plan, onClose, onSaved }) {
   const set = (patch) => setForm({ ...form, ...patch });
   const num = (v) => (v === '' || v === null ? null : Number(v));
   const save = async () => {
+    if (!planCategories(form.category).length) { setError('Choose at least one category.'); return; }
     setSaving(true); setError('');
     const payload = {
       name: form.name, category: form.category, tagline: form.tagline, price: Number(form.price), original_price: num(form.original_price),
@@ -80,8 +81,27 @@ function PlanEditor({ plan, onClose, onSaved }) {
     <Modal title={plan ? `Edit ${plan.name}` : 'Add New Plan'} onClose={onClose} wide>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block"><span className={labelCls}>Plan Name</span><input value={form.name} maxLength={60} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Gold Pass" className={inputCls} /></label>
-        <label className="block"><span className={labelCls}>Category</span>
-          <select value={form.category} onChange={(e) => set({ category: e.target.value })} className={inputCls}>{PLAN_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></label>
+        <fieldset className="block">
+          <legend className={labelCls}>Category (choose one or more)</legend>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 rounded-md border border-slate-300 px-3 py-2">
+            {PLAN_CATEGORIES.map((c) => {
+              const cats = planCategories(form.category);
+              const on = cats.includes(c.value) || (c.value !== 'all' && cats.includes('all'));
+              const toggle = () => {
+                const singles = PLAN_CATEGORIES.filter((x) => x.value !== 'all').map((x) => x.value);
+                let next = c.value === 'all' ? (on ? [] : ['all']) : (cats.includes('all') ? singles : cats).filter((x) => x !== 'all');
+                if (c.value !== 'all') next = on ? next.filter((x) => x !== c.value) : [...next, c.value];
+                if (next.length === singles.length) next = ['all'];
+                set({ category: next.join(',') });
+              };
+              return (
+                <label key={c.value} className="flex items-center gap-1.5 text-[12.5px] text-slate-700">
+                  <input type="checkbox" checked={on} onChange={toggle} className="h-4 w-4 accent-primary" /> {c.label}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
         <label className="block sm:col-span-2"><span className={labelCls}>Tagline</span><input value={form.tagline} maxLength={150} onChange={(e) => set({ tagline: e.target.value })} placeholder="e.g. Best for serious aspirants — full access for 1 year." className={inputCls} /></label>
         <label className="block"><span className={labelCls}>Price (₹)</span><input type="number" min="0" value={form.price} onChange={(e) => set({ price: e.target.value })} className={inputCls} /></label>
         <label className="block"><span className={labelCls}>Original Price (₹, optional — shows the discount)</span><input type="number" min="0" value={form.original_price} onChange={(e) => set({ original_price: e.target.value })} className={inputCls} /></label>

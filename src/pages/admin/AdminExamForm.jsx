@@ -64,7 +64,13 @@ export default function AdminExamForm() {
 
   useEffect(() => {
     let cancelled = false;
-    resultPatternService.getPatterns().then((p) => { if (!cancelled) setPatterns(p || []); }).catch(() => {});
+    resultPatternService.getPatterns().then((p) => {
+      if (cancelled) return;
+      setPatterns(p || []);
+      // A new exam starts with the Default pattern selected.
+      const def = !editing && (p || []).find((x) => x.is_default);
+      if (def) setExamData((d) => (d.result_pattern_id ? d : { ...d, result_pattern_id: def.id }));
+    }).catch(() => {});
     if (editing) {
       examService.getExamById(id)
         .then((e) => { if (cancelled) return; if (!e) { setError('Exam not found.'); return; } setCurrentExam(e); setExamData(examToForm(e)); })
@@ -91,6 +97,13 @@ export default function AdminExamForm() {
   // selected result pattern's speed_count. The unit follows the exam type
   // automatically instead of being chosen separately.
   const pattern = patterns.find((p) => String(p.id) === String(examData.result_pattern_id));
+  // Patterns marked for this exam's kind (Typing / Steno font groups); the
+  // currently chosen one always stays in the list.
+  const groups = examData.font_groups || [];
+  const wantsSteno = groups.some((g) => g.startsWith('Steno'));
+  const wantsTyping = groups.some((g) => !g.startsWith('Steno'));
+  const offeredPatterns = patterns.filter((p) => String(p.id) === String(examData.result_pattern_id) || groups.length === 0
+    || (wantsTyping && p.applicable_typing !== false) || (wantsSteno && p.applicable_steno !== false));
   const unit = pattern?.speed_count === 'Strokes' ? 'Strokes' : 'Words';
   // MAXIMUM must always be greater than MINIMUM. A maximum of 0 means "No Limit"
   // (effectively unbounded) and a minimum of 0 means "No Minimum", so the rule
@@ -183,7 +196,7 @@ export default function AdminExamForm() {
             <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Result Rule (Pattern)" required>
                 <select required value={examData.result_pattern_id} onChange={set('result_pattern_id')} className={inputCls}>
-                  <option value="">--Select--</option>{patterns.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  <option value="">--Select--</option>{offeredPatterns.map((p) => <option key={p.id} value={p.id}>{p.name}{p.is_default ? ' (Default)' : ''}</option>)}
                 </select>
               </Field>
               <Field label="Backspace Option">

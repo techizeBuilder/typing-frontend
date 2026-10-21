@@ -17,7 +17,7 @@ import { planService, settingService } from '../../services/api';
 import { Breadcrumbs } from '../../ui/PageHeading';
 import { EmptyState, LoadingState } from '../../features/exams/ExamUI';
 import {
-  PLAN_CATEGORIES, STATUS_TONE, daysLeft, discountPct, durationLabel, errorMessage, fmtDate, perMonth, rupees, statusLabel, waLink,
+  PLAN_CATEGORIES, STATUS_TONE, planCategories, planInCategory, daysLeft, discountPct, durationLabel, errorMessage, fmtDate, perMonth, rupees, statusLabel, waLink,
 } from '../../features/plans/planData';
 
 const FAQS = [
@@ -144,9 +144,9 @@ export default function PlanPricing({ publicView = false }) {
   }, [publicView]);
 
   // Category tabs: only categories that have plans; "All Access" plans show in every tab.
-  const tabs = useMemo(() => PLAN_CATEGORIES.filter((c) => c.value !== 'all' && (plans || []).some((p) => p.category === c.value)), [plans]);
+  const tabs = useMemo(() => PLAN_CATEGORIES.filter((c) => c.value !== 'all' && (plans || []).some((p) => planCategories(p.category).includes(c.value))), [plans]);
   const activeTab = tabs.find((t) => t.value === tab) || tabs[0] || null;
-  const visible = (plans || []).filter((p) => !activeTab || p.category === activeTab.value || p.category === 'all');
+  const visible = (plans || []).filter((p) => !activeTab || planInCategory(p, activeTab.value));
   const featureRows = [...new Set(visible.flatMap((p) => (p.features || []).map((f) => f.label)))];
 
   const left = daysLeft(mine?.validity_end);

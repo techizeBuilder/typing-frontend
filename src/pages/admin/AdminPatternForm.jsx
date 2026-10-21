@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { CheckSquareIcon, EyeIcon, GaugeIcon, InfoIcon, SaveIcon, ScaleIcon, SquareIcon, TargetIcon } from 'lucide-react';
+import { CheckSquareIcon, ClockIcon, EyeIcon, GaugeIcon, InfoIcon, SaveIcon, ScaleIcon, SquareIcon, TargetIcon } from 'lucide-react';
 import { resultPatternService } from '../../services/api';
 import { PageHeading } from '../../ui/PageHeading';
 import { VISIBILITY, defaultPatternData, msgOf, patternPayload } from '../../features/exams/adminExamData';
@@ -40,6 +40,31 @@ function YesNo({ label, value, onChange, name, yes = 'Yes', no = 'No' }) {
   );
 }
 
+function TimingBox({ title, badge, tone, children }) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-3.5">
+      <h4 className="mb-2.5 flex items-center gap-2 text-[12.5px] font-bold text-navy-800">{title} <span className={`rounded px-1.5 py-[1px] text-[9.5px] font-bold ${tone}`}>{badge}</span></h4>
+      {children}
+    </div>
+  );
+}
+function ResultWhen({ name, mode, time, onMode, onTime }) {
+  return (
+    <fieldset>
+      <legend className={labelCls}>Show Result to Students</legend>
+      <div className="space-y-1.5">
+        <label className="flex items-center gap-1.5 text-[12.5px] text-slate-700">
+          <input type="radio" name={name} checked={mode !== 'scheduled'} onChange={() => onMode('immediate')} className="h-3.5 w-3.5 accent-primary" /> Immediately
+        </label>
+        <label className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-slate-700">
+          <input type="radio" name={name} checked={mode === 'scheduled'} onChange={() => onMode('scheduled')} className="h-3.5 w-3.5 accent-primary" /> At a set time
+          <input type="time" aria-label="Result time" value={time || '21:00'} disabled={mode !== 'scheduled'} onChange={(e) => onTime(e.target.value)} className="ml-1 w-[120px] rounded-md border border-slate-300 bg-white px-2 py-1 text-[12px] text-navy-800 disabled:bg-slate-50 disabled:text-slate-400" />
+        </label>
+      </div>
+    </fieldset>
+  );
+}
+
 export default function AdminPatternForm() {
   const { id } = useParams();
   const editing = !!id;
@@ -70,6 +95,7 @@ export default function AdminPatternForm() {
   const submit = async (e) => {
     e.preventDefault();
     setError('');
+    if (p.applicable_typing === false && p.applicable_steno === false) { setError('Choose at least one of Typing Exam or Steno Exam under Applicable For.'); return; }
     setSaving(true);
     try {
       if (editing) await resultPatternService.updatePattern(id, patternPayload(p));
@@ -98,6 +124,22 @@ export default function AdminPatternForm() {
           <Card icon={GaugeIcon} title="Pattern Information & Speed">
             <div className="grid gap-3.5 sm:grid-cols-2">
               <div className="sm:col-span-2"><Field label="Result Name" required><input type="text" required value={p.name} onChange={(e) => setVal('name')(e.target.value)} placeholder="e.g. SSC Standard" className={inputCls} /></Field></div>
+              <div className="sm:col-span-2"><Field label="Description (optional)"><textarea rows={2} maxLength={500} value={p.description || ''} onChange={(e) => setVal('description')(e.target.value)} placeholder="e.g. Standard result pattern for SSC typing exams." className={inputCls} /></Field></div>
+              <fieldset>
+                <legend className={labelCls}>Applicable For <span className="text-danger">*</span></legend>
+                <div className="flex gap-4">
+                  {[['applicable_typing', 'Typing Exam'], ['applicable_steno', 'Steno Exam']].map(([k, t]) => (
+                    <label key={k} className="flex items-center gap-1.5 text-[12.5px] text-slate-700">
+                      <input type="checkbox" checked={p[k] !== false} onChange={(e) => setVal(k)(e.target.checked)} className="h-4 w-4 accent-primary" /> {t}
+                    </label>
+                  ))}
+                </div>
+                <span className="mt-1 block text-[11px] text-slate-500">Only these exam types offer this pattern.</span>
+              </fieldset>
+              <div>
+                <YesNo name="def" label="Default Pattern" value={p.is_default} onChange={setVal('is_default')} />
+                <span className="mt-1 block text-[11px] text-slate-500">Pre-selected when you add a new exam.</span>
+              </div>
               <Field label="Speed Count">
                 <select value={p.speed_count} onChange={(e) => setVal('speed_count')(e.target.value)} className={inputCls}><option value="Words">Words</option><option value="Strokes">Strokes</option></select>
               </Field>
@@ -137,6 +179,28 @@ export default function AdminPatternForm() {
             </>}
           </div>
           <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500"><InfoIcon className="h-3.5 w-3.5" aria-hidden="true" /> When enabled, a percentage of the student’s mistakes is ignored before scoring.</p>
+        </Card>
+
+        <Card icon={ClockIcon} title="When Students See Their Result and Rank">
+          <div className="grid gap-3 lg:grid-cols-2">
+            <TimingBox title="Live Test" tone="bg-emerald-100 text-emerald-700" badge="LIVE">
+              <ResultWhen name="lr" mode={p.live_result_mode} time={p.live_result_time} onMode={setVal('live_result_mode')} onTime={setVal('live_result_time')} />
+              <fieldset className="mt-3">
+                <legend className={labelCls}>Show Rank</legend>
+                <div className="space-y-1.5">
+                  {[['immediate', 'Immediately'], ['after_session', 'After the live test session ends (end of the test day)']].map(([v, t]) => (
+                    <label key={v} className="flex items-center gap-1.5 text-[12.5px] text-slate-700">
+                      <input type="radio" name="lrank" checked={p.live_rank_mode === v} onChange={() => setVal('live_rank_mode')(v)} className="h-3.5 w-3.5 accent-primary" /> {t}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </TimingBox>
+            <TimingBox title="Pre-load Test" tone="bg-amber-100 text-amber-700" badge="PRELOAD">
+              <ResultWhen name="pr" mode={p.preload_result_mode} time={p.preload_result_time} onMode={setVal('preload_result_mode')} onTime={setVal('preload_result_time')} />
+            </TimingBox>
+          </div>
+          <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500"><InfoIcon className="h-3.5 w-3.5" aria-hidden="true" /> Times are India time. A test taken after the set time shows its result at that time the next day. Scores are not affected.</p>
         </Card>
 
         <Card icon={EyeIcon} title="Result Component Visibility (Show / Hide on the Result Screen)">

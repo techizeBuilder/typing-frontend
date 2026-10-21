@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogOutIcon, XIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon, LogOutIcon, XIcon } from 'lucide-react';
 import { authService } from '../services/api';
 import { NavIcon } from '../ui/NavIcon';
 import { LOGO_URL } from '../ui/brand';
-import { studentNav, getSessionUser, isItemActive, offersFontGroups } from './navigation';
+import { studentNav, getSessionUser, isChildActive, isItemActive, offersFontGroups } from './navigation';
 import { useFontGroupSettings } from '../features/fontGroups/fontGroups';
+import { SidebarChannels } from '../features/siteInfo/SiteInfoUI';
 
 function Badge({ kind }) {
   if (kind === 'live') {
@@ -33,6 +35,7 @@ export function StudentSidebar({ mobileOpen = false, onClose }) {
   const navigate = useNavigate();
   const user = getSessionUser();
   const { isActive } = useFontGroupSettings();
+  const [toggled, setToggled] = useState({});
   const items = studentNav.filter((item) => (!item.visible || item.visible(user)) && offersFontGroups(item, isActive));
 
   const handleLogout = () => {
@@ -76,21 +79,60 @@ export function StudentSidebar({ mobileOpen = false, onClose }) {
             {items.map((item) => {
               const active = isItemActive(item, pathname, search);
               const color = item.color ?? '#38BDF8';
+              const rowClass = `flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-[13px] transition-all duration-200 ease-out hover:translate-x-1 ${
+                active && !item.children ?
+                  'border-amber-400 bg-primary font-semibold text-white shadow-sm hover:bg-primary-700' :
+                item.highlight ?
+                  'border-amber-300 bg-gradient-to-r from-amber-50 to-amber-100 font-semibold text-amber-800 hover:from-amber-100 hover:to-amber-200' :
+                  'border-transparent text-slate-600 hover:bg-slate-50'}`;
+              const solid = active && !item.children;
+              const icon =
+                <span
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
+                  style={{ backgroundColor: solid ? 'rgba(255,255,255,0.25)' : `${color}1F` }}>
+                  <NavIcon name={item.icon} className="h-4 w-4" style={{ color: solid ? '#fff' : color }} />
+                </span>;
+
+              if (item.children) {
+                const open = toggled[item.label] ?? active;
+                return (
+                  <li key={item.label}>
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => setToggled((t) => ({ ...t, [item.label]: !open }))}
+                      className={`${rowClass} ${active ? 'font-semibold text-navy-800' : ''}`}>
+                      {icon}
+                      <span className="truncate">{item.label}</span>
+                      {open ? <ChevronUpIcon className="ml-auto h-3.5 w-3.5" /> : <ChevronDownIcon className="ml-auto h-3.5 w-3.5" />}
+                    </button>
+                    {open &&
+                      <ul className="mt-[3px] space-y-[3px]">
+                        {item.children.map((child) => {
+                          const childActive = isChildActive(child, pathname, search);
+                          return (
+                            <li key={child.to}>
+                              <Link
+                                to={child.to}
+                                onClick={onClose}
+                                aria-current={childActive ? 'page' : undefined}
+                                className={`block rounded-md border-l-4 py-2 pl-11 pr-3 text-[12.5px] font-medium transition-all duration-200 ease-out hover:translate-x-1 ${
+                                  childActive ? 'border-amber-400 bg-primary-50 text-primary-700' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
+                                — {child.label}
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    }
+                  </li>
+                );
+              }
+
               return (
                 <li key={item.label}>
-                  <Link
-                    to={item.to}
-                    onClick={onClose}
-                    aria-current={active ? 'page' : undefined}
-                    className={`flex items-center gap-2.5 rounded-md border px-2.5 py-2 text-[13px] transition-all duration-200 ease-out hover:translate-x-1 ${
-                      active ?
-                        'border-amber-400 bg-primary font-semibold text-white shadow-sm hover:bg-primary-700' :
-                        'border-transparent text-slate-600 hover:bg-slate-50'}`}>
-                    <span
-                      className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
-                      style={{ backgroundColor: active ? 'rgba(255,255,255,0.25)' : `${color}1F` }}>
-                      <NavIcon name={item.icon} className="h-4 w-4" style={{ color: active ? '#fff' : color }} />
-                    </span>
+                  <Link to={item.to} onClick={onClose} aria-current={active ? 'page' : undefined} className={rowClass}>
+                    {icon}
                     <span className="truncate">{item.label}</span>
                     {item.badge && <Badge kind={item.badge} />}
                   </Link>
@@ -99,6 +141,8 @@ export function StudentSidebar({ mobileOpen = false, onClose }) {
             })}
           </ul>
         </nav>
+
+        <SidebarChannels />
 
         <div className="border-t border-slate-100 px-3 py-3">
           <button

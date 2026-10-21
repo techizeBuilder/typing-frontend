@@ -6,35 +6,7 @@ import { NavIcon } from '../ui/NavIcon';
 import { LOGO_URL, COLLEGE_NAME } from '../ui/brand';
 import { adminNav, getSessionUser, isChildActive, isItemActive } from './navigation';
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
-
-// "System Summary" card (real counts from GET /admin/summary).
-function SummaryCard({ summary }) {
-  if (!summary) return null;
-  const rows = [
-    ['Total Students', fmt(summary.students)],
-    ['Active Students', fmt(summary.active_students)],
-    ['Total Exams', fmt(summary.exams)],
-    ['Typing Tests', fmt(summary.typing_tests)],
-    ['Steno Tests', fmt(summary.steno_tests)],
-    ['Results Recorded', fmt(summary.results)],
-  ];
-  return (
-    <div className="mx-3 mb-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
-      <p className="mb-2 text-[11.5px] font-semibold text-navy-800">System Summary</p>
-      <ul className="space-y-1.5">
-        {rows.map(([label, value]) => (
-          <li key={label} className="flex items-center justify-between text-[11.5px]">
-            <span className="text-slate-500">{label}</span>
-            <span className="font-semibold text-navy-800">{value}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-export function AdminSidebar({ mobileOpen = false, onClose, summary }) {
+export function AdminSidebar({ mobileOpen = false, onClose }) {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const user = getSessionUser();
@@ -145,7 +117,6 @@ export function AdminSidebar({ mobileOpen = false, onClose, summary }) {
             </ul>
           </nav>
 
-          <SummaryCard summary={summary} />
         </div>
 
         <div className="space-y-1.5 border-t border-slate-100 px-3 py-3">

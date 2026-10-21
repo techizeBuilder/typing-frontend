@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { settingService } from '../../services/api';
 import AiSettingsCard from '../../features/results/AiSettingsCard';
+import SiteInfoSettingsCard from '../../features/siteInfo/SiteInfoSettingsCard';
 import { PageHeading } from '../../ui/PageHeading';
 
 // Admin settings panel. Exposes the Live Test rank-update time, the external
@@ -247,6 +248,8 @@ const AdminSettings = () => {
               <Status status={appStatus} />
             </div>
           </Card>
+
+          <div className="xl:col-span-2"><SiteInfoSettingsCard /></div>
 
           <div className="xl:col-span-2"><AiSettingsCard /></div>
 

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearSessionStorage, getDeviceId, getDeviceInfo } from './device';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3012/api';
 
@@ -107,7 +108,7 @@ api.interceptors.response.use(
       const msg = error.response.data?.message || '';
       if (msg === 'Unauthorized' || msg.includes('inactive') || msg.includes('User not found')) {
         if (window.location.pathname !== '/login') {
-          localStorage.clear();
+          clearSessionStorage();
           window.location.href = '/login';
         }
       }
@@ -139,7 +140,10 @@ export const authService = {
     try {
       // Support both phone and username login
       const loginPayload = {
-        password: password
+        password: password,
+        // Lets the server keep "Single Device" students on their registered device.
+        device_id: getDeviceId(),
+        device_info: getDeviceInfo(),
       };
 
       // If username looks like a phone number (digits only), send as phone
@@ -500,6 +504,8 @@ export const userService = {
     return response.data;
   },
   getUser: async (id) => (await api.get(`/users/${id}`)).data,
+  // Frees a Single-device student to log in on a new device.
+  resetDevice: async (id) => (await api.post(`/users/${id}/reset-device`)).data,
   createUser: async (userData) => {
     const response = await api.post('/users', userData);
     return response.data;

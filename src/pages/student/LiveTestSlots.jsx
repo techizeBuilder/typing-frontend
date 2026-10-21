@@ -211,7 +211,9 @@ export default function LiveTestSlots() {
                             <span className="inline-flex items-center gap-1 font-semibold text-primary">
                               <TrophyIcon className="h-3.5 w-3.5" aria-hidden="true" />
                               {rankInfo.rank}{rankInfo.total ? ` / ${rankInfo.total}` : ''}
-                            </span> : '-'}
+                            </span> :
+                          rankInfo?.pending_until ?
+                            <span className="text-[11px] text-slate-500" title="Ranks are shown after the live test session ends">After session ends</span> : '-'}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {userResult ?

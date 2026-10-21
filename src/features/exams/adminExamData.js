@@ -109,6 +109,9 @@ export const defaultPatternData = () => ({
   ignorable_penalty_words_per_mistake: 10, show_half_mistakes: true, show_full_mistakes: true, show_total_strokes: true, show_total_words: true,
   show_total_errors: true, show_correct_words: true, show_gross_speed: true, show_net_speed: true, show_accuracy: true, show_penalty_words: true,
   show_ignorable_mistakes: true, count_omissions_as_errors: true,
+  // Information + result/rank timing (no effect on scoring)
+  description: '', applicable_typing: true, applicable_steno: true, is_default: false,
+  live_result_mode: 'immediate', live_result_time: '21:00', preload_result_mode: 'immediate', preload_result_time: '21:00', live_rank_mode: 'immediate',
 });
 export const VISIBILITY = [
   ['show_full_mistakes', 'Full Mistakes'], ['show_half_mistakes', 'Half Mistakes'], ['show_total_errors', 'Total Errors'], ['show_total_strokes', 'Total Strokes'],
@@ -119,5 +122,6 @@ export const VISIBILITY = [
 export const patternPayload = (p) => {
   const clean = { ...p };
   ['id', 'created_at', 'updated_at'].forEach((k) => delete clean[k]);
+  if (clean.description == null) clean.description = '';
   return clean;
 };

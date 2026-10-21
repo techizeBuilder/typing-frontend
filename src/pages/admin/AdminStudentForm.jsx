@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  BookOpenIcon, CameraIcon, KeyRoundIcon, MapPinIcon, NotebookPenIcon, SaveIcon, ShieldCheckIcon, UserIcon, UserPlusIcon, WandIcon,
+  BookOpenIcon, CalendarClockIcon, CameraIcon, CheckCircle2Icon, ClockIcon, KeyRoundIcon, MapPinIcon, MonitorIcon, MonitorSmartphoneIcon,
+  NotebookPenIcon, RotateCcwIcon, SaveIcon, ShieldCheckIcon, UserIcon, UserPlusIcon, WandIcon,
 } from 'lucide-react';
 import { userService } from '../../services/api';
 import { PageHeading } from '../../ui/PageHeading';
 import { INDIAN_STATES } from '../../features/students/indianStates';
 import {
-  ALL_CATEGORIES, STATUSES, blankStudent, buildCreatePayload, buildUpdatePayload, errorText, photoUrl, studentToForm,
+  ALL_CATEGORIES, STATUSES, TIME_ZONES, blankStudent, buildCreatePayload, buildUpdatePayload, errorText, photoUrl, studentToForm,
 } from '../../features/students/studentData';
 
 const inputCls = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] text-navy-800 outline-none transition-colors duration-150 focus:border-primary disabled:bg-slate-50';
@@ -21,6 +22,39 @@ function Card({ icon: Icon, title, children, className = '' }) {
       </h3>
       {children}
     </section>
+  );
+}
+
+// Option card used for Login Window and Login Type (a styled radio button).
+function ChoiceCard({ name, icon: Icon, title, text, checked, onChange }) {
+  return (
+    <label className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-lg border px-3 py-3 text-center transition-colors duration-150 ${
+      checked ? 'border-primary bg-primary-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+      <input type="radio" name={name} checked={checked} onChange={onChange} className="sr-only" />
+      {checked && <CheckCircle2Icon className="absolute right-2 top-2 h-4 w-4 text-primary" aria-hidden="true" />}
+      <Icon className={`h-5 w-5 ${checked ? 'text-primary' : 'text-slate-500'}`} aria-hidden="true" />
+      <span className="text-[12.5px] font-bold text-navy-800">{title}</span>
+      <span className="text-[11px] leading-snug text-slate-500">{text}</span>
+    </label>
+  );
+}
+
+// Single-device status: which device the account is locked to, and the reset.
+function DevicePanel({ student, wasSingle, onReset, resetting, message }) {
+  const bound = wasSingle && student?.device_bound_at;
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] text-slate-600">
+      {bound ?
+        <div className="flex flex-wrap items-center gap-2">
+          <MonitorSmartphoneIcon className="h-4 w-4 text-primary" aria-hidden="true" />
+          <span>Registered device: <b className="text-navy-800">{student.device_info || 'Unknown device'}</b>, since {new Date(student.device_bound_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+          <button type="button" onClick={onReset} disabled={resetting} className="ml-auto flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11.5px] font-semibold text-navy-800 hover:bg-slate-100 disabled:opacity-60">
+            <RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> {resetting ? 'Resetting…' : 'Reset Device'}
+          </button>
+        </div> :
+        <span>No device registered yet — the first device the student logs in on will be registered. Other devices are refused until you reset it here.</span>}
+      {message && <p role="status" className="mt-1.5 font-semibold text-emerald-700">{message}</p>}
+    </div>
   );
 }
 
@@ -68,7 +102,22 @@ export default function AdminStudentForm() {
   }));
   const setWindow = (fixed) => {
     setFixedWindow(fixed);
-    if (!fixed) setForm((f) => ({ ...f, allowed_login_time_start: '', allowed_login_time_end: '' }));
+    if (!fixed) setForm((f) => ({ ...f, allowed_login_time_start: '', allowed_login_time_end: '', login_timezone: '' }));
+  };
+  const [resetting, setResetting] = useState(false);
+  const [deviceMsg, setDeviceMsg] = useState('');
+  const resetDevice = async () => {
+    if (!window.confirm(`Reset the registered device for ${student?.name || 'this student'}? They can then log in on a new device, and the old device is signed out.`)) return;
+    setResetting(true); setDeviceMsg(''); setError('');
+    try {
+      await userService.resetDevice(id);
+      setStudent((s) => ({ ...s, device_info: null, device_bound_at: null }));
+      setDeviceMsg('Device reset. The next device the student logs in on will be registered.');
+    } catch (err) {
+      setError(errorText(err, 'Could not reset the device.'));
+    } finally {
+      setResetting(false);
+    }
   };
 
   const submit = async (e) => {
@@ -190,21 +239,37 @@ export default function AdminStudentForm() {
                   </button>
                 </span>
               </Field>
-              <fieldset>
-                <legend className={labelCls}>Login Window</legend>
-                <div className="flex gap-4 py-2">
-                  {[['Anytime', false], ['Fixed Time', true]].map(([label, fixed]) => (
-                    <label key={label} className="flex items-center gap-1.5 text-[12px] text-slate-700">
-                      <input type="radio" name="loginWindow" checked={fixedWindow === fixed} onChange={() => setWindow(fixed)} className="h-3.5 w-3.5 accent-primary" /> {label}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              {fixedWindow && <>
-                <Field label="From Time"><input type="time" value={form.allowed_login_time_start} onChange={set('allowed_login_time_start')} className={inputCls} /></Field>
-                <Field label="To Time"><input type="time" value={form.allowed_login_time_end} onChange={set('allowed_login_time_end')} className={inputCls} /></Field>
-              </>}
             </div>
+
+            <fieldset className="mt-4">
+              <legend className={labelCls}>Login Window <span className="text-danger">*</span></legend>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <ChoiceCard name="loginWindow" icon={ClockIcon} title="Anytime" text="Student can log in any time" checked={!fixedWindow} onChange={() => setWindow(false)} />
+                <ChoiceCard name="loginWindow" icon={CalendarClockIcon} title="Fixed Time" text="Student can log in only in the selected time slot" checked={fixedWindow} onChange={() => setWindow(true)} />
+              </div>
+            </fieldset>
+            {fixedWindow &&
+              <div className="mt-3 grid gap-3.5 sm:grid-cols-3">
+                <Field label="From Time"><input type="time" value={form.allowed_login_time_start} onChange={set('allowed_login_time_start')} className={inputCls} /></Field>
+                <Field label="To Time" hint="May end after midnight, e.g. 22:00 – 02:00."><input type="time" value={form.allowed_login_time_end} onChange={set('allowed_login_time_end')} className={inputCls} /></Field>
+                <Field label="Time Zone (optional)">
+                  <select value={form.login_timezone} onChange={set('login_timezone')} className={inputCls}>
+                    <option value="">India (IST) — default</option>
+                    {TIME_ZONES.filter(([v]) => v !== 'Asia/Kolkata').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </Field>
+              </div>
+            }
+
+            <fieldset className="mt-4">
+              <legend className={labelCls}>Login Type <span className="text-danger">*</span></legend>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <ChoiceCard name="loginType" icon={MonitorIcon} title="Single Device" text="Student can log in on one device only" checked={form.login_type === 'Single'} onChange={() => setForm((f) => ({ ...f, login_type: 'Single' }))} />
+                <ChoiceCard name="loginType" icon={MonitorSmartphoneIcon} title="Multiple Device" text="Student can log in on multiple devices" checked={form.login_type !== 'Single'} onChange={() => setForm((f) => ({ ...f, login_type: 'Multiple' }))} />
+              </div>
+            </fieldset>
+            {form.login_type === 'Single' &&
+              <DevicePanel student={editing ? student : null} wasSingle={editing && student?.login_type === 'Single'} onReset={resetDevice} resetting={resetting} message={deviceMsg} />}
           </Card>
 
           <Card icon={KeyRoundIcon} title="Test Limits">

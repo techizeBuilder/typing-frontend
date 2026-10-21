@@ -11,7 +11,7 @@ import { StatCard } from '../../ui/StatCard';
 import { urlParam } from '../../features/admin/urlParams';
 import { StudentImportModal } from '../../features/students/StudentImport';
 import {
-  ALL_CATEGORIES, categoriesOf, errorText, fmtDate, hasLoginWindow, isExpired, photoUrl,
+  ALL_CATEGORIES, categoriesOf, errorText, fmtDate, hasLoginWindow, isExpired, isSingleDevice, photoUrl,
 } from '../../features/students/studentData';
 import './Admin.css';
 
@@ -215,6 +215,7 @@ const AdminStudents = () => {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState(() => urlParam('status') || 'All');
   const [windowFilter, setWindowFilter] = useState('All');
+  const [typeFilter, setTypeFilter] = useState('All');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [selected, setSelected] = useState(new Set());
@@ -244,8 +245,9 @@ const AdminStudents = () => {
       .filter((s) => !q || [s.name, s.phone, s.user_id, s.roll_no, s.email, s.city, s.fathers_name].some((v) => v && String(v).toLowerCase().includes(q)))
       .filter((s) => categoryFilter === 'All' || categoriesOf(s).includes(categoryFilter))
       .filter((s) => statusFilter === 'All' || s.status === statusFilter || shownStatus(s) === statusFilter)
-      .filter((s) => windowFilter === 'All' || (windowFilter === 'Fixed' ? hasLoginWindow(s) : !hasLoginWindow(s)));
-  }, [all, searchTerm, categoryFilter, statusFilter, windowFilter]);
+      .filter((s) => windowFilter === 'All' || (windowFilter === 'Fixed' ? hasLoginWindow(s) : !hasLoginWindow(s)))
+      .filter((s) => typeFilter === 'All' || (typeFilter === 'Single') === isSingleDevice(s));
+  }, [all, searchTerm, categoryFilter, statusFilter, windowFilter, typeFilter]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -263,7 +265,7 @@ const AdminStudents = () => {
   const courseParts = ALL_CATEGORIES.map((c) => ({ label: c, color: COURSE_COLORS[c], value: all.filter((s) => categoriesOf(s).includes(c)).length }));
   const fixedCount = all.filter(hasLoginWindow).length;
 
-  const resetFilters = () => { setSearchTerm(''); setCategoryFilter('All'); setStatusFilter('All'); setWindowFilter('All'); setPage(1); };
+  const resetFilters = () => { setSearchTerm(''); setCategoryFilter('All'); setStatusFilter('All'); setWindowFilter('All'); setTypeFilter('All'); setPage(1); };
   const filterChange = (setter) => (e) => { setter(e.target.value); setPage(1); };
   const toggleOne = (id) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const togglePage = () => setSelected(allPageSelected ? new Set() : new Set(paged.map((s) => s.id)));
@@ -288,6 +290,7 @@ const AdminStudents = () => {
       'Pin Code': s.pin_code || '', Address: s.address || '', Category: s.category || '', Status: shownStatus(s),
       'Validity End': s.validity_end ? new Date(s.validity_end).toLocaleDateString('en-GB') : '',
       'Login Window': hasLoginWindow(s) ? `${s.allowed_login_time_start}-${s.allowed_login_time_end}` : 'Anytime',
+      'Login Type': isSingleDevice(s) ? 'Single Device' : 'Multiple Device',
       'Fees Amount': s.fees_amount ?? '', 'Last Fees Date': s.last_fees_submitted_date ? new Date(s.last_fees_submitted_date).toLocaleDateString('en-GB') : '',
       'Joined On': s.created_at ? new Date(s.created_at).toLocaleDateString('en-GB') : '', Remarks: s.remarks || '',
     }));
@@ -332,7 +335,7 @@ const AdminStudents = () => {
       </div>
 
       <section className="mb-4 rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="grid gap-2.5 border-b border-slate-100 p-3.5 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.4fr)_repeat(3,minmax(140px,1fr))_auto]">
+        <div className="grid gap-2.5 border-b border-slate-100 p-3.5 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.4fr)_repeat(4,minmax(130px,1fr))_auto]">
           <label className="block">
             <span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Search</span>
             <span className="relative block">
@@ -352,6 +355,10 @@ const AdminStudents = () => {
             <select aria-label="Filter by login window" value={windowFilter} onChange={filterChange(setWindowFilter)} className={selectCls}>
               <option value="All">-- All Login Window --</option><option value="Anytime">Anytime</option><option value="Fixed">Fix Time</option>
             </select></label>
+          <label className="block"><span className="mb-1.5 block text-[11.5px] font-semibold text-navy-800">Login Type</span>
+            <select aria-label="Filter by login type" value={typeFilter} onChange={filterChange(setTypeFilter)} className={selectCls}>
+              <option value="All">-- All Login Type --</option><option value="Single">Single Device</option><option value="Multiple">Multiple Device</option>
+            </select></label>
           <div className="flex items-end gap-2">
             <button type="button" onClick={resetFilters} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-[12px] font-medium text-slate-600 hover:bg-slate-50"><RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Reset</button>
             <button type="button" onClick={fetchStudents} title="Reload students" aria-label="Refresh" className="rounded-md border border-slate-300 p-2 text-slate-600 hover:bg-slate-50"><RefreshCwIcon className="h-3.5 w-3.5" /></button>
@@ -370,12 +377,12 @@ const AdminStudents = () => {
             <thead className="bg-slate-50 text-[11.5px] font-semibold text-slate-600">
               <tr>
                 <th scope="col" className="px-3 py-2.5"><input type="checkbox" aria-label="Select all on page" checked={allPageSelected} onChange={togglePage} className="h-3.5 w-3.5 accent-primary" /></th>
-                {['Roll No.', 'Student Name', 'Username (Login ID)', 'Course / Type', 'Login Window', 'Mobile', 'Validity', 'Status', 'Joined On', 'Actions'].map((h) => <th key={h} scope="col" className="px-3 py-2.5">{h}</th>)}
+                {['Roll No.', 'Student Name', 'Username (Login ID)', 'Course / Type', 'Login Window', 'Login Type', 'Mobile', 'Validity', 'Status', 'Joined On', 'Actions'].map((h) => <th key={h} scope="col" className="px-3 py-2.5">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-[12px]">
-              {loading ? <tr><td colSpan={11} className="px-3 py-8 text-center text-slate-500"><Loader2Icon className="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />Loading...</td></tr>
-                : filtered.length === 0 ? <tr><td colSpan={11} className="px-3 py-8 text-center text-slate-500">No students match the current filter.</td></tr>
+              {loading ? <tr><td colSpan={12} className="px-3 py-8 text-center text-slate-500"><Loader2Icon className="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />Loading...</td></tr>
+                : filtered.length === 0 ? <tr><td colSpan={12} className="px-3 py-8 text-center text-slate-500">No students match the current filter.</td></tr>
                   : paged.map((s) => {
                     const status = shownStatus(s);
                     return (
@@ -401,6 +408,9 @@ const AdminStudents = () => {
                           {hasLoginWindow(s)
                             ? <><span className="inline-block rounded bg-amber-50 px-2 py-[2px] text-[10.5px] font-medium text-amber-700">Fix Time</span><span className="mt-0.5 block text-[10px] text-slate-500">{s.allowed_login_time_start} – {s.allowed_login_time_end}</span></>
                             : <span className="inline-block rounded bg-emerald-50 px-2 py-[2px] text-[10.5px] font-medium text-emerald-700">Anytime</span>}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-[11.5px] text-slate-600" title={isSingleDevice(s) && s.device_info ? `Registered: ${s.device_info}` : undefined}>
+                          {isSingleDevice(s) ? 'Single Device' : 'Multiple Device'}
                         </td>
                         <td className="px-3 py-2.5 text-slate-600">{s.phone}</td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{s.validity_end ? fmtDate(s.validity_end) : 'N/A'}</td>

@@ -5,7 +5,11 @@ export const PLAN_CATEGORIES = [
   { value: 'hindi_steno', label: 'Hindi Steno', heading: 'Hindi Steno' },
   { value: 'all', label: 'All Access', heading: 'All Access' },
 ];
-export const categoryLabel = (v) => PLAN_CATEGORIES.find((c) => c.value === v)?.label || v;
+// A plan's category is one value or several joined by commas ("typing,english_steno").
+export const planCategories = (v) => String(v ?? 'all').split(',').map((c) => c.trim()).filter(Boolean);
+export const categoryLabel = (v) => planCategories(v).map((c) => PLAN_CATEGORIES.find((x) => x.value === c)?.label || c).join(' + ');
+// True when the plan belongs in a category tab ("All Access" plans belong in every tab).
+export const planInCategory = (plan, category) => { const cats = planCategories(plan.category); return cats.includes('all') || cats.includes(category); };
 
 export const rupees = (n) => (n === null || n === undefined ? '—' : `₹${Number(n).toLocaleString('en-IN')}`);
 export const discountPct = (p) => (p.original_price && p.original_price > p.price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : 0);

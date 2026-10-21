@@ -3,6 +3,7 @@
 // StenoDictations pages unchanged in behaviour.
 import api, { chapterService, offlineTestService } from '../../services/api';
 import { API_BASE_URL } from '../../config';
+import { timingOf } from '../results/resultTiming';
 
 // ─── Modes ────────────────────────────────────────────────────────────────────
 // `value` is what the API / DB / test engines use (font_group); `label` is shown.
@@ -186,6 +187,8 @@ export const resultViewState = (r, chapter, exam) => {
     wordStatuses: r.word_statuses || [],
     pattern: r.pattern_data,
     originalPassage: fullPassage,
+    testType: r.test_type,
+    resultTiming: timingOf(r.exam?.result_pattern || exam?.result_pattern),
     ...(isSteno ? { typedText: r.user_input, referenceText: fullPassage } : {}),
   };
 };

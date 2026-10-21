@@ -29,6 +29,7 @@ import { useExamList, useChapterSession } from '../../features/exams/useExamData
 import { ExamLogo, ModeChips, OfflineBanner, SaveOfflineButton, EmptyState, LoadingState } from '../../features/exams/ExamUI';
 import { DifficultyTabs, DifficultyBadge, RulesPdfCard } from '../../features/exams/ExamFilters';
 import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
+import { releaseLabel, resultReleaseAt, timingOf } from '../../features/results/resultTiming';
 
 // Default number of unlocked tests when the admin hasn't set a per-student limit.
 const DEFAULT_PRELOAD_LIMIT = 10;
@@ -190,6 +191,7 @@ export default function ExamTests() {
                   {rows.map(({ chapter, index }) => {
                     const isUnlocked = index < preloadUnlockedCount;
                     const best = resultsByChapter[chapter.id];
+                    const hiddenUntil = best && resultReleaseAt(timingOf(exam?.result_pattern), best.test_type || chapter.test_type, best.date_taken);
                     const attempts = attemptsByChapter[chapter.id] || 0;
                     return (
                       <tr key={chapter.id} className="transition-colors duration-150 hover:bg-slate-50/70">
@@ -218,7 +220,9 @@ export default function ExamTests() {
                           }
                         </td>
                         <td className="px-5 py-3 text-center text-slate-600">
-                          {best ?
+                          {best && hiddenUntil ?
+                            <span className="text-[11.5px] text-slate-500">Result at {releaseLabel(hiddenUntil)}</span> :
+                          best ?
                             <span title={`${attempts} attempt${attempts === 1 ? '' : 's'}`} className="font-semibold text-primary">{best.nwpm} WPM</span> : '—'}
                         </td>
                         <td className="px-5 py-3">
