@@ -1,7 +1,7 @@
 // HashRouter (not BrowserRouter) so routing works when the packaged desktop app
 // is loaded from a file:// URL — BrowserRouter reads window.location.pathname,
 // which is the .html file path under file:// and matches no route.
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -105,8 +105,11 @@ function App() {
               <Route path="/steno-dictations" element={<LegacyExamRedirect />} />
               <Route path="/my-tests" element={<MyResults />} />
               <Route path="/results" element={<MyResults />} />
+              <Route path="/test-analysis" element={<Navigate to="/test-analysis/typing" replace />} />
+              <Route path="/test-analysis/:kind" element={<MyResults />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
-              <Route path="/self-assessment" element={<SelfAssessmentSetup />} />
+              <Route path="/self-assessment" element={<Navigate to="/self-assessment/eng-typing" replace />} />
+              <Route path="/self-assessment/:mode" element={<SelfAssessmentSetup />} />
               <Route path="/how-to-use" element={<HowToUse />} />
               <Route path="/practice-words" element={<PracticeWords />} />
               <Route path="/top-ranks" element={<TopRanks />} />

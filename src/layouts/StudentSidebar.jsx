@@ -101,13 +101,14 @@ export function StudentSidebar({ mobileOpen = false, onClose }) {
                       type="button"
                       aria-expanded={open}
                       onClick={() => setToggled((t) => ({ ...t, [item.label]: !open }))}
-                      className={`${rowClass} ${active ? 'font-semibold text-navy-800' : ''}`}>
+                      className={`flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-2 text-left text-[13px] transition-all duration-200 ease-out hover:translate-x-1 ${
+                        open ? 'bg-slate-100 text-navy-800' : 'text-slate-600 hover:bg-slate-50'} ${active ? 'font-semibold' : ''}`}>
                       {icon}
                       <span className="truncate">{item.label}</span>
                       {open ? <ChevronUpIcon className="ml-auto h-3.5 w-3.5" /> : <ChevronDownIcon className="ml-auto h-3.5 w-3.5" />}
                     </button>
                     {open &&
-                      <ul className="mt-[3px] space-y-[3px]">
+                      <ul className="ml-[15px] mt-1 space-y-[2px] border-l-2 pl-3" style={{ borderColor: `${color}40` }}>
                         {item.children.map((child) => {
                           const childActive = isChildActive(child, pathname, search);
                           return (
@@ -116,9 +117,10 @@ export function StudentSidebar({ mobileOpen = false, onClose }) {
                                 to={child.to}
                                 onClick={onClose}
                                 aria-current={childActive ? 'page' : undefined}
-                                className={`block rounded-md border-l-4 py-2 pl-11 pr-3 text-[12.5px] font-medium transition-all duration-200 ease-out hover:translate-x-1 ${
-                                  childActive ? 'border-amber-400 bg-primary-50 text-primary-700' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
-                                — {child.label}
+                                className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[12.5px] font-medium transition-all duration-200 ease-out hover:translate-x-1 ${
+                                  childActive ? 'border-amber-400 bg-primary text-white hover:bg-primary-700' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
+                                <NavIcon name="barChart" className="h-3.5 w-3.5" style={{ color: childActive ? '#fff' : color }} />
+                                {child.label}
                               </Link>
                             </li>
                           );

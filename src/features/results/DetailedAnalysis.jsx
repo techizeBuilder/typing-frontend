@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ListChecksIcon, DumbbellIcon, BrainIcon } from 'lucide-react';
+import { aiAnalysisState, collectMistakes, practiceWordsOf } from './mistakes';
 
 // Mistake breakdown for a typing result. Purely presentational: the category
 // counts are the values ResultScreen already computed for the score, and the
@@ -44,28 +45,12 @@ export default function DetailedAnalysis({
   const navigate = useNavigate();
   const [showAll, setShowAll] = useState(false);
 
-  const mistakes = [];
-  referenceWords.forEach((ref, i) => {
-    const s = wordStatuses[i] || 'pending';
-    const typed = wordAt(i);
-    if (s === 'error') mistakes.push({ no: i + 1, expected: ref, typed, type: 'Spelling / Wrong Word' });
-    else if (s === 'half-error') {
-      mistakes.push({ no: i + 1, expected: ref, typed, type: typed.toLowerCase() === ref.toLowerCase() ? 'Capitalisation' : 'Punctuation' });
-    } else if (s === 'pending' && (i <= lastTypedIndex || countOmissions)) {
-      mistakes.push({ no: i + 1, expected: ref, typed: '', type: 'Omission' });
-    }
-  });
-  (Array.isArray(extraTypedWords) ? extraTypedWords : []).forEach((w) => {
-    mistakes.push({ no: null, expected: '', typed: w, type: 'Addition' });
-  });
+  const mistakes = collectMistakes({ referenceWords, wordStatuses, wordAt, lastTypedIndex, countOmissions, extraTypedWords });
 
   const total = CATEGORIES.reduce((sum, c) => sum + (counts[c.key] || 0), 0);
   const shown = showAll ? mistakes : mistakes.slice(0, LIST_LIMIT);
 
-  // Words worth drilling: the expected form of every spelling, half and omission mistake.
-  const practiceWords = Array.from(new Set(
-    mistakes.filter((m) => m.expected).map((m) => m.expected),
-  ));
+  const practiceWords = practiceWordsOf(mistakes);
 
   return (
     <section className="nd rounded-xl border border-slate-200 bg-white p-4 shadow-card">
@@ -76,17 +61,7 @@ export default function DetailedAnalysis({
         {aiInput &&
           <button
             type="button"
-            onClick={() => navigate('/ai-analysis', {
-              state: {
-                input: {
-                  ...aiInput,
-                  counts,
-                  mistake_words: mistakes.filter((m) => m.expected || m.typed).slice(0, 20).map((m) => ({ expected: m.expected, typed: m.typed })),
-                },
-                practiceWords,
-                passageFontFamily,
-              },
-            })}
+            onClick={() => navigate('/ai-analysis', { state: aiAnalysisState({ aiInput, counts, mistakes, passageFontFamily }) })}
             className="no-print ml-auto inline-flex items-center gap-1.5 rounded-md bg-gradient-to-r from-violet-600 to-primary px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity duration-150 hover:opacity-90">
             <BrainIcon className="h-3.5 w-3.5" aria-hidden="true" /> AI Deep Analysis
           </button>

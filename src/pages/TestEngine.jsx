@@ -52,7 +52,8 @@ const TestEngine = () => {
     autoScroll: exam ? exam.auto_scroll : true,
     highlightColor: exam?.highlight_color || 'yellow',
     paperMode: exam?.test_paper_screen === 'Paper',
-    backspaceControl: exam?.backspace_control || 'Full Backspace',
+    // Self assessment passes the rule picked on its setup page.
+    backspaceControl: exam?.backspace_control || location.state?.backspaceControl || 'Full Backspace',
   });
 
   const [timeLeft, setTimeLeft] = useState(exam?.test_time_minutes * 60 || (passedChapter?.time_minutes ?? 10) * 60);
@@ -1007,6 +1008,10 @@ const TestEngine = () => {
       // Display only: when the pattern lets the student see this result.
       testType: testType || chapter?.test_type || null,
       resultTiming: timingOf(exam?.result_pattern),
+      // Display only: rank / re-attempt / leaderboard links on the result page.
+      examId: exam?.id || null,
+      chapterId: chapter?.id || null,
+      studentId: userId || null,
       // Actual font group used (resolves self-assessment to the chosen font) so the
       // result screen renders the passage in the correct Hindi font (Kruti Dev / Mangal).
       fontGroup: activeMode,

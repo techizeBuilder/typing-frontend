@@ -151,6 +151,11 @@ function TestsModal({ student, onClose }) {
         chapter_no: test.chapter?.chapter_no || null,
         date_taken: test.date_taken,
         studentName: student.name,
+        // Display only (rank on the result page).
+        examId: test.exam_id || test.exam?.id || null,
+        chapterId: test.chapter_id || test.chapter?.id || null,
+        studentId: test.student_id || student.id || null,
+        testType: test.test_type,
         rollNo: student.user_id,
         mode: test.mode,
         userInput: test.user_input,

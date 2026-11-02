@@ -7,17 +7,36 @@ import {
   AlertTriangleIcon,
   ArrowLeftIcon,
   AwardIcon,
+  BarChart3Icon,
+  CaseSensitiveIcon,
   CheckCircle2Icon,
+  CopyIcon,
+  DownloadIcon,
   FileTextIcon,
   GaugeIcon,
+  GitCompareIcon,
+  HomeIcon,
   KeyboardIcon,
+  MaximizeIcon,
+  MinusCircleIcon,
+  PlusCircleIcon,
   PrinterIcon,
+  QuoteIcon,
+  RotateCcwIcon,
+  SearchCheckIcon,
+  SeparatorHorizontalIcon,
+  Share2Icon,
+  SparklesIcon,
   TargetIcon,
   TrendingUpIcon,
+  TrophyIcon,
   UserIcon,
   XCircleIcon,
+  XIcon,
 } from 'lucide-react';
 import DetailedAnalysis from '../features/results/DetailedAnalysis';
+import { aiAnalysisState, collectMistakes } from '../features/results/mistakes';
+import { Panel } from '../ui/Pill';
 import './ResultScreen.css';
 
 // ─── PrintSheet — government exam format (visible only on print) ───────────────
@@ -521,7 +540,9 @@ function bipartiteAlign(refNorm, typedNorm) {
 }
 
 // ─── StenoDiff ────────────────────────────────────────────────────────────────
-const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMinutes = 10, passageFontFamily = undefined }) => {
+// `part` picks which block to render: 'compare' (side-by-side passages),
+// 'summary' (mistake counts + Error%) or 'tokens' (legend + marked words).
+const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMinutes = 10, passageFontFamily = undefined, part = 'tokens' }) => {
   const typedWords = tokenizeResult(typed);
   const refWords   = tokenizeResult(reference);
   const typedNorm  = typedWords.map(normalizeWordResult);
@@ -593,22 +614,23 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
     extra:   { display: 'inline-block', background: '#eff6ff', borderRadius: '4px', padding: '0 4px', color: '#1d4ed8' },
   };
 
-  return (
-    <div>
-      {/* ── Side-by-side passage comparison ─────────────────── */}
-      <div className="pa-compare-layout" style={{ marginBottom: '18px' }}>
-        <div className="pa-compare-cols">
-          <div className="pa-compare-col">
-            <div className="pa-compare-header">Original Passage</div>
-            <div className="pa-compare-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>{reference || <em style={{ color: '#9ca3af' }}>No passage.</em>}</div>
-          </div>
-          <div className="pa-compare-col">
-            <div className="pa-compare-header">Your Typed Passage</div>
-            <div className="pa-compare-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>{typed || <em style={{ color: '#9ca3af' }}>Nothing typed.</em>}</div>
-          </div>
+  if (part === 'compare') return (
+    <div className="pa-compare-layout">
+      <div className="pa-compare-cols">
+        <div className="pa-compare-col">
+          <div className="pa-compare-header">Original Passage</div>
+          <div className="pa-compare-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>{reference || <em style={{ color: '#9ca3af' }}>No passage.</em>}</div>
+        </div>
+        <div className="pa-compare-col">
+          <div className="pa-compare-header">Your Typed Passage</div>
+          <div className="pa-compare-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>{typed || <em style={{ color: '#9ca3af' }}>Nothing typed.</em>}</div>
         </div>
       </div>
+    </div>
+  );
 
+  if (part === 'summary') return (
+    <div>
       {/* ── Error summary (PDF formula) ───────────────────────── */}
       <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '18px', alignItems: 'center' }}>
         <span style={{ color: '#16a34a', fontWeight: 700 }}>✔ Correct: {counts.correct || 0}</span>
@@ -641,7 +663,11 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
           {pattern?.required_speed ? ` (${pattern.required_speed}wpm × ${testDurationMinutes}min)` : ' (ref length)'}
         </span>
       </div>
+    </div>
+  );
 
+  return (
+    <div>
       {/* ── Colour legend ─────────────────────────────────────── */}
       <div style={{ fontSize: '0.77rem', color: '#64748b', marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
         <span style={{background:'#f1f5f9',padding:'1px 5px',borderRadius:'3px',textDecoration:'line-through',color:'#dc2626'}}>omission</span>
@@ -696,10 +722,9 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   extraTypedWordRefs = null,
   countOmissions = true, repeatedRanges = [], originalPassage = '',
   passageFontFamily = undefined,
+  view = 'typed',
 }) => {
-  const [view, setView] = React.useState(null);
   const [showCat, setShowCat] = React.useState(null);
-  const panelRef = React.useRef(null);
   const typedWords = userInput.trim().split(/\s+/).filter(Boolean);
   // When a line change was detected, use re-aligned word-at-position instead of raw index
   const wordAt = (i) => alignedTypedWords ? (alignedTypedWords[i] || '') : (typedWords[i] || '');
@@ -770,16 +795,6 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
   // Deduct 5 strokes only for pure full errors (spelling/omission/addition), not half-errors (cap/punct)
   const pureFullErrors = fullErrors - halfErrors;
   const correctStrokes = Math.max(0, totalStrokes - pureFullErrors * 5);
-
-  const handleFullScreen = () => {
-    const el = panelRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.() || el.webkitRequestFullscreen?.();
-    } else {
-      document.exitFullscreen?.();
-    }
-  };
 
   const LineChart = ({ label, data, color }) => {
     const W=260,H=110,pl=28,pb=22,pt=8,pr=8,cw=W-pl-pr,ch=H-pb-pt;
@@ -924,6 +939,47 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
     </div>
   );
 
+  const { byRef: extrasByRef, trailing: trailingExtras } = buildExtraWordPlacement(
+    referenceWords.length, baseAdditionWords, extraTypedWordRefs, repeatedRanges
+  );
+
+  // ── Your Typed Passage: reconstruct what the student typed, in order, carrying
+  //    every error marking. Substituted words are highlighted as wrong (yellow);
+  //    half mistakes are orange; extra/repeated words appear as blue +word at their
+  //    position; an omitted ref word is shown struck-through at the exact spot it
+  //    should have appeared; an extra-space marker is dropped at each 2+ space gap.
+  const renderExtra = (w, key) => (
+    <span key={key}><span className="pa-res-extra">+{w}</span> </span>
+  );
+  const renderTyped = () => {
+    const out = [];
+    let typedOrd = 0; // count of emitted typed words, to place extra-space markers
+    const emitSpace = () => {
+      if (extraSpaceBefore.has(typedOrd))
+        out.push(<span key={`sp-${typedOrd}`} className="pa-res-space" title="Extra space (½ mistake)">␣</span>);
+    };
+    referenceWords.forEach((refWord, i) => {
+      const extras = extrasByRef.get(i);
+      if (extras) extras.forEach((w, k) => { emitSpace(); out.push(renderExtra(w, `tx-${i}-${k}`)); typedOrd++; });
+      const status = wordStatuses[i] || 'pending';
+      const typed  = wordAt(i);
+      if (status === 'correct')         { emitSpace(); out.push(<span key={i}>{typed} </span>); typedOrd++; }
+      else if (status === 'error')      { emitSpace(); out.push(<span key={i}><span className="pa-res-wrong">{typed}</span> </span>); typedOrd++; }
+      else if (status === 'half-error') { emitSpace(); out.push(<span key={i}><span className="pa-res-half">{typed}</span> </span>); typedOrd++; }
+      else {
+        // omission — show the missed reference word struck through at this exact
+        // position. A trailing skip stays invisible when the admin disabled
+        // omission counting (keeps the display consistent with the score).
+        if (!(i > lastTypedRefIdx && !countOmissions))
+          out.push(<span key={i}><span className="pa-res-omit">{refWord}</span> </span>);
+      }
+    });
+    trailingExtras.forEach((w, i) => { emitSpace(); out.push(renderExtra(w, `tx-tail-${i}`)); typedOrd++; });
+    return out;
+  };
+
+  const hasTyped = userInput.trim().length > 0;
+
   const renderComparePanel = () => {
     // Two-column compare. BOTH columns carry the error markings at the matching word
     // position so mistakes can be verified against the source. The "Your Typed Passage"
@@ -934,10 +990,6 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
     // capitalization/punctuation (pink) and repeated/extra insertion points (dashed
     // underline). This is purely presentational — the error counting, scoring and
     // detection logic are unchanged.
-    const { byRef: extrasByRef, trailing: trailingExtras } = buildExtraWordPlacement(
-      referenceWords.length, baseAdditionWords, extraTypedWordRefs, repeatedRanges
-    );
-
     // ── Original Passage: the complete uploaded text, with each word highlighted to
     //    mirror the mistake made at that position (same categories as the typed column,
     //    using the spec colours). referenceWords may be trimmed (re-type tests); words
@@ -967,42 +1019,6 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
       return out;
     };
 
-    // ── Your Typed Passage: reconstruct what the student typed, in order, carrying
-    //    every error marking. Substituted words are highlighted as wrong (yellow);
-    //    half mistakes are orange; extra/repeated words appear as blue +word at their
-    //    position; an omitted ref word is shown struck-through at the exact spot it
-    //    should have appeared; an extra-space marker is dropped at each 2+ space gap.
-    const renderExtra = (w, key) => (
-      <span key={key}><span className="pa-res-extra">+{w}</span> </span>
-    );
-    const renderTyped = () => {
-      const out = [];
-      let typedOrd = 0; // count of emitted typed words, to place extra-space markers
-      const emitSpace = () => {
-        if (extraSpaceBefore.has(typedOrd))
-          out.push(<span key={`sp-${typedOrd}`} className="pa-res-space" title="Extra space (½ mistake)">␣</span>);
-      };
-      referenceWords.forEach((refWord, i) => {
-        const extras = extrasByRef.get(i);
-        if (extras) extras.forEach((w, k) => { emitSpace(); out.push(renderExtra(w, `tx-${i}-${k}`)); typedOrd++; });
-        const status = wordStatuses[i] || 'pending';
-        const typed  = wordAt(i);
-        if (status === 'correct')         { emitSpace(); out.push(<span key={i}>{typed} </span>); typedOrd++; }
-        else if (status === 'error')      { emitSpace(); out.push(<span key={i}><span className="pa-res-wrong">{typed}</span> </span>); typedOrd++; }
-        else if (status === 'half-error') { emitSpace(); out.push(<span key={i}><span className="pa-res-half">{typed}</span> </span>); typedOrd++; }
-        else {
-          // omission — show the missed reference word struck through at this exact
-          // position. A trailing skip stays invisible when the admin disabled
-          // omission counting (keeps the display consistent with the score).
-          if (!(i > lastTypedRefIdx && !countOmissions))
-            out.push(<span key={i}><span className="pa-res-omit">{refWord}</span> </span>);
-        }
-      });
-      trailingExtras.forEach((w, i) => { emitSpace(); out.push(renderExtra(w, `tx-tail-${i}`)); typedOrd++; });
-      return out;
-    };
-
-    const hasTyped = userInput.trim().length > 0;
     return (
       <div className="pa-compare-layout">
         <div className="pa-compare-cols">
@@ -1021,17 +1037,13 @@ const TypingPassageReview = ({ userInput = '', referenceWords = [], wordStatuses
     );
   };
 
+  if (view === 'mistakes') return renderMistakePanel();
+  if (view === 'analysis') return renderAnalysisPanel();
+  if (view === 'compare') return renderComparePanel();
+  // 'typed' — the student's passage with every mistake marked in place.
   return (
-    <div ref={panelRef}>
-      <div className="passage-buttons no-print">
-        <button className={`passage-tab-btn${view==='analysis'?' active':''}`} onClick={()=>setView(view==='analysis'?null:'analysis')}>Test Analysis</button>
-        <button className={`passage-tab-btn${view==='mistakes'?' active':''}`} onClick={()=>setView(view==='mistakes'?null:'mistakes')}>Click to check Mistake</button>
-        <button className={`passage-tab-btn tab-compare${view==='compare'?' active':''}`} onClick={()=>setView(view==='compare'?null:'compare')}>Click to Compare Passage</button>
-        <button className="passage-tab-btn" style={{marginLeft:'auto'}} onClick={handleFullScreen}>⛶ Full Screen</button>
-      </div>
-      {view==='mistakes' && <div className="pa-panel">{renderMistakePanel()}</div>}
-      {view==='analysis' && <div className="pa-panel">{renderAnalysisPanel()}</div>}
-      {view==='compare'  && <div className="pa-panel">{renderComparePanel()}</div>}
+    <div className="pa-typed-body" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>
+      {hasTyped ? renderTyped() : <em style={{ color: '#9ca3af' }}>Nothing typed.</em>}
     </div>
   );
 };
@@ -1043,6 +1055,41 @@ const SummaryRow = ({ label, value, formula, tone = 'text-navy-800', highlight =
     <span className={`font-semibold ${highlight ? 'rounded bg-yellow-100 px-1.5' : ''} ${tone}`}>{value}</span>
     {formula && <span className="basis-full text-right text-[11px] italic text-slate-400">{formula}</span>}
   </li>
+);
+
+// ─── Small display pieces for the new-design layout ─────────────────────────
+const MetricTile = ({ label, value, color, icon: Icon, sub, big = false }) => (
+  <li
+    className="rounded-lg border p-2 text-center"
+    style={{ backgroundColor: `${color}14`, borderColor: `${color}33` }}>
+    <Icon className="mx-auto mb-1 h-3.5 w-3.5" style={{ color }} aria-hidden="true" />
+    <p className="text-[10.5px] leading-snug" style={{ color }}>{label}</p>
+    <p className={`font-display font-bold leading-tight text-navy-800 ${big ? 'text-[15px]' : 'text-[13.5px]'}`}>{value}</p>
+    {sub && <p className="text-[9.5px] text-slate-400">{sub}</p>}
+  </li>
+);
+
+const InfoRow = ({ label, children, w = 'w-[96px]' }) => (
+  <div className="flex gap-1.5">
+    <dt className={`${w} shrink-0 text-slate-500`}>{label}</dt>
+    <dd className="min-w-0 break-words font-medium text-navy-800">: {children}</dd>
+  </div>
+);
+
+const LegendChip = ({ label, children }) => (
+  <span className="flex items-center gap-1.5 text-[10.5px] font-medium text-slate-600">
+    <span className="text-[11px]">{children}</span> {label}
+  </span>
+);
+
+const ActionButton = ({ icon: Icon, tone, active = false, onClick, children }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={active || undefined}
+    className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-[12px] font-medium transition-colors duration-150 ${tone} ${active ? 'bg-slate-100 ring-1 ring-current' : 'bg-white hover:bg-slate-50'}`}>
+    <Icon className="h-3.5 w-3.5" aria-hidden="true" /> {children}
+  </button>
 );
 
 // ─── ResultScreen ─────────────────────────────────────────────────────────────
@@ -1433,6 +1480,159 @@ const ResultScreen = () => {
     }
   }, []);
 
+  // ─── New-design page state (display only) ───────────────────────────────────
+  const role = localStorage.getItem('role');
+  const isStaffViewer = ['Admin', 'SuperAdmin', 'Sub-Admin', 'SubAdmin'].includes(role);
+  const examId    = location.state?.examId || null;
+  const chapterId = location.state?.chapterId || null;
+  const studentId = location.state?.studentId || null;
+  const testType  = location.state?.testType || null;
+  const isStenoMode = isStenoResult || /steno/i.test(mode || '');
+
+  const [activeView, setActiveView] = React.useState(null); // 'mistakes' | 'analysis' | 'compare'
+  const [plainText, setPlainText]   = React.useState(false);
+  const [notice, setNotice]         = React.useState('');
+  const [rankInfo, setRankInfo]     = React.useState(null);
+  const viewPanelRef = React.useRef(null);
+  // Same random display ID as before, but stable across re-renders.
+  const [resultId] = React.useState(() => `RES-${Math.floor(Math.random() * 90000000 + 10000000)}`);
+
+  // Rank on this test (same endpoint the test lists use). Missing/offline → no rank shown.
+  React.useEffect(() => {
+    if (!chapterId || !studentId) return undefined;
+    let alive = true;
+    import('../services/api').then(({ resultService }) =>
+      resultService.getChapterRank(chapterId, studentId)
+        .then((info) => { if (alive) setRankInfo(info || null); })
+        .catch(() => {}));
+    return () => { alive = false; };
+  }, [chapterId, studentId]);
+
+  React.useEffect(() => {
+    if (activeView) viewPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [activeView]);
+
+  const flash = (msg) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 2500);
+  };
+
+  const toggleView = (key) => setActiveView((v) => (v === key ? null : key));
+
+  const handleFullScreen = () => {
+    const el = viewPanelRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.() || el.webkitRequestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  };
+
+  const handleBackToList = () => {
+    if (isStaffViewer) { handleReturn(); return; }
+    navigate('/results');
+  };
+
+  const reattemptTo = isStaffViewer ? null
+    : examId
+      ? (testType === 'Live Test' ? `/live-test/exam/${examId}` : isStenoMode ? `/steno/${examId}` : `/typing-exam/${examId}`)
+      : `/self-assessment/${/hindi/i.test(mode || '') ? 'hindi' : 'eng'}-${isStenoMode ? 'steno' : 'typing'}`;
+
+  const leaderboardTo = isStaffViewer ? '/admin/leaderboard' : '/leaderboard';
+
+  const handleShare = async () => {
+    const parts = [
+      showGrossSpeed && `Gross ${grossSpeedCalculated} WPM`,
+      showNetSpeed && `Net ${netSpeedCalculated} WPM`,
+      showAccuracy && `Accuracy ${accuracyCalculated}%`,
+      isQualified ? 'Qualified' : 'Not Qualified',
+    ].filter(Boolean);
+    const text = `${username} — ${exam_name || 'Practice Test'}${chapter_no ? ` (Test #${chapter_no})` : ''}: ${parts.join(' · ')}`;
+    try {
+      if (navigator.share) { await navigator.share({ title: 'Typing Test Result', text }); return; }
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      flash('Result summary copied to clipboard');
+    } catch {
+      flash('Could not copy the result summary');
+    }
+  };
+
+  // Display helpers for the new layout
+  const fmtNum = (n) => parseFloat(Number(n || 0).toFixed(2));
+  const originalWordCount = isStenoResult ? tokenizeResult(referenceText || '').length : referenceWords.length;
+  const language = /hindi/i.test(`${mode || ''} ${resultFontGroup || ''}`) ? 'Hindi' : 'English';
+  const candidateUserId = isStaffViewer ? (stateRollNo || '—') : userId;
+  const speedGap = fmtNum(speedToCheck - requiredSpeed);
+
+  const penaltyRows = isStenoResult ? [
+    { label: 'Full Mistakes', count: effectiveFullErrors, weight: 1 },
+    { label: 'Half Mistakes', count: effectiveHalfErrors, weight: halfMistakeMultiplier },
+  ] : [
+    { label: 'Spelling / Wrong Word', count: _sp, weight: 1 },
+    { label: 'Omission', count: _om, weight: 1 },
+    { label: 'Addition', count: _addCount, weight: 1 },
+    { label: 'Repetition', count: repeatedWordCount, weight: 1 },
+    { label: 'Capitalisation', count: _cap, weight: halfMistakeMultiplier },
+    { label: 'Punctuation', count: _pct, weight: halfMistakeMultiplier },
+    { label: 'Extra Space', count: extraSpaceCount, weight: halfMistakeMultiplier },
+  ];
+
+  const aiInput = (!isStenoResult && referenceWords.length > 0) ? {
+    exam: exam_name,
+    mode,
+    kind: 'typing',
+    gross_wpm: grossSpeedCalculated,
+    net_wpm: netSpeedCalculated,
+    accuracy: accuracyCalculated,
+    minutes: parseFloat(timeMinutes.toFixed(2)),
+    target_wpm: requiredSpeed,
+    target_accuracy: requiredAcc,
+    total_words: totalWords,
+    correct_words: correctWordsCalculated,
+  } : null;
+  const mistakeCounts = {
+    spelling: _sp,
+    omission: _om,
+    addition: _addCount,
+    repetition: repeatedWordCount,
+    capitalisation: _cap,
+    punctuation: _pct,
+    extraSpace: extraSpaceCount,
+  };
+  const openAiAnalysis = () => {
+    const mistakes = collectMistakes({
+      referenceWords, wordStatuses, wordAt: _wordAtFn, lastTypedIndex: _lastTyped, countOmissions, extraTypedWords,
+    });
+    navigate('/ai-analysis', { state: aiAnalysisState({ aiInput, counts: mistakeCounts, mistakes, passageFontFamily }) });
+  };
+
+  const passageReviewProps = {
+    userInput,
+    referenceWords,
+    wordStatuses,
+    fullErrors: effectiveFullErrors,
+    halfErrors: effectiveHalfErrors,
+    totalStrokes,
+    timeElapsed,
+    testDurationMinutes,
+    netSpeedCalculated,
+    grossSpeedCalculated,
+    accuracy: accuracyCalculated,
+    lineChangeCount,
+    alignedTypedWords: effectiveAlignedTypedWords,
+    extraTypedWords,
+    extraTypedWordRefs,
+    countOmissions,
+    repeatedRanges,
+    originalPassage: fullOriginalPassage,
+    passageFontFamily,
+  };
+
   return (
     <div className="result-layout">
       {/* ── Print-only sheet (matches government exam format) ── */}
@@ -1515,149 +1715,173 @@ const ResultScreen = () => {
       <div className="sheet-container result-v2">
 
         {/* ── Page heading + actions ─────────────────────── */}
-        <div className="nd no-print mb-4 flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-[12.5px] font-semibold text-primary">
-              {isStenoResult ? 'Steno Test Result' : 'Typing Test Result'}
-            </p>
-            <h2 className="font-display text-[22px] font-bold leading-tight text-navy-800 sm:text-[26px]">
-              Candidate Result Sheet
-            </h2>
-            <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[12.5px] text-slate-500">
-              <span className="rounded-full bg-navy-800 px-2.5 py-[2px] text-[11.5px] font-semibold text-white">{exam_name || 'Practice Test'}</span>
-              {chapter_no && <span>Test #{chapter_no}</span>}
-              <span>{formattedDate}</span>
-            </p>
+        <div className="nd no-print mb-4 flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={isStaffViewer ? handleReturn : () => navigate('/dashboard')}
+              className="mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-primary hover:underline">
+              {isStaffViewer
+                ? <><ArrowLeftIcon className="h-3.5 w-3.5" aria-hidden="true" /> Back</>
+                : <><HomeIcon className="h-3.5 w-3.5" aria-hidden="true" /> Dashboard</>}
+            </button>
+            <div className="flex items-start gap-3">
+              <TrophyIcon className="h-8 w-8 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <h2 className="font-display text-[22px] font-bold leading-tight text-navy-800 sm:text-[26px]">
+                  {isStenoResult ? 'Steno Test Result' : 'Typing Test Result'}
+                </h2>
+                <p className="text-[12.5px] text-slate-500">View your detailed performance and analysis</p>
+              </div>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-[13px] font-semibold text-navy-800 shadow-card transition-colors duration-150 hover:bg-slate-50">
-            <PrinterIcon className="h-4 w-4" aria-hidden="true" /> Print / Save Result
-          </button>
-          <button
-            type="button"
-            onClick={handleReturn}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-[13px] font-semibold text-white shadow-card transition-colors duration-150 hover:bg-primary-700">
-            <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" /> Return to Dashboard
-          </button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrint}
+              title="Choose 'Save as PDF' in the print dialog"
+              className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-[12px] font-medium text-navy-800 transition-colors duration-150 hover:bg-slate-50">
+              <DownloadIcon className="h-3.5 w-3.5" aria-hidden="true" /> Download Result (PDF)
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-[12px] font-medium text-navy-800 transition-colors duration-150 hover:bg-slate-50">
+              <PrinterIcon className="h-3.5 w-3.5" aria-hidden="true" /> Print Result
+            </button>
+            {reattemptTo &&
+              <button
+                type="button"
+                onClick={() => navigate(reattemptTo)}
+                className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-[12px] font-medium text-navy-800 transition-colors duration-150 hover:bg-slate-50">
+                <RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Re-Attempt Test
+              </button>
+            }
+          </div>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
+        <div className="nd grid gap-4 xl:grid-cols-[1fr_290px]">
           <div className="min-w-0 space-y-4">
 
-            {/* ── Candidate details + test information ─────── */}
-            <div className="nd grid gap-4 lg:grid-cols-2">
-              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-                <h3 className="mb-3 flex items-center gap-2 font-display text-[14px] font-semibold text-navy-800">
-                  <UserIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Candidate Details
-                </h3>
-                <dl className="space-y-2 text-[12.5px]">
-                  {[
-                    ['Candidate Name', username],
-                    ['Roll Number', rollNo],
-                    ['User ID', userId],
-                    ['Language', mode || 'English'],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex justify-between gap-3 border-b border-slate-100 pb-1.5 last:border-0">
-                      <dt className="text-slate-500">{label}</dt>
-                      <dd className="text-right font-semibold text-navy-800">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </section>
+            {/* ── Candidate / test information / verdict ───── */}
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Panel
+                title="Candidate Details"
+                right={<UserIcon className="h-4 w-4 text-slate-400" aria-hidden="true" />}>
+                <div className="flex gap-3">
+                  <span className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
+                    {!isStaffViewer && profileImageUrl
+                      ? <img src={profileImageUrl} alt="" className="h-full w-full object-cover" />
+                      : <UserIcon className="h-8 w-8" aria-hidden="true" />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-2 font-display text-[16px] font-bold text-navy-800">
+                      <span className="break-words">{username}</span>
+                      <span className={`rounded px-1.5 py-[1px] text-[10px] font-semibold ${isQualified ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                        {isQualified ? 'Qualified' : 'Not Qualified'}
+                      </span>
+                    </p>
+                    <dl className="mt-1.5 space-y-0.5 text-[11.5px]">
+                      <InfoRow label="User ID" w="w-[64px]">{candidateUserId}</InfoRow>
+                      <InfoRow label="Course" w="w-[64px]">{mode || 'English'}</InfoRow>
+                      {!isStaffViewer && <InfoRow label="Roll No." w="w-[64px]">{rollNo}</InfoRow>}
+                      {!isStaffViewer && category !== '—' && <InfoRow label="Category" w="w-[64px]">{category}</InfoRow>}
+                    </dl>
+                  </div>
+                </div>
+              </Panel>
 
-              <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-                <h3 className="mb-3 flex items-center gap-2 font-display text-[14px] font-semibold text-navy-800">
-                  <FileTextIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Test Information
-                </h3>
-                <dl className="space-y-2 text-[12.5px]">
-                  <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
-                    <dt className="text-slate-500">Exam Name</dt>
-                    <dd className="text-right font-semibold text-navy-800">{exam_name || 'Practice Test'}</dd>
-                  </div>
-                  {chapter_no &&
-                    <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
-                      <dt className="text-slate-500">Chapter No.</dt>
-                      <dd className="text-right font-semibold text-primary-700">#{chapter_no}</dd>
-                    </div>
-                  }
-                  {patternName &&
-                    <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
-                      <dt className="text-slate-500">Result Pattern</dt>
-                      <dd className="text-right"><span className="rounded bg-emerald-50 px-2 py-[1px] font-semibold text-emerald-700">{patternName}</span></dd>
-                    </div>
-                  }
-                  <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
-                    <dt className="text-slate-500">Test Duration</dt>
-                    <dd className="text-right font-semibold text-navy-800">{location.state?.testDurationMinutes || Math.floor(timeElapsed / 60)} Minutes</dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-slate-100 pb-1.5">
-                    <dt className="text-slate-500">Test Date &amp; Time</dt>
-                    <dd className="text-right font-semibold text-navy-800">{formattedDate}</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-slate-500">Result ID</dt>
-                    <dd className="flex items-center justify-end gap-1.5 font-semibold text-navy-800">
-                      <span>RES-{String(Math.floor(Math.random() * 90000000 + 10000000))}</span>
-                      <button
-                        type="button"
-                        title="Copy"
-                        aria-label="Copy Result ID"
-                        className="text-primary hover:text-primary-700"
-                        onClick={(e) => navigator.clipboard?.writeText(e.currentTarget.previousSibling.textContent).catch(() => {})}
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <rect x="9" y="9" width="13" height="13" rx="2" />
-                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                        </svg>
-                      </button>
-                    </dd>
-                  </div>
+              <Panel title="Test Information">
+                <dl className="space-y-1 text-[11.5px]">
+                  <InfoRow label="Exam Name">{exam_name || 'Practice Test'}</InfoRow>
+                  {chapter_no && <InfoRow label="Test No.">#{chapter_no}</InfoRow>}
+                  <InfoRow label="Test Type">
+                    <span className="rounded bg-primary-50 px-1.5 py-[1px] text-[10.5px] font-semibold text-primary-700">{testType || 'Practice Test'}</span>
+                  </InfoRow>
+                  <InfoRow label="Test Date">{formattedDate}</InfoRow>
+                  <InfoRow label="Time Duration">{testDurationMinutes} Minutes</InfoRow>
+                  <InfoRow label="Time Taken">{timeTakenStr}</InfoRow>
+                  {patternName && <InfoRow label="Result Pattern">{patternName}</InfoRow>}
+                  <InfoRow label="Language">{language}</InfoRow>
+                  <InfoRow label="Result ID">
+                    <span>{resultId}</span>
+                    <button
+                      type="button"
+                      title="Copy"
+                      aria-label="Copy Result ID"
+                      className="no-print ml-1.5 align-middle text-primary hover:text-primary-700"
+                      onClick={() => navigator.clipboard?.writeText(resultId).then(() => flash('Result ID copied')).catch(() => {})}>
+                      <CopyIcon className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </InfoRow>
                 </dl>
+              </Panel>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4 text-center shadow-card">
+                {isQualified
+                  ? <TrophyIcon className="mx-auto h-16 w-16 text-warn" aria-hidden="true" />
+                  : <XCircleIcon className="mx-auto h-16 w-16 text-danger" aria-hidden="true" />}
+                <p className={`mx-auto mt-2 w-fit rounded px-4 py-1.5 font-display text-[13px] font-bold text-white ${isQualified ? 'bg-success' : 'bg-danger'}`}>
+                  {isQualified ? 'QUALIFIED' : 'NOT QUALIFIED'}
+                </p>
+                {rankInfo?.rank ?
+                  <>
+                    <p className="mt-3 text-[12.5px] font-semibold text-navy-800">Your Rank</p>
+                    <p className="font-display text-[30px] font-extrabold leading-tight text-primary">{rankInfo.rank} / {rankInfo.total}</p>
+                  </> :
+                  rankInfo?.pending_until ?
+                    <p className="mt-3 rounded bg-slate-50 px-2 py-1.5 text-[11.5px] text-slate-500">Rank will be shown after the live test session ends.</p> :
+                    <p className="mt-3 text-[12px] text-slate-600">
+                      {isQualified
+                        ? `You met the required ${qualifyOn} and accuracy.`
+                        : 'You did not meet the required speed and accuracy criteria.'}
+                    </p>
+                }
+                <p className="mt-2 text-[11.5px] text-slate-500">Minimum Qualifying Speed : {requiredSpeed} WPM ({qualifyOn})</p>
+                <p className="text-[11.5px] text-slate-500">Required Accuracy : {requiredAcc}%</p>
               </section>
             </div>
 
             {/* ── Result overview: headline metrics ────────── */}
-            <section className="nd rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-              <h3 className="mb-3 font-display text-[14px] font-semibold text-navy-800">Result Overview</h3>
-              <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+            <Panel title="Result Overview">
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2">
                 {[
-                  showGrossSpeed && { label: 'Gross Speed', value: grossSpeedCalculated, unit: speedUnit.toUpperCase(), icon: GaugeIcon, color: '#6F42C1' },
-                  showNetSpeed && { label: 'Net Speed', value: netSpeedCalculated, unit: speedUnit.toUpperCase(), icon: TrendingUpIcon, color: '#0EA5E9' },
+                  { label: 'Original Words', value: originalWordCount, icon: FileTextIcon, color: '#0D6EFD' },
+                  showTotalWords && { label: 'Typed Words', value: actualTypedWordCount, icon: FileTextIcon, color: '#6F42C1' },
+                  showGrossSpeed && { label: `Gross Speed (${grossAbbr})`, value: `${grossSpeedCalculated} WPM`, icon: GaugeIcon, color: '#6F42C1' },
+                  showNetSpeed && { label: `Net Speed (${netAbbr})`, value: `${netSpeedCalculated} WPM`, icon: TrendingUpIcon, color: '#0EA5E9' },
                   showAccuracy && { label: 'Accuracy', value: `${accuracyCalculated}%`, icon: TargetIcon, color: '#198754' },
-                  showTotalWords && { label: 'Total Typed Words', value: actualTypedWordCount, icon: KeyboardIcon, color: '#0D6EFD' },
-                  showCorrectWords && { label: 'Correct Words', value: actualCorrectWordCount, icon: CheckCircle2Icon, color: '#198754' },
-                  showFullMistakes && { label: 'Wrong Words', value: effectiveFullErrors, icon: XCircleIcon, color: '#DC3545' },
-                ].filter(Boolean).map((m) => (
-                  <li key={m.label} className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
-                    <p className="flex items-center gap-1.5 text-[11.5px] font-medium text-slate-500">
-                      <m.icon className="h-3.5 w-3.5" style={{ color: m.color }} aria-hidden="true" /> {m.label}
-                    </p>
-                    <p className="mt-1 font-display text-[22px] font-bold leading-tight" style={{ color: m.color }}>{m.value}</p>
-                    {m.unit && <p className="text-[10.5px] font-semibold text-slate-400">{m.unit}</p>}
-                  </li>
-                ))}
+                  showTotalStrokes && { label: 'Keystrokes', value: totalStrokes, icon: KeyboardIcon, color: '#64748B' },
+                  showTotalErrors && { label: 'Total Mistakes', value: totalMistakes, icon: AlertTriangleIcon, color: '#DC3545' },
+                  showPenaltyWords && { label: `Penalty ${unitLabel}`, value: penaltyWords, icon: AwardIcon, color: '#7C3AED' },
+                ].filter(Boolean).map((m) => <MetricTile key={m.label} {...m} big />)}
               </ul>
-            </section>
+            </Panel>
 
-            {/* ── Detailed result summary (with formulas) ──── */}
-            <section className="nd rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-              <h3 className="mb-3 font-display text-[14px] font-semibold text-navy-800">Detailed Result Summary</h3>
+            {/* ── Detailed result summary ──────────────────── */}
+            <Panel title="Detailed Result Summary">
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2">
+                {[
+                  showCorrectWords && { label: 'Correct Words', value: actualCorrectWordCount, icon: CheckCircle2Icon, color: '#198754' },
+                  showFullMistakes && { label: 'Full Mistakes', value: effectiveFullErrors, icon: XCircleIcon, color: '#DC3545' },
+                  showHalfMistakes && { label: 'Half Mistakes', value: effectiveHalfErrors, icon: MinusCircleIcon, color: '#F59E0B', sub: `counted as ${halfMistakeMultiplier} each` },
+                  ...(isStenoResult ? [] : [
+                    { label: 'Spelling / Wrong Words', value: _sp, icon: AlertTriangleIcon, color: '#EC4899' },
+                    { label: 'Omitted Words', value: _om, icon: MinusCircleIcon, color: '#F59E0B' },
+                    { label: 'Extra Words', value: _addCount + repeatedWordCount, icon: PlusCircleIcon, color: '#0D6EFD', sub: repeatedWordCount > 0 ? `incl. ${repeatedWordCount} repeated` : null },
+                    { label: 'Capitalisation', value: _cap, icon: CaseSensitiveIcon, color: '#0EA5E9' },
+                    { label: 'Punctuation Error', value: _pct, icon: QuoteIcon, color: '#6F42C1' },
+                    { label: 'Extra Space', value: extraSpaceCount, icon: SeparatorHorizontalIcon, color: '#64748B' },
+                  ]),
+                ].filter(Boolean).map((m) => <MetricTile key={m.label} {...m} />)}
+              </ul>
+
+              <p className="mb-1 mt-4 text-[12px] font-semibold text-slate-500">How your score was calculated</p>
               <div className="grid gap-x-8 lg:grid-cols-2">
                 <ul className="divide-y divide-slate-100 text-[12.5px]">
                   {showTotalStrokes &&
                     <SummaryRow label="Total Strokes Typed" value={totalStrokes} formula="[character keystrokes, spaces/punct excluded]" />
-                  }
-                  {showFullMistakes &&
-                    <SummaryRow label="Full Mistakes" value={effectiveFullErrors} tone="text-danger" />
-                  }
-                  {showHalfMistakes &&
-                    <SummaryRow
-                      label="Half Mistakes"
-                      value={effectiveHalfErrors}
-                      tone="text-amber-600"
-                      formula={`[counted as ${halfMistakeMultiplier} each${halfMistakeEnabled ? '' : ' — i.e. as full mistakes'}]`} />
                   }
                   {showTotalErrors &&
                     <SummaryRow
@@ -1675,6 +1899,12 @@ const ResultScreen = () => {
                           ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes ÷ 5]`
                           : `[${totalMistakes} mistakes × ${penaltyFactor} ${unitLabel.toLowerCase()}]`} />
                   }
+                  {showNetSpeed &&
+                    <SummaryRow
+                      label={`Net ${unitLabel} Typed`}
+                      value={netWordsCalculated}
+                      formula={`[${totalWords} - ${penaltyWords} penalty ${unitLabel.toLowerCase()}]`} />
+                  }
                 </ul>
                 <ul className="divide-y divide-slate-100 text-[12.5px]">
                   {showTotalWords &&
@@ -1690,15 +1920,6 @@ const ResultScreen = () => {
                       highlight
                       formula={`[${totalWords} ${unitLabel.toLowerCase()} / ${timeMinutes.toFixed(2)} min]`} />
                   }
-                  {showAccuracy &&
-                    <SummaryRow label="Accuracy" value={`${accuracyCalculated}%`} />
-                  }
-                  {showNetSpeed &&
-                    <SummaryRow
-                      label={`Net ${unitLabel} Typed`}
-                      value={netWordsCalculated}
-                      formula={`[${totalWords} - ${penaltyWords} penalty ${unitLabel.toLowerCase()}]`} />
-                  }
                   {showNetSpeed &&
                     <SummaryRow
                       label={`Net Speed (${netAbbr})`}
@@ -1706,28 +1927,152 @@ const ResultScreen = () => {
                       highlight
                       formula={`[${netWordsCalculated} / ${timeMinutes.toFixed(2)} min]`} />
                   }
-                  <li className="flex items-center justify-between gap-3 py-2">
-                    <span className="text-slate-500">Result</span>
-                    <span className={`rounded px-2.5 py-[2px] font-semibold ${isQualified ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                      {isQualified ? 'Qualified' : 'Not-Qualified'}
-                    </span>
-                  </li>
+                  {showAccuracy &&
+                    <SummaryRow label="Accuracy" value={`${accuracyCalculated}%`} formula="[Net Speed ÷ Gross Speed × 100]" />
+                  }
                 </ul>
               </div>
-            </section>
+            </Panel>
+
+            {/* ── Your typed text (mistakes marked in place) ── */}
+            <Panel title="Your Typed Text">
+              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                {!isStenoResult && !plainText && <>
+                  <LegendChip label="Correct"><span>word</span></LegendChip>
+                  {showFullMistakes && <LegendChip label="Wrong Word (Full)"><span className="pa-res-wrong">word</span></LegendChip>}
+                  {showHalfMistakes && <LegendChip label="Half Mistake"><span className="pa-res-half">word</span></LegendChip>}
+                  <LegendChip label="Omission"><span className="pa-res-omit">word</span></LegendChip>
+                  <LegendChip label="Addition / Repeated"><span className="pa-res-extra">+word</span></LegendChip>
+                  <LegendChip label="Extra Space (½)"><span className="pa-res-space">␣</span></LegendChip>
+                  {lineChangeCount > 0 && <span className="text-[10.5px] font-semibold text-violet-700">↕ Line/Para changed {lineChangeCount}×</span>}
+                </>}
+                <span className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
+                  View Mode:
+                  <button
+                    type="button"
+                    onClick={() => setPlainText(false)}
+                    aria-pressed={!plainText}
+                    className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors duration-150 ${
+                      !plainText ? 'bg-primary text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                    Highlighted
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlainText(true)}
+                    aria-pressed={plainText}
+                    className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors duration-150 ${
+                      plainText ? 'bg-primary text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                    Plain Text
+                  </button>
+                </span>
+              </div>
+
+              <div className="max-h-[480px] min-h-[160px] overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/40 p-3 text-[15px] leading-[2.1] text-slate-700">
+                {plainText ?
+                  <p className="whitespace-pre-wrap" style={passageFontFamily ? { fontFamily: passageFontFamily } : undefined}>
+                    {(isStenoResult ? typedText : userInput) || <em className="text-slate-400">Nothing typed.</em>}
+                  </p> :
+                  isStenoResult ?
+                    <StenoDiff typed={typedText} reference={referenceText} pattern={pattern} testDurationMinutes={testDurationMinutes} passageFontFamily={passageFontFamily} part="tokens" /> :
+                    <TypingPassageReview {...passageReviewProps} view="typed" />
+                }
+              </div>
+            </Panel>
+
+            {/* ── Action panel ─────────────────────────────── */}
+            <Panel title="Action Panel" className="no-print">
+              <div className="flex flex-wrap gap-2.5">
+                <ActionButton icon={ArrowLeftIcon} tone="border-emerald-300 text-emerald-700" onClick={handleBackToList}>Back to Result List</ActionButton>
+                <ActionButton icon={SearchCheckIcon} tone="border-rose-300 text-rose-600" active={activeView === 'mistakes'} onClick={() => toggleView('mistakes')}>Click to Check Mistake</ActionButton>
+                <ActionButton icon={GitCompareIcon} tone="border-primary text-primary" active={activeView === 'compare'} onClick={() => toggleView('compare')}>Click to Compare Passage</ActionButton>
+                {!isStenoResult &&
+                  <ActionButton icon={BarChart3Icon} tone="border-sky-300 text-sky-700" active={activeView === 'analysis'} onClick={() => toggleView('analysis')}>Test Analysis</ActionButton>
+                }
+                <ActionButton icon={TrophyIcon} tone="border-violet-300 text-violet-700" onClick={() => navigate(leaderboardTo)}>View Leaderboard</ActionButton>
+                {reattemptTo &&
+                  <ActionButton icon={RotateCcwIcon} tone="border-amber-300 text-amber-700" onClick={() => navigate(reattemptTo)}>Re-Attempt Test</ActionButton>
+                }
+                <ActionButton icon={DownloadIcon} tone="border-primary text-primary" onClick={handlePrint}>Download Result (PDF)</ActionButton>
+                <ActionButton icon={Share2Icon} tone="border-slate-300 text-slate-600" onClick={handleShare}>Share Result</ActionButton>
+              </div>
+              <p className="mt-3 rounded bg-slate-50 px-3 py-2 text-[11.5px] text-slate-500">
+                Note: Results are calculated as per the selected result pattern and penalty settings.
+              </p>
+            </Panel>
+
+            {/* ── Opened action view (mistakes / compare / analysis) ── */}
+            {activeView &&
+              <section ref={viewPanelRef} className="no-print scroll-mt-4 overflow-auto rounded-xl border border-slate-200 bg-white shadow-card">
+                <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
+                  <h3 className="font-display text-[14px] font-semibold text-navy-800">
+                    {activeView === 'mistakes' ? 'Mistake Analysis' : activeView === 'compare' ? 'Compare Passage' : 'Test Analysis'}
+                  </h3>
+                  {activeView === 'compare' && !isStenoResult &&
+                    <span className="flex flex-wrap gap-1.5">
+                      <span className="pa-orig-omit text-[11px]">Missing / Omission</span>
+                      <span className="pa-orig-wrong text-[11px]">Wrong Spelling</span>
+                      <span className="pa-orig-half text-[11px]">Capitalisation / Punctuation</span>
+                      <span className="pa-orig-repeat text-[11px]">Addition / Repeated here</span>
+                    </span>
+                  }
+                  <span className="ml-auto flex items-center gap-2">
+                    <button type="button" onClick={handleFullScreen} className="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-[11.5px] font-medium text-slate-600 hover:bg-slate-50">
+                      <MaximizeIcon className="h-3.5 w-3.5" aria-hidden="true" /> Full Screen
+                    </button>
+                    <button type="button" onClick={() => setActiveView(null)} aria-label="Close" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                      <XIcon className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </span>
+                </div>
+                <div className="pa-panel">
+                  {isStenoResult
+                    ? <StenoDiff typed={typedText} reference={referenceText} pattern={pattern} testDurationMinutes={testDurationMinutes} passageFontFamily={passageFontFamily} part={activeView === 'compare' ? 'compare' : 'summary'} />
+                    : <TypingPassageReview {...passageReviewProps} view={activeView} />}
+                </div>
+              </section>
+            }
+
+            {/* ── Repeated Lines Section ───────────────────── */}
+            {repeatedRanges.length > 0 && (
+              <div className="repeated-lines-section rounded-xl">
+                <h3 className="repeated-lines-title">
+                  ⚠ Repeated Lines Detected ({repeatedWordCount} word{repeatedWordCount !== 1 ? 's' : ''} counted as extra words / full errors)
+                </h3>
+                <p className="repeated-lines-note">
+                  The following typed segments duplicate an earlier portion of the passage. Every repeated word — correct or not — is counted as an extra word and one full error.
+                </p>
+                <table className="repeated-lines-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Repeated Range</th>
+                      <th>Original Range</th>
+                      <th>Words</th>
+                      <th>Repeated Text</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {repeatedRanges.map((r, idx) => {
+                      const len = (r.end - r.start + 1);
+                      return (
+                        <tr key={idx}>
+                          <td>{idx + 1}</td>
+                          <td>Words {r.start + 1}–{r.end + 1}</td>
+                          <td>Words {r.sourceStart + 1}–{r.sourceEnd + 1}</td>
+                          <td>{len}</td>
+                          <td className="repeated-lines-text">{r.text}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* ── Detailed analysis (typing): breakdown of the values computed above ── */}
             {!isStenoResult && referenceWords.length > 0 && (
               <DetailedAnalysis
-                counts={{
-                  spelling: _sp,
-                  omission: _om,
-                  addition: _addCount,
-                  repetition: repeatedWordCount,
-                  capitalisation: _cap,
-                  punctuation: _pct,
-                  extraSpace: extraSpaceCount,
-                }}
+                counts={mistakeCounts}
                 referenceWords={referenceWords}
                 wordStatuses={wordStatuses}
                 wordAt={_wordAtFn}
@@ -1737,153 +2082,112 @@ const ResultScreen = () => {
                 halfMistakeEnabled={halfMistakeEnabled}
                 mode={mode}
                 examName={exam_name}
-                passageFontFamily={passageFontFamily}
-                aiInput={{
-                  exam: exam_name,
-                  mode,
-                  kind: 'typing',
-                  gross_wpm: grossSpeedCalculated,
-                  net_wpm: netSpeedCalculated,
-                  accuracy: accuracyCalculated,
-                  minutes: parseFloat(timeMinutes.toFixed(2)),
-                  target_wpm: requiredSpeed,
-                  target_accuracy: requiredAcc,
-                  total_words: totalWords,
-                  correct_words: correctWordsCalculated,
-                }} />
+                passageFontFamily={passageFontFamily} />
             )}
           </div>
 
-          {/* ── Right column: verdict + rules ────────────── */}
-          <aside className="nd space-y-4">
-            <section className={`rounded-xl border p-5 text-center shadow-card ${isQualified ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}`}>
-              <p className={`text-[11px] font-bold uppercase tracking-wide ${isQualified ? 'text-emerald-700' : 'text-rose-700'}`}>Final Result</p>
-              <p className={`mt-2 flex items-center justify-center gap-2 font-display text-[24px] font-extrabold ${isQualified ? 'text-emerald-700' : 'text-rose-700'}`}>
-                {isQualified ? <AwardIcon className="h-7 w-7" aria-hidden="true" /> : <XCircleIcon className="h-7 w-7" aria-hidden="true" />}
-                {isQualified ? 'QUALIFIED' : 'UNQUALIFIED'}
-              </p>
-              <p className="mt-1.5 text-[12px] text-slate-600">
-                {isQualified
-                  ? `You met the required ${qualifyOn} of ${requiredSpeed} WPM and ${requiredAcc}% accuracy.`
-                  : 'You did not meet the required speed and accuracy criteria.'}
-              </p>
-            </section>
+          {/* ── Right rail ──────────────────────────────── */}
+          <aside className="space-y-4">
+            {aiInput &&
+              <Panel className="no-print">
+                <p className="flex items-center gap-1.5 font-display text-[12.5px] font-semibold text-navy-800">
+                  <SparklesIcon className="h-3.5 w-3.5 text-violet-600" aria-hidden="true" /> AI Coach - Deep Analysis
+                  <span className="rounded bg-violet-600 px-1.5 py-[1px] text-[8px] font-bold text-white">NEW</span>
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">Get AI-powered insights to improve your performance.</p>
+                <ul className="mt-2 space-y-1">
+                  {['Strengths & Weaknesses', 'Speed & Accuracy Insights', 'Mistake Pattern Analysis', 'Personalized Improvement Tips'].map((b) => (
+                    <li key={b} className="flex items-center gap-1.5 text-[11.5px] text-slate-600">
+                      <CheckCircle2Icon className="h-3 w-3 text-emerald-500" aria-hidden="true" /> {b}
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={openAiAnalysis}
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-violet-300 py-1.5 text-[11.5px] font-semibold text-violet-700 transition-colors duration-150 hover:bg-violet-50">
+                  <SparklesIcon className="h-3.5 w-3.5" aria-hidden="true" /> Start AI Deep Analysis
+                </button>
+              </Panel>
+            }
 
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-              <h3 className="mb-3 font-display text-[14px] font-semibold text-navy-800">Qualifying Criteria</h3>
-              <ul className="space-y-2 text-[12.5px]">
-                <li className="flex justify-between gap-3"><span className="text-slate-500">Qualifying Speed</span><strong className="text-navy-800">{requiredSpeed} {qualifyOn}</strong></li>
-                <li className="flex justify-between gap-3"><span className="text-slate-500">Your {qualifyOn}</span><strong className="text-navy-800">{speedToCheck} {speedUnit}</strong></li>
-                <li className="flex justify-between gap-3"><span className="text-slate-500">Required Accuracy</span><strong className="text-navy-800">{requiredAcc}%</strong></li>
-                <li className="flex justify-between gap-3"><span className="text-slate-500">Your Accuracy</span><strong className="text-navy-800">{accuracyCalculated}%</strong></li>
+            <Panel title="Compare Your Performance">
+              <ul className="space-y-2 text-[12px]">
+                <li className="rounded-lg border border-primary-100 bg-primary-50 px-3 py-2">
+                  <p className="font-semibold text-primary-700">Your Performance</p>
+                  <p className="text-primary-700">{speedToCheck} WPM ({qualifyOn}) | {accuracyCalculated}% Accuracy</p>
+                </li>
+                <li className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                  <p className="font-semibold text-emerald-700">Qualifying Target</p>
+                  <p className="text-emerald-700">{requiredSpeed} WPM ({qualifyOn}) | {requiredAcc}% Accuracy</p>
+                </li>
+                {rankInfo?.best &&
+                  <li className="rounded-lg border border-violet-100 bg-violet-50 px-3 py-2">
+                    <p className="font-semibold text-violet-700">Your Best on this Test</p>
+                    <p className="text-violet-700">{fmtNum(rankInfo.best.nwpm)} NWPM | {fmtNum(rankInfo.best.accuracy)}% Accuracy</p>
+                  </li>
+                }
+              </ul>
+              <p className={`mt-2 text-[11.5px] font-semibold ${speedGap >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                {speedGap >= 0 ? `${speedGap} WPM above the qualifying speed` : `${Math.abs(speedGap)} WPM short of the qualifying speed`}
+              </p>
+            </Panel>
+
+            <Panel title="Mistake Penalty Breakdown">
+              <table className="w-full text-left text-[12px]">
+                <thead>
+                  <tr className="text-slate-500">
+                    <th scope="col" className="pb-2 font-normal">Mistake</th>
+                    <th scope="col" className="pb-2 text-right font-normal">Count</th>
+                    <th scope="col" className="pb-2 text-right font-normal">Counted As</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {penaltyRows.map((r) => (
+                    <tr key={r.label}>
+                      <td className="py-2 text-navy-800">{r.label}</td>
+                      <td className="py-2 text-right text-primary">{r.count}</td>
+                      <td className="py-2 text-right font-semibold text-navy-800">{fmtNum(r.count * r.weight)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="border-t border-slate-200">
+                  {showTotalErrors &&
+                    <tr>
+                      <td className="pt-2 font-semibold text-navy-800" colSpan={2}>Total Mistakes</td>
+                      <td className="pt-2 text-right font-bold text-danger">{totalMistakes}</td>
+                    </tr>
+                  }
+                  {showPenaltyWords &&
+                    <tr>
+                      <td className="pt-1 font-semibold text-navy-800" colSpan={2}>Penalty {unitLabel}</td>
+                      <td className="pt-1 text-right font-bold text-navy-800">{penaltyWords}</td>
+                    </tr>
+                  }
+                </tfoot>
+              </table>
+              <ul className="mt-3 space-y-1 rounded-md bg-slate-50 px-2.5 py-2 text-[11.5px] text-slate-600">
+                <li className="flex justify-between gap-3"><span>Penalty Type</span><strong className="text-navy-800">{penaltyType}</strong></li>
+                <li className="flex justify-between gap-3"><span>Penalty Factor</span><strong className="text-navy-800">{penaltyFactor}</strong></li>
+                <li className="flex justify-between gap-3"><span>Half Mistakes</span><strong className="text-navy-800">{halfMistakeEnabled ? 'Count as 0.5' : 'Count as Full (1)'}</strong></li>
                 {ignorableEnabled &&
-                  <li className="rounded-md bg-slate-50 px-2.5 py-2 text-[11.5px] text-slate-600">
+                  <li className="pt-1">
                     Ignorable Allowance: <strong>{ignorablePercent}%</strong> ({ignorableAllowance} of {totalMistakes} mistakes) · Excess: <strong>{excessMistakes}</strong> × {deductionPerMistake} = <strong>{penaltyWords}</strong> words deducted
                   </li>
                 }
               </ul>
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-              <h3 className="mb-3 flex items-center gap-2 font-display text-[14px] font-semibold text-navy-800">
-                <AlertTriangleIcon className="h-4 w-4 text-amber-500" aria-hidden="true" /> Mistake Penalty Rules
-              </h3>
-              <ul className="space-y-2 text-[12.5px]">
-                <li className="flex justify-between gap-3"><span className="text-slate-500">Penalty Type</span><strong className="text-navy-800">{penaltyType}</strong></li>
-                <li className="flex justify-between gap-3"><span className="text-slate-500">Penalty Factor</span><strong className="text-navy-800">{penaltyFactor}</strong></li>
-                <li className="flex justify-between gap-3"><span className="text-slate-500">Half Mistakes</span><strong className="text-navy-800">{halfMistakeEnabled ? 'Count as 0.5' : 'Count as Full (1)'}</strong></li>
-              </ul>
-              <p className="mt-3 text-[11.5px] leading-relaxed text-slate-500">
+              <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
                 Punctuation, Capital/Small letter and Extra-Space mistakes count as {halfMistakeEnabled ? 'Half Mistakes (0.5 each)' : 'Full Mistakes (1 each)'}; spelling mistakes count as Full Mistakes.
               </p>
-            </section>
+            </Panel>
           </aside>
         </div>
 
-        {/* ── Repeated Lines Section ───────────────────── */}
-        {repeatedRanges.length > 0 && (
-          <div className="repeated-lines-section mt-4 rounded-xl">
-            <h3 className="repeated-lines-title">
-              ⚠ Repeated Lines Detected ({repeatedWordCount} word{repeatedWordCount !== 1 ? 's' : ''} counted as extra words / full errors)
-            </h3>
-            <p className="repeated-lines-note">
-              The following typed segments duplicate an earlier portion of the passage. Every repeated word — correct or not — is counted as an extra word and one full error.
-            </p>
-            <table className="repeated-lines-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Repeated Range</th>
-                  <th>Original Range</th>
-                  <th>Words</th>
-                  <th>Repeated Text</th>
-                </tr>
-              </thead>
-              <tbody>
-                {repeatedRanges.map((r, idx) => {
-                  const len = (r.end - r.start + 1);
-                  return (
-                    <tr key={idx}>
-                      <td>{idx + 1}</td>
-                      <td>Words {r.start + 1}–{r.end + 1}</td>
-                      <td>Words {r.sourceStart + 1}–{r.sourceEnd + 1}</td>
-                      <td>{len}</td>
-                      <td className="repeated-lines-text">{r.text}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        {notice &&
+          <div role="status" className="nd no-print fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-navy-800 px-4 py-2 text-[12.5px] font-medium text-white shadow-panel">
+            {notice}
           </div>
-        )}
-
-        {/* ── Passage Review Section (unchanged components) ── */}
-        <div className="passage-review-section mt-4 rounded-xl border border-slate-200 bg-white shadow-card" id="passage-review-section">
-
-          {/* Mistake Legend bar */}
-          <div className="mistake-legend-bar no-print">
-            {showFullMistakes && (
-              <span className="legend-chip">
-                Full Mistake:–&nbsp;<span className="legend-swatch swatch-yellow"></span>&nbsp;in yellow color
-              </span>
-            )}
-            {showHalfMistakes && (
-              <span className="legend-chip">
-                Half Mistake:–&nbsp;<span style={{ color: '#ea580c', fontWeight: 700 }}>In orange color</span>
-              </span>
-            )}
-            <span className="legend-chip"><strong>–</strong>&nbsp;sign:– for Omission Word</span>
-            <span className="legend-chip"><strong>+</strong>&nbsp;Sign:– for Addition word</span>
-            <span className="legend-chip"><span className="pa-res-space">␣</span>&nbsp;Extra Space (½ mistake)</span>
-          </div>
-
-          {isStenoResult ? (
-            <StenoDiff typed={typedText} reference={referenceText} pattern={pattern} testDurationMinutes={testDurationMinutes} passageFontFamily={passageFontFamily} />
-          ) : (
-            <TypingPassageReview
-              userInput={userInput}
-              referenceWords={referenceWords}
-              wordStatuses={wordStatuses}
-              fullErrors={effectiveFullErrors}
-              halfErrors={effectiveHalfErrors}
-              totalStrokes={totalStrokes}
-              timeElapsed={timeElapsed}
-              testDurationMinutes={testDurationMinutes}
-              netSpeedCalculated={netSpeedCalculated}
-              grossSpeedCalculated={grossSpeedCalculated}
-              accuracy={accuracyCalculated}
-              lineChangeCount={lineChangeCount}
-              alignedTypedWords={effectiveAlignedTypedWords}
-              extraTypedWords={extraTypedWords}
-              extraTypedWordRefs={extraTypedWordRefs}
-              countOmissions={countOmissions}
-              repeatedRanges={repeatedRanges}
-              originalPassage={fullOriginalPassage}
-              passageFontFamily={passageFontFamily}
-            />
-          )}
-        </div>
-
+        }
       </div>
     </div>
   );

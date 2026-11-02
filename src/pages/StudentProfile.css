@@ -531,6 +531,10 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Performance stats row holds 3 cards; attempts/practice moved to the design card row.
+   Declared before the media queries so their 2-col / 1-col rules still apply. */
+.sp-stats-row-3 { grid-template-columns: repeat(3, 1fr); }
+
 /* ─── Responsive ──────────────────────────────────────────── */
 @media (max-width: 1280px) {
   .sp-stats-row { grid-template-columns: repeat(3, 1fr); }

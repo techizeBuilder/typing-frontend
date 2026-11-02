@@ -189,6 +189,10 @@ export const resultViewState = (r, chapter, exam) => {
     originalPassage: fullPassage,
     testType: r.test_type,
     resultTiming: timingOf(r.exam?.result_pattern || exam?.result_pattern),
+    // Display only (rank, re-attempt, leaderboard links on the result page).
+    examId: r.exam_id || exam?.id || null,
+    chapterId: r.chapter_id || chapter?.id || null,
+    studentId: r.student_id || null,
     ...(isSteno ? { typedText: r.user_input, referenceText: fullPassage } : {}),
   };
 };

@@ -1,6 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  ArrowUpDownIcon,
+  DownloadIcon,
+  FilterIcon,
   ClockIcon,
   FileTextIcon,
   KeyboardIcon,
@@ -30,10 +33,30 @@ import { ExamLogo, ModeChips, OfflineBanner, SaveOfflineButton, EmptyState, Load
 import { DifficultyTabs, DifficultyBadge, RulesPdfCard } from '../../features/exams/ExamFilters';
 import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 import { releaseLabel, resultReleaseAt, timingOf } from '../../features/results/resultTiming';
+import { downloadPassagePdf } from '../../features/exams/passagePdf';
+import { settingService } from '../../services/api';
 
 // Default number of unlocked tests when the admin hasn't set a per-student limit.
 const DEFAULT_PRELOAD_LIMIT = 10;
 const DEFAULT_STENO_LIMIT = 10;
+
+const testTitle = (c) => c.name || `Practice Test ${c.chapter_no}`;
+const SORTS = [
+  { value: 'no', label: 'Test No.' },
+  { value: 'az', label: 'A to Z' },
+  { value: 'za', label: 'Z to A' },
+  { value: 'newest', label: 'Newest first' },
+];
+const FILTERS = [
+  { value: 'all', label: 'All Tests' },
+  { value: 'unlocked', label: 'Unlocked Tests' },
+  { value: 'locked', label: 'Locked Tests' },
+  { value: 'attempted', label: 'Attempted' },
+  { value: 'not_attempted', label: 'Not Attempted' },
+];
+const byTitle = (a, b) => testTitle(a.chapter).localeCompare(testTitle(b.chapter), undefined, { numeric: true, sensitivity: 'base' });
+const newestOf = (c) => new Date(c.test_date || c.created_at || 0).getTime() || 0;
+const selectCls = 'w-[150px] rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] outline-none focus:border-primary';
 
 export default function ExamTests() {
   const navigate = useNavigate();
@@ -42,6 +65,15 @@ export default function ExamTests() {
   const mode = params.get('mode') || TYPING_MODES[0].value;
   const [query, setQuery] = useState('');
   const [difficulty, setDifficulty] = useState('all');
+  const [sortBy, setSortBy] = useState('no');
+  const [access, setAccess] = useState('all');
+  // Institute name/logo stamped on downloaded passages; best-effort (offline → none).
+  const [brand, setBrand] = useState({});
+  useEffect(() => {
+    settingService.getAll()
+      .then((all) => setBrand({ name: all?.institute_name || '', logoUrl: all?.institute_logo_url || '' }))
+      .catch(() => {});
+  }, []);
   const { exams, loading: examsLoading } = useExamList();
   const exam = exams.find((e) => e.id === examId);
 
@@ -53,12 +85,24 @@ export default function ExamTests() {
     ? (userProfile?.steno_tests_limit ?? DEFAULT_STENO_LIMIT)
     : (userProfile?.preload_tests_limit ?? DEFAULT_PRELOAD_LIMIT);
 
+  // `index` is always the position in Test No. order — the unlock limit is applied
+  // to that order, so re-sorting the table never changes which tests are locked.
   const sorted = useMemo(() => [...chapters].sort(sortByChapterNo), [chapters]);
   const rows = sorted
-    .map((chapter, index) => ({ chapter, index }))
+    .map((chapter, index) => ({ chapter, index, isUnlocked: index < preloadUnlockedCount }))
     .filter(({ chapter }) => matchesDifficulty(chapter, difficulty))
+    .filter(({ chapter, isUnlocked }) => {
+      if (access === 'unlocked') return isUnlocked;
+      if (access === 'locked') return !isUnlocked;
+      if (access === 'attempted') return !!resultsByChapter[chapter.id];
+      if (access === 'not_attempted') return !resultsByChapter[chapter.id];
+      return true;
+    })
     .filter(({ chapter }) =>
       `${chapter.chapter_no} ${chapter.name || ''}`.toLowerCase().includes(query.trim().toLowerCase()));
+  if (sortBy === 'az') rows.sort(byTitle);
+  else if (sortBy === 'za') rows.sort((a, b) => byTitle(b, a));
+  else if (sortBy === 'newest') rows.sort((a, b) => newestOf(b.chapter) - newestOf(a.chapter));
   const hasDifficulty = chapters.some((c) => c.difficulty);
 
   const { isActive } = useFontGroupSettings();
@@ -152,11 +196,27 @@ export default function ExamTests() {
             onChange={(value) => setParams({ mode: value }, { replace: true })} />
         }
         <DifficultyTabs items={chapters} value={difficulty} onChange={setDifficulty} />
-        <div className="ml-auto flex flex-wrap items-center gap-3">
+        <div className="ml-auto flex flex-wrap items-end gap-3">
           {!isOffline && chapters.length > 0 &&
             <SaveOfflineButton status={session.downloadStatus} onClick={session.downloadOffline} progress={session.audioProgress} />
           }
-          <div className="relative">
+          <label className="block">
+            <span className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-slate-600">
+              <ArrowUpDownIcon className="h-3.5 w-3.5" aria-hidden="true" /> Sort By
+            </span>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={selectCls}>
+              {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-slate-600">
+              <FilterIcon className="h-3.5 w-3.5" aria-hidden="true" /> Filter
+            </span>
+            <select value={access} onChange={(e) => setAccess(e.target.value)} className={selectCls}>
+              {FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
+          </label>
+          <div className="relative self-end">
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="search"
@@ -173,9 +233,9 @@ export default function ExamTests() {
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         {loading || examsLoading ? <LoadingState>Loading available tests...</LoadingState> :
           rows.length === 0 ?
-            <EmptyState>{query || difficulty !== 'all' ? 'No tests match your filters.' : `No exercises found for ${mode}.`}</EmptyState> :
+            <EmptyState>{query || difficulty !== 'all' || access !== 'all' ? 'No tests match your filters.' : `No exercises found for ${mode}.`}</EmptyState> :
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left">
+              <table className="w-full min-w-[780px] text-left">
                 <thead className="bg-slate-50 text-[12px] font-semibold text-slate-600">
                   <tr>
                     <th scope="col" className="px-5 py-3">Test No.</th>
@@ -184,12 +244,12 @@ export default function ExamTests() {
                     {hasDifficulty && <th scope="col" className="px-5 py-3 text-center">Difficulty</th>}
                     <th scope="col" className="px-5 py-3 text-center">Access</th>
                     <th scope="col" className="px-5 py-3 text-center">Your Best</th>
+                    <th scope="col" className="px-5 py-3 text-center">Download PDF</th>
                     <th scope="col" className="px-5 py-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-[12.5px]">
-                  {rows.map(({ chapter, index }) => {
-                    const isUnlocked = index < preloadUnlockedCount;
+                  {rows.map(({ chapter, isUnlocked }) => {
                     const best = resultsByChapter[chapter.id];
                     const hiddenUntil = best && resultReleaseAt(timingOf(exam?.result_pattern), best.test_type || chapter.test_type, best.date_taken);
                     const attempts = attemptsByChapter[chapter.id] || 0;
@@ -224,6 +284,23 @@ export default function ExamTests() {
                             <span className="text-[11.5px] text-slate-500">Result at {releaseLabel(hiddenUntil)}</span> :
                           best ?
                             <span title={`${attempts} attempt${attempts === 1 ? '' : 's'}`} className="font-semibold text-primary">{best.nwpm} WPM</span> : '—'}
+                        </td>
+                        <td className="px-5 py-3 text-center">
+                          {isUnlocked ?
+                            <button
+                              type="button"
+                              onClick={() => downloadPassagePdf({ exam, chapter, mode, brand })}
+                              title="Download this passage as a PDF (choose “Save as PDF” in the print dialog)"
+                              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded bg-danger px-2.5 py-1 text-[11.5px] font-semibold text-white transition-colors duration-150 hover:bg-[#bb2d3b]">
+                              <DownloadIcon className="h-3 w-3" aria-hidden="true" /> Download PDF
+                            </button> :
+                            <Link
+                              to="/plan-pricing"
+                              title="Locked — upgrade your plan or contact your administrator to unlock"
+                              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded bg-slate-200 px-2.5 py-1 text-[11.5px] font-medium text-slate-500 transition-colors duration-150 hover:bg-slate-300">
+                              <LockIcon className="h-3 w-3" aria-hidden="true" /> Download PDF
+                            </Link>
+                          }
                         </td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-end gap-2">

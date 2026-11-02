@@ -186,6 +186,11 @@ const AdminResults = () => {
     navigate('/result', {
       state: {
         returnTo: '/admin/results',
+        // Display only (rank on the result page).
+        examId: r.exam_id || r.exam?.id || null,
+        chapterId: r.chapter_id || r.chapter?.id || null,
+        studentId: r.student_id || r.user?.id || null,
+        testType: r.test_type,
         gwpm: r.gwpm,
         nwpm: r.nwpm,
         accuracy: r.accuracy,

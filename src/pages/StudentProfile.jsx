@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UserCircle2Icon, CalendarClockIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import {
+  UserCircle2Icon, CalendarClockIcon, StarIcon, GiftIcon, FileTextIcon, ClockIcon, CrownIcon, RocketIcon,
+} from 'lucide-react';
 import { PageHeading } from '../ui/PageHeading';
-import { userService, resultService, offlineTestService, chapterService } from '../services/api';
+import { Pill } from '../ui/Pill';
+import { userService, resultService, offlineTestService, chapterService, planService, referralService } from '../services/api';
+import { daysLeft as planDaysLeft, fmtDate as planDate } from '../features/plans/planData';
 import { API_BASE_URL } from '../config';
 import './StudentProfile.css';
 
@@ -264,13 +269,24 @@ const StudentProfile = () => {
   // Exam id currently being downloaded, so its button can show a spinner.
   const [downloadingExamId, setDownloadingExamId] = useState(null);
   const fileInputRef = useRef(null);
+  const subscriptionRef = useRef(null);
+  const navigate = useNavigate();
+  // /plans/mine — validity + subscription history; null until loaded (or if it fails, e.g. offline).
+  const [planInfo, setPlanInfo] = useState(null);
+  // Referral settings (admin-configurable commission %), for the Refer & Earn card text.
+  const [referral, setReferral] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '', fathers_name: '', phone: '', city: '', state: '',
     password: '', confirm_password: ''
   });
 
-  useEffect(() => { fetchData(); refreshDownloaded(); fetchPreloadExams(); }, []);
+  useEffect(() => { fetchData(); refreshDownloaded(); fetchPreloadExams(); fetchPlan(); }, []);
+
+  const fetchPlan = () => {
+    planService.mine().then(setPlanInfo).catch(() => setPlanInfo(null));
+    referralService.mine().then(setReferral).catch(() => setReferral(null));
+  };
 
   // Load every Pre-load Test chapter once and group it into exams, so the account
   // page can list downloadable exams (typing + steno) regardless of whether the
@@ -436,6 +452,20 @@ const StudentProfile = () => {
     ? Math.max(0, Math.ceil((new Date(user.validity_end) - new Date()) / 86400000))
     : null;
 
+  // ── Subscription status ───────────────────────────────────────────────────
+  // Active plans (display_status already accounts for expiry). Stacked plans can
+  // start in the future, so prefer the one that has already started.
+  const todayStr = new Date().toLocaleDateString('en-CA');
+  const activeSubs = (planInfo?.subscriptions || []).filter((s) => s.display_status === 'Active');
+  const currentSub = activeSubs.find((s) => !s.starts_on || s.starts_on <= todayStr) || activeSubs[0] || null;
+  const upcomingSubs = activeSubs.filter((s) => s !== currentSub);
+  const pendingSubs = (planInfo?.subscriptions || []).filter((s) => s.status === 'Requested');
+  const subDaysLeft = currentSub ? planDaysLeft(currentSub.ends_on) : null;
+  const refSettings = referral?.settings;
+  const maxCommission = refSettings?.enabled
+    ? Math.max(Number(refSettings.commission_pct) || 0, Number(refSettings.premium_commission_pct) || 0)
+    : 0;
+
   // ── Download allowances (admin-controlled, per student) ─────────────────────
   const typingDownloadLimit = user?.preload_tests_limit ?? DEFAULT_PRELOAD_LIMIT;
   const stenoDownloadLimit  = user?.steno_tests_limit ?? DEFAULT_STENO_LIMIT;
@@ -576,7 +606,7 @@ const StudentProfile = () => {
             <div className="sp-card">
               <div className="sp-card-header">
                 <h3>Subscription Details</h3>
-                <button className="sp-btn-light">View Details</button>
+                <button className="sp-btn-light" onClick={() => subscriptionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>View Details</button>
               </div>
               <div className="sp-subs-grid">
                 <div className="sp-subs-item">
@@ -602,7 +632,7 @@ const StudentProfile = () => {
           </div>
 
           {/* ── Row 2: Stats ── */}
-          <div className="sp-stats-row">
+          <div className="sp-stats-row sp-stats-row-3">
             <div className="sp-stat-card">
               <div className="sp-stat-icon bg-green"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
               <div className="sp-stat-body">
@@ -627,21 +657,56 @@ const StudentProfile = () => {
                 <span className="sp-stat-sub">Achieved On {fmt(highestAccuracyDate)}</span>
               </div>
             </div>
-            <div className="sp-stat-card">
-              <div className="sp-stat-icon bg-purple"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
-              <div className="sp-stat-body">
-                <span className="sp-stat-label">Test Attempted</span>
-                <span className="sp-stat-val">{results.length}</span>
-                <span className="sp-stat-sub">All Time</span>
-              </div>
+          </div>
+
+          {/* ── Row 2b: Review / Refer shortcuts + attempts & practice time ── */}
+          <div className="nd mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => navigate('/write-review')}
+              className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left transition-colors duration-150 hover:bg-amber-100">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-amber-400 text-white">
+                <StarIcon className="h-5 w-5 fill-current" aria-hidden="true" />
+              </span>
+              <span>
+                <span className="block text-[13px] font-bold text-navy-800">Write a Review</span>
+                <span className="block text-[11px] text-slate-500">Share your success story!</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/refer-earn')}
+              className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left transition-colors duration-150 hover:bg-emerald-100">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
+                <GiftIcon className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <span>
+                <span className="block text-[13px] font-bold text-navy-800">Refer &amp; Earn</span>
+                <span className="block text-[11px] text-slate-500">
+                  {maxCommission > 0 ? `Earn up to ${maxCommission}% commission on referrals!` : 'Invite friends and earn rewards!'}
+                </span>
+              </span>
+            </button>
+
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-violet-50 text-violet-600">
+                <FileTextIcon className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <span>
+                <span className="block font-display text-[18px] font-bold text-navy-800">{results.length}</span>
+                <span className="block text-[11px] text-slate-500">Test Attempted (All Time)</span>
+              </span>
             </div>
-            <div className="sp-stat-card">
-              <div className="sp-stat-icon bg-orange"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-              <div className="sp-stat-body">
-                <span className="sp-stat-label">Total Practice</span>
-                <span className="sp-stat-val" style={{ fontSize: '1.1rem' }}>{secondsToHMS(totalTimeSecs)}</span>
-                <span className="sp-stat-sub">Hours Practiced</span>
-              </div>
+
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange-50 text-orange-600">
+                <ClockIcon className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <span>
+                <span className="block font-display text-[18px] font-bold text-navy-800">{secondsToHMS(totalTimeSecs)}</span>
+                <span className="block text-[11px] text-slate-500">Total Practice (Hours Practiced)</span>
+              </span>
             </div>
           </div>
 
@@ -816,6 +881,69 @@ const StudentProfile = () => {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* ── Subscription Status ── */}
+          <div ref={subscriptionRef} className="nd mb-5 scroll-mt-4 rounded-xl border border-slate-200 bg-white p-6 shadow-card">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="flex items-center gap-2 font-display text-[14px] font-semibold text-navy-800">
+                <CrownIcon className="h-4 w-4 text-violet-600" aria-hidden="true" /> Subscription Status
+              </h3>
+              {currentSub ? <Pill tone="green">Active</Pill> : <Pill tone="amber">No Active Plan</Pill>}
+            </div>
+
+            {currentSub ? (
+              <div className="flex flex-col items-center py-4 text-center">
+                <span className="mb-3 grid h-16 w-16 place-items-center rounded-full bg-violet-50 text-violet-600">
+                  <CrownIcon className="h-8 w-8" aria-hidden="true" />
+                </span>
+                <p className="font-display text-[17px] font-bold text-navy-800">{currentSub.plan_name}</p>
+                <p className="mt-1.5 text-[12.5px] text-slate-500">
+                  {planDate(currentSub.starts_on)} – {planDate(currentSub.ends_on)}
+                  {subDaysLeft !== null && subDaysLeft >= 0 && (
+                    <> · <b className="text-navy-800">{subDaysLeft === 0 ? 'last day today' : `${subDaysLeft} day${subDaysLeft === 1 ? '' : 's'} left`}</b></>
+                  )}
+                </p>
+                {upcomingSubs.length > 0 && (
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    Up next: {upcomingSubs.map((s) => `${s.plan_name} (from ${planDate(s.starts_on)})`).join(', ')}
+                  </p>
+                )}
+                {pendingSubs.length > 0 && (
+                  <p className="mt-1 text-[12px] text-amber-700">
+                    {pendingSubs.length} plan request{pendingSubs.length === 1 ? '' : 's'} awaiting activation.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => navigate('/plan-pricing')}
+                  className="mt-4 flex items-center gap-2 rounded-md bg-violet-600 px-5 py-2.5 text-[12.5px] font-semibold text-white transition-colors duration-150 hover:bg-violet-700">
+                  <RocketIcon className="h-4 w-4" aria-hidden="true" /> Extend / Upgrade Plan
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center py-6 text-center">
+                <span className="mb-3 grid h-16 w-16 place-items-center rounded-full bg-slate-100 text-slate-300">
+                  <CrownIcon className="h-8 w-8" aria-hidden="true" />
+                </span>
+                <p className="font-display text-[17px] font-bold text-navy-800">No Active Subscription</p>
+                <p className="mt-1.5 max-w-md text-[12.5px] text-slate-500">
+                  You&apos;re currently using the free plan. Upgrade to unlock premium features, advanced typing
+                  tests, and detailed analytics.
+                </p>
+                {pendingSubs.length > 0 && (
+                  <p className="mt-1.5 text-[12px] text-amber-700">
+                    {pendingSubs.length} plan request{pendingSubs.length === 1 ? '' : 's'} awaiting activation.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => navigate('/plan-pricing')}
+                  className="mt-4 flex items-center gap-2 rounded-md bg-violet-600 px-5 py-2.5 text-[12.5px] font-semibold text-white transition-colors duration-150 hover:bg-violet-700">
+                  <RocketIcon className="h-4 w-4" aria-hidden="true" /> View Available Plans
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── Chapters popup: lists an exam's chapters with lock state + offline download ── */}

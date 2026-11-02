@@ -50,7 +50,7 @@ const resolveAssetUrl = (url) => {
 const StenoTestEngine = () => {
   const navigate  = useNavigate();
   const location  = useLocation();
-  const { exam, chapter, mode, testType, practice } = location.state || {};
+  const { exam, chapter, mode, testType, practice, selfAudioUrl } = location.state || {};
 
   // Practice flow (new design): an exam-style interface picked on the practice
   // setup page. It only changes the screens; grading below is the same code.
@@ -59,7 +59,8 @@ const StenoTestEngine = () => {
   const practiceReference = practiceIface && practice.partial ? practice.referenceText : null;
 
   const isStrictMode = !!exam;
-  const pattern      = exam?.result_pattern || null;
+  // Self assessment has no exam: the student picks the pattern (same as TestEngine).
+  const pattern      = exam?.result_pattern || location.state?.resultPattern || null;
 
   // Live Steno tests need an internet connection and must NOT expose the passage
   // text or allow audio download. Pre-loaded (practice) tests support both.
@@ -94,7 +95,7 @@ const StenoTestEngine = () => {
   const [audioSpeed, setAudioSpeed]           = useState(defaultSpeed);
 
   // ─── Timer state ────────────────────────────────────────────────────────────
-  const [timeLeft,    setTimeLeft]    = useState(practiceIface ? practice.minutes * 60 : (exam?.test_time_minutes * 60 || 600));
+  const [timeLeft,    setTimeLeft]    = useState(practiceIface ? practice.minutes * 60 : selfAudioUrl ? (chapter?.time_minutes || 10) * 60 : (exam?.test_time_minutes * 60 || 600));
   const [timeElapsed, setTimeElapsed] = useState(0);
   // The Common interface opens straight on its typing screen, so its timer runs at once.
   const [isStarted,   setIsStarted]   = useState(practiceIface?.variant === 'common');
@@ -185,6 +186,12 @@ const StenoTestEngine = () => {
       console.warn('[Audio Cache] Download failed:', err.message);
     }
   };
+
+  // Self assessment: the student's own dictation file, already a local blob URL.
+  // (The setup page revokes it when the next self practice starts.)
+  useEffect(() => {
+    if (selfAudioUrl) setResolvedAudioUrl(selfAudioUrl);
+  }, [selfAudioUrl]);
 
   useEffect(() => {
     if (!chapter?.id) return;
@@ -636,6 +643,10 @@ const StenoTestEngine = () => {
       hindiFontType,
       testType,
       resultTiming: timingOf(exam?.result_pattern), // display only: when the student may see it
+      // Display only: rank / re-attempt / leaderboard links on the result page.
+      examId:      exam?.id || null,
+      chapterId:   practiceReference ? null : (chapter?.id || null),
+      studentId:   userId || null,
       typedText,
       referenceText,
       originalPassage: referenceText,   // full passage for the "Original Passage" column
