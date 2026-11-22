@@ -263,7 +263,15 @@ export default function AdminExamForm() {
           <Card icon={ClipboardListIcon} title="5. Information for Students">
             <div className="grid gap-3.5 sm:grid-cols-2">
               <Field label="Conducted By"><input type="text" maxLength={150} value={examData.conducted_by || ''} onChange={set('conducted_by')} placeholder="Optional, e.g. Staff Selection Commission" className={inputCls} /></Field>
+              <Field label="Exam Level"><input type="text" maxLength={150} value={examData.exam_level || ''} onChange={set('exam_level')} placeholder="Optional, e.g. District Judge (Group C & D)" className={inputCls} /></Field>
               <Field label="Mistake Policy" hint="Information only — scoring always follows the Result Pattern."><input type="text" maxLength={200} value={examData.mistake_policy || ''} onChange={set('mistake_policy')} placeholder="Optional, e.g. 10 words deducted per full mistake" className={inputCls} /></Field>
+              <Field label="Steno Card Tags" hint="Comma separated chips on the student steno card, e.g. 840 Words, All Speeds, Best for SSC Gr. C."><input type="text" maxLength={300} value={examData.card_tags || ''} onChange={set('card_tags')} placeholder="Optional" className={inputCls} /></Field>
+              <fieldset>
+                <legend className={labelCls}>Steno Card Ribbon</legend>
+                <label className="flex items-center gap-1.5 py-2 text-[12.5px] text-slate-700">
+                  <input type="checkbox" checked={!!examData.is_pro_level} onChange={(e) => setVal('is_pro_level')(e.target.checked)} className="h-3.5 w-3.5 accent-primary" /> Show the PRO LEVEL ribbon
+                </label>
+              </fieldset>
               <div className="sm:col-span-2">
                 <span className={labelCls}>Official Rules PDF <span className="font-normal text-slate-500">— students can download it from the exam page (PDF, max 10 MB)</span></span>
                 {currentExam?.rules_pdf_url && !rulesPdf && !removeRulesPdf &&

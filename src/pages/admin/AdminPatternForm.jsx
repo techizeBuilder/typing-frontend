@@ -146,6 +146,11 @@ export default function AdminPatternForm() {
               <YesNo name="crw" label="Count only Right Words" value={p.count_right_words_only} onChange={setVal('count_right_words_only')} />
               <YesNo name="hm" label="Half Mistake (Count or Not)" value={p.half_mistake_enabled} onChange={setVal('half_mistake_enabled')} />
               <YesNo name="om" label="Count Omitted / Left Words as Error" value={p.count_omissions_as_errors !== false} onChange={setVal('count_omissions_as_errors')} />
+              <Field label="Transposition (Steno)" hint="Words typed in swapped order, e.g. “public since” for “since public”.">
+                <select value={p.transposition_mistake || 'none'} onChange={(e) => setVal('transposition_mistake')(e.target.value)} className={inputCls}>
+                  <option value="none">Not a mistake</option><option value="half">Half mistake</option><option value="full">Full mistake</option>
+                </select>
+              </Field>
             </div>
           </Card>
 

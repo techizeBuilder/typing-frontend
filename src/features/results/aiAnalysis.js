@@ -36,7 +36,8 @@ export function buildAnalysis(input, history = []) {
   const net = input.net_wpm || 0;
 
   const speed = level(net / target, [[1.1, 'Excellent', 'success'], [1, 'Good', 'primary'], [0.8, 'Fair', 'warning'], [-1, 'Needs Practice', 'danger']]);
-  const acc = level(input.accuracy || 0, [[98, 'Excellent', 'success'], [targetAcc, 'Good', 'primary'], [90, 'Fair', 'warning'], [-1, 'Needs Attention', 'danger']]);
+  // Thresholds high → low, so an accuracy below the institute's target is never "Excellent".
+  const acc = level(input.accuracy || 0, [[Math.max(98, targetAcc), 'Excellent', 'success'], [targetAcc, 'Good', 'primary'], [Math.min(90, targetAcc), 'Fair', 'warning'], [-1, 'Needs Attention', 'danger']]);
   const ctrl = level(-per100, [[-2, 'Excellent', 'success'], [-5, 'Good', 'primary'], [-10, 'Needs Attention', 'warning'], [-Infinity, 'Weak', 'danger']]);
 
   const speeds = history.map((h) => Number(h.nwpm) || 0).filter((n) => n > 0).slice(0, 6);

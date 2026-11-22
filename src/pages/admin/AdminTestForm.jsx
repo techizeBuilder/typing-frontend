@@ -172,6 +172,10 @@ export default function AdminTestForm() {
                   <span className={labelCls}>Test Title</span>
                   <input type="text" maxLength={150} value={formData.name || ''} onChange={set('name')} placeholder="Optional, e.g. Rural Development Budget" className={inputCls} />
                 </label>
+                <label className="block">
+                  <span className={labelCls}>Volume (Optional)</span>
+                  <input type="text" maxLength={60} value={formData.volume || ''} onChange={set('volume')} placeholder="e.g. Volume 1 — groups dictations for students" className={inputCls} />
+                </label>
               </div>
               <label className="mt-3.5 block">
                 <span className={labelCls}>Description (Optional)</span>

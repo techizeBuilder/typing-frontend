@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { computeResultMetrics } from '../../utils/resultMetrics';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import {
@@ -195,7 +196,7 @@ function TestsModal({ student, onClose }) {
                         <td className="px-3 py-2">{new Date(t.date_taken).toLocaleDateString()}</td>
                         <td className="px-3 py-2">{t.exam ? t.exam.name : 'Practice'}<span className="block text-[10.5px] text-slate-500">{t.mode}</span></td>
                         <td className="px-3 py-2 font-semibold">{t.nwpm} WPM</td>
-                        <td className="px-3 py-2">{t.accuracy}%</td>
+                        <td className="px-3 py-2">{computeResultMetrics(t).accuracy}%</td>
                         <td className="px-3 py-2">{t.total_errors}</td>
                         <td className="px-3 py-2"><button type="button" onClick={() => viewResult(t)} className="rounded-md bg-primary px-2.5 py-1 text-[11.5px] font-semibold text-white hover:bg-primary-700">View Result</button></td>
                       </tr>

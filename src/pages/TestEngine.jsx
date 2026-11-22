@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import LiveInstituteScreen from '../features/screenLayout/LiveInstituteScreen';
+import SelfTestScreen from '../features/selfAssessment/SelfTestScreen';
+import { scoreResult, speedCountOf } from '../utils/scoring';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { chapterService, resultService, getCurrentUserUuid, userService } from '../services/api';
 import { API_BASE_URL } from '../config';
@@ -81,6 +83,7 @@ const TestEngine = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [s6ShowText, setS6ShowText] = useState(false);
+  const [selfFontFamily, setSelfFontFamily] = useState('Arial');
   // Show/Hide Content — lets the student hide the source passage on any screen.
   const [showContent, setShowContent] = useState(true);
   const [profileImageUrl, setProfileImageUrl] = useState(null);
@@ -172,7 +175,7 @@ const TestEngine = () => {
     const tokenized = text.trim() ? tokenizeWithSeps(text) : { words: [], seps: [] };
     let splitWords = tokenized.words;
     let splitSeps = tokenized.seps;
-    const speedCount = pattern?.speed_count ?? 'Words';
+    const speedCount = speedCountOf(pattern);
 
     // Industry-standard: 5 keystrokes = 1 word.
     // When the exam is configured in Strokes mode, both max and required counts
@@ -285,26 +288,10 @@ const TestEngine = () => {
   // ─── Live WPM Calculation ───────────────────────────────────────────────────
   useEffect(() => {
     if (timeElapsed > 0) {
-      const minutes = timeElapsed / 60;
-      const totalWordsTyped = totalStrokes / 5;
-      const gwpm = Math.round(totalWordsTyped / minutes);
-      const halfMistakeEnabled = pattern?.half_mistake_enabled ?? true;
-      const penaltyFactor = pattern?.penalty_value || 1;
-      // "Count Half Mistake" = Yes → each half mistake counts as 0.5 (multiplier 0.5).
-      // "Count Half Mistake" = No  → each half mistake counts as 1 FULL mistake (multiplier 1).
-      const halfMultiplier = halfMistakeEnabled ? 0.5 : 1;
-      const totalMistakes = fullErrors + halfErrors * halfMultiplier;
-      // Net speed is reported in WORDS, so the penalty must be in WORDS too.
-      // A stroke-denominated penalty is ALWAYS converted ÷5 (5 strokes = 1 word),
-      // regardless of speed_count; a word-denominated penalty is used directly.
-      const penaltyWords = (pattern?.penalty_type === 'Stroke')
-        ? totalMistakes * penaltyFactor / 5
-        : totalMistakes * penaltyFactor;
-      const nwpm = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
-      // Accuracy = (NWPM / GWPM) × 100  [standard typing test formula]
-    const accuracy = gwpm > 0
-        ? Math.max(0, Math.min(100, Math.round((nwpm / gwpm) * 100)))
-        : 100;
+      // Same formula as the result, on the counts known so far.
+      const live = scoreResult({ pattern, fullErrors, halfErrors, totalStrokes, typedWords: userInput.trim().split(/\s+/).filter(Boolean).length, timeElapsed });
+      const gwpm = Math.round(live.gwpm), nwpm = Math.round(live.nwpm);
+      const accuracy = live.gwpm > 0 ? Math.round(live.accuracy) : 100;
       setStats({ gwpm, nwpm, accuracy });
     }
   }, [timeElapsed, totalStrokes, fullErrors, halfErrors]);
@@ -844,7 +831,7 @@ const TestEngine = () => {
     // otherwise a slow typist could be trapped on the test screen.
     const minRequired = exam?.no_of_words_strokes || 0;
     if (minRequired > 0 && timeLeft > 0 && overrideStatuses === null) {
-      const speedCount = pattern?.speed_count ?? 'Words';
+      const speedCount = speedCountOf(pattern);
       const typedCount = speedCount === 'Strokes'
         ? finalInput.length                                    // strokes = keystrokes typed
         : finalInput.trim().split(/\s+/).filter(Boolean).length; // words typed
@@ -917,10 +904,14 @@ const TestEngine = () => {
     let derivedBase = extraTypedWords.length; // A.iii addition errors
     derivedBase += repeatedWordCount;          // A.v repetition (each repeated word = full error)
     let derivedHalf = 0;
-    finalStatuses.forEach((s) => {
+    let lastTypedRef = -1;
+    finalStatuses.forEach((s, i) => { if (s && s !== 'pending') lastTypedRef = i; });
+    finalStatuses.forEach((s, i) => {
       if (s === 'error')           derivedBase++;              // spelling/substitution
       else if (s === 'half-error') derivedHalf++;             // cap/punct
-      else if (s === 'pending' && countOmissions) derivedBase++; // A.i omission
+      // A.i omission. "Count Omitted / Left Words" = No excuses only the words left
+      // untyped after the last word reached; a word skipped mid-passage still counts.
+      else if (s === 'pending' && (countOmissions || i <= lastTypedRef)) derivedBase++;
     });
     // Extra spaces (2+ consecutive) each count as one half mistake, handled exactly
     // like the cap/punct half mistakes: added to both the half tally and the full
@@ -953,40 +944,21 @@ const TestEngine = () => {
 
     // Re-derive stats from final values so GWPM/NWPM are accurate
     const elapsed     = timeElapsed > 0 ? timeElapsed : 1;
-    const minutes     = elapsed / 60;
     // Pattern controls whether speed is counted in Words (actual word count) or Strokes (keystrokes/5).
     // 'Words' = count actual space-delimited words typed. 'Strokes' (default) = keystrokes/5.
-    const speedCount  = pattern?.speed_count ?? 'Strokes';
-    const totalWords  = speedCount === 'Words'
-      ? typedFinalWords.length
-      : finalStrokes / 5;
-    // "Count Half Mistake" = Yes → each half mistake weighs 0.5; No → each weighs 1 (full).
-    const halfEnabled = pattern?.half_mistake_enabled ?? true;
-    const halfMultiplier = halfEnabled ? 0.5 : 1;
-    const totalMist   = finalFull + finalHalf * halfMultiplier;
-    const pfactor     = pattern?.penalty_value ?? 1;
-    const ptype       = pattern?.penalty_type  ?? 'Word';
-    // Ignorable Mistakes rule: mistakes up to (pct)% of total words typed are free;
-    // each mistake beyond that allowance deducts (deductionPerMistake) words.
-    const ignEnabled  = !!pattern?.ignorable_mistakes_enabled;
-    const ignPct      = ignEnabled ? Math.max(0, Math.min(100, pattern?.ignorable_mistakes_percent ?? 0)) : 0;
-    const ignDeduct   = pattern?.ignorable_penalty_words_per_mistake ?? 10;
-    const ignAllowance = ignEnabled ? totalWords * (ignPct / 100) : 0;
-    const ignExcess   = ignEnabled ? Math.max(0, totalMist - ignAllowance) : 0;
-    // Net/Gross speed are always in WORDS, so the penalty must be in WORDS too.
-    // A stroke-denominated penalty is ALWAYS converted ÷5 (5 strokes = 1 word),
-    // regardless of speed_count; a word-denominated penalty is used directly.
-    const penaltyWds  = ignEnabled
-      ? ignExcess * ignDeduct
-      : (ptype === 'Stroke')
-        ? totalMist * pfactor / 5
-        : totalMist * pfactor;
-    const finalGwpm = Math.round(totalWords / minutes);
-    const finalNwpm = Math.max(0, Math.round((totalWords - penaltyWds) / minutes));
-    // Accuracy = (NWPM / GWPM) × 100  per standard typing test formula (PDF rule)
-    const finalAcc  = finalGwpm > 0
-      ? Math.max(0, Math.min(100, Math.round((finalNwpm / finalGwpm) * 100)))
-      : 100;
+    const score = scoreResult({
+      pattern,
+      fullErrors: finalFull,
+      halfErrors: finalHalf,
+      totalStrokes: finalStrokes,
+      typedWords: typedFinalWords.length,
+      correctWords: finalStatuses.filter((st) => st === 'correct').length,
+      correctStrokes: resultReferenceWords.reduce((sum, w, i) => sum + (finalStatuses[i] === 'correct' ? String(w).length + 1 : 0), 0),
+      timeElapsed: elapsed,
+    });
+    const finalGwpm = Math.round(score.gwpm);
+    const finalNwpm = Math.round(score.nwpm);
+    const finalAcc  = finalGwpm > 0 ? Math.max(0, Math.min(100, Math.round(score.accuracy))) : 100;
 
     const userId = getCurrentUserUuid();
     const rollNo = localStorage.getItem('roll_no') || '';
@@ -1045,6 +1017,7 @@ const TestEngine = () => {
         show_penalty_words: pattern.show_penalty_words,
         show_ignorable_mistakes: pattern.show_ignorable_mistakes,
         count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
+        count_right_words_only: pattern.count_right_words_only ?? false,
       } : null,
     };
 
@@ -1064,7 +1037,7 @@ const TestEngine = () => {
         chapter_id: chapter?.id || null,
         exam_id: exam?.id || null,
         gwpm: finalGwpm, nwpm: finalNwpm, accuracy: finalAcc,
-        total_errors: Math.round(totalMist),
+        total_errors: Math.round(score.totalMistakes),
         full_errors: finalFull, half_errors: finalHalf,
         total_strokes: finalStrokes, time_elapsed: elapsed,
         user_input: finalInput,
@@ -1094,6 +1067,7 @@ const TestEngine = () => {
           show_penalty_words: pattern.show_penalty_words,
           show_ignorable_mistakes: pattern.show_ignorable_mistakes,
           count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
+          count_right_words_only: pattern.count_right_words_only ?? false,
           repeated_ranges: repeatedRanges,
           extra_typed_words: extraTypedWords,
           extra_typed_word_refs: extraTypedWordRefs,
@@ -1214,6 +1188,58 @@ const TestEngine = () => {
       {showContent ? 'Hide Content' : 'Show Content'}
     </button>
   );
+
+  // ─── Self Assessment Step 3 ──────────────────────────────────────────────────
+  // Display only: same input handlers, timer and submit as the other screens.
+  if (isSelfAssessment && location.state?.selfFlow) {
+    const isHindi = isKrutiDev || isMangal || isRemington;
+    const leave = () => {
+      if (isStarted && !window.confirm('Leave this test? Your typing so far will not be saved.')) return;
+      navigate(location.state.selfFlow.returnTo);
+    };
+    return (
+      <SelfTestScreen
+        title={location.state.selfFlow.title}
+        language={isHindi ? 'Hindi' : 'English'}
+        keyboardLabel={isKrutiDev ? 'Kruti Dev' : isRemington ? 'Remington (GAIL)' : isMangal ? 'InScript / Phonetic' : 'QWERTY'}
+        candidate={localStorage.getItem('name') || localStorage.getItem('username') || 'Candidate'}
+        photo={profileImageUrl}
+        words={words.length}
+        minutes={passedChapter?.time_minutes ?? 10}
+        timeLeft={timeLeft}
+        started={isStarted}
+        isHindi={isHindi}
+        hindiBanner={renderHindiModeBanner()}
+        passage={<div className="text-display" style={{ fontFamily: isHindi ? hindiFontFamily : selfFontFamily }}>{renderWords()}</div>}
+        passageFontSize={settings.testFontSize}
+        typingFontSize={settings.fontSize}
+        onPassageFontSize={(v) => setSettings(s => ({ ...s, testFontSize: v }))}
+        onTypingFontSize={(v) => setSettings(s => ({ ...s, fontSize: v }))}
+        fontFamily={selfFontFamily}
+        onFontFamily={setSelfFontFamily}
+        backspace={settings.backspaceControl}
+        onBackspace={(v) => setSettings(s => ({ ...s, backspaceControl: v }))}
+        isFullscreen={isFullscreen}
+        onFullScreen={toggleFullScreen}
+        onCancel={leave}
+        onSubmit={() => handleFinish()}
+        textareaProps={{
+          value: userInput,
+          autoFocus: true,
+          onKeyDown: handleEnglishKeyDown,
+          onChange: isPaused ? undefined : (isMangal ? handleMangalChange : handleEnglishChange),
+          onCompositionStart: () => { isComposingRef.current = true; },
+          onCompositionEnd: isMangal ? handleCompositionEnd : undefined,
+          spellCheck: false,
+          autoCorrect: 'off',
+          autoCapitalize: 'off',
+          lang: isMangal ? 'hi' : 'en',
+          disabled: timeLeft === 0,
+          readOnly: isPaused,
+          style: { fontFamily: hindiFontFamily },
+        }} />
+    );
+  }
 
   // ─── TCS Screen 5 Render ─────────────────────────────────────────────────────
   if (screenType === 'Screen-5') {

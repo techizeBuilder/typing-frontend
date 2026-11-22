@@ -15,10 +15,17 @@ import {
   RotateCcwIcon,
   EyeIcon,
   KeyboardIcon,
+  ShuffleIcon,
 } from 'lucide-react';
-import { resultPatternService, resultService, getCurrentUserUuid } from '../services/api';
+import { chapterService, resultPatternService, resultService, userService, getCurrentUserUuid } from '../services/api';
+import { API_BASE_URL } from '../config';
+import { PRELOAD, isVisibleToStudents, sortByChapterNo } from '../features/exams/examData';
+import { ExamInstructionsScreen, ExamLoginCover } from '../features/selfAssessment/ExamFlow';
+import { hasBundledPassages, randomPassage } from '../features/selfAssessment/randomPassages';
 import { PageHeading } from '../ui/PageHeading';
 import { useFontGroupSettings } from '../features/fontGroups/fontGroups';
+import { fontFamilyForFontGroup } from '../utils/hindiFonts';
+import { computeResultMetrics } from '../utils/resultMetrics';
 
 // One setup page per sidebar link. Typing modes hand off to TestEngine exactly as
 // before (isSelfAssessment); steno modes hand the student's own passage + audio
@@ -140,7 +147,7 @@ function PatternModal({ patterns, loading, selected, onSelect, onClose }) {
   );
 }
 
-function TextModal({ text, onClose }) {
+function TextModal({ text, fontFamily, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/50 p-4" role="dialog" aria-modal="true" aria-label="Practice passage">
       <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-2xl">
@@ -150,7 +157,7 @@ function TextModal({ text, onClose }) {
             <XIcon className="h-4 w-4" />
           </button>
         </div>
-        <p className="scroll-thin overflow-y-auto whitespace-pre-wrap p-5 text-[13.5px] leading-relaxed text-slate-700">{text}</p>
+        <p className="scroll-thin overflow-y-auto whitespace-pre-wrap p-5 text-[13.5px] leading-relaxed text-slate-700" style={fontFamily ? { fontFamily } : undefined}>{text}</p>
       </div>
     </div>
   );
@@ -174,7 +181,14 @@ function SetupPage({ mode, cfg }) {
   const [font, setFont]         = useState(cfg.fonts[0].value);
   const [duration, setDuration] = useState(10);
   const [backspace, setBackspace] = useState('Full Backspace');
-  const [source, setSource]     = useState('upload'); // 'upload' | 'paste'
+  // Typing: 'random' | 'paste'. Steno: 'upload' | 'paste' (its audio must match the text).
+  const [source, setSource]     = useState(isSteno ? 'upload' : 'random');
+  const [stage, setStage]       = useState('setup'); // 'setup' | 'login' | 'instructions'
+  const [photo, setPhoto]       = useState(null);
+  const [randomText, setRandomText] = useState('');
+  const [randomNote, setRandomNote] = useState('');
+  const [randomNo, setRandomNo] = useState(1);
+  const instituteFontPool = useRef(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [fileName, setFileName] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -189,8 +203,50 @@ function SetupPage({ mode, cfg }) {
   const [patternModalOpen, setPatternModalOpen] = useState(false);
   const [lastPractices, setLastPractices]     = useState([]);
 
-  const wordCount = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
   const activeFont = fonts.some((f) => f.value === font) ? font : (fonts[0]?.value ?? font);
+  const passage = source === 'random' ? randomText : text;
+  const wordCount = passage.trim() ? passage.trim().split(/\s+/).filter(Boolean).length : 0;
+
+  // Random passage for the chosen font and time. Kruti Dev / Remington text has to be
+  // glyph-encoded, so it comes from the institute's passages the student may open.
+  const nextRandom = async () => {
+    setRandomNote('');
+    if (hasBundledPassages(activeFont)) {
+      setRandomText(randomPassage({ font: activeFont, minutes: duration }));
+      setRandomNo((n) => n + 1);
+      return;
+    }
+    try {
+      if (instituteFontPool.current?.font !== activeFont) {
+        const [chapters, profile] = await Promise.all([
+          chapterService.getChapters(activeFont, PRELOAD),
+          userService.getProfile().catch(() => null),
+        ]);
+        const open = (chapters || []).filter(isVisibleToStudents).sort(sortByChapterNo)
+          .slice(0, profile?.preload_tests_limit ?? 10)
+          .map((c) => c.content_text).filter((t) => t && t.trim());
+        instituteFontPool.current = { font: activeFont, passages: open };
+      }
+      const pool = instituteFontPool.current.passages;
+      if (pool.length === 0) throw new Error('none');
+      setRandomText(randomPassage({ font: activeFont, minutes: duration, pool }));
+      setRandomNo((n) => n + 1);
+    } catch {
+      setRandomText('');
+      setRandomNote('No random passage is available for this font right now. Choose Paste Your Own Text instead.');
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!isSteno) nextRandom();
+  }, [activeFont, duration]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    userService.getProfile()
+      .then((p) => { if (p?.profile_image) setPhoto(p.profile_image.startsWith('http') ? p.profile_image : `${API_BASE_URL}${p.profile_image}`); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     resultPatternService.getPatterns()
@@ -242,6 +298,7 @@ function SetupPage({ mode, cfg }) {
   };
 
   const handleFileInput = (e) => {
+    if (!isSteno) setSource('paste');
     processFile(e.target.files[0]);
     e.target.value = '';
   };
@@ -263,7 +320,10 @@ function SetupPage({ mode, cfg }) {
   const canStart = !unavailable && wordCount > 0 && (!isSteno || !!audioFile);
 
   const handleStart = () => {
-    if (!canStart) return;
+    if (canStart) setStage('login');
+  };
+
+  const beginTest = () => {
     if (isSteno) {
       if (lastAudioUrl) URL.revokeObjectURL(lastAudioUrl);
       lastAudioUrl = URL.createObjectURL(audioFile);
@@ -274,7 +334,7 @@ function SetupPage({ mode, cfg }) {
           chapter: {
             id: null,
             name: 'Self Assessment',
-            content_text: text.trim(),
+            content_text: passage.trim(),
             time_minutes: duration,
             test_type: 'Preloaded',
             font_group: cfg.group,
@@ -296,12 +356,16 @@ function SetupPage({ mode, cfg }) {
         chapter: {
           id: null,
           name: 'Self Assessment',
-          content_text: text.trim(),
+          content_text: passage.trim(),
           time_minutes: duration,
           font_group: activeFont,
         },
         resultPattern: selectedPattern || null,
         backspaceControl: backspace,
+        selfFlow: {
+          title: `${selectedPattern?.name || cfg.title} Practice Typing Test`,
+          returnTo: `/self-assessment/${mode}`,
+        },
       },
     });
   };
@@ -316,6 +380,22 @@ function SetupPage({ mode, cfg }) {
       <Icon className="h-4 w-4" aria-hidden="true" /> {label}
     </button>
   );
+
+  if (stage === 'login') {
+    return <ExamLoginCover subtitle={selectedPattern?.name || `${cfg.title} Practice`} photo={photo} onStartTest={() => setStage('instructions')} />;
+  }
+  if (stage === 'instructions') {
+    return (
+      <ExamInstructionsScreen
+        designation={selectedPattern?.name || cfg.title}
+        language={/hindi/i.test(mode) ? 'Hindi' : 'English'}
+        words={wordCount}
+        minutes={duration}
+        photo={photo}
+        onPrevious={() => setStage('login')}
+        onReady={beginTest} />
+    );
+  }
 
   return (
     <div className="nd p-3 pb-20 sm:p-5 sm:pb-20">
@@ -356,11 +436,40 @@ function SetupPage({ mode, cfg }) {
             <FileTextIcon className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> {isSteno ? 'Transcription Passage' : 'Passage Source'}
           </p>
           <div className="mb-3 grid gap-3 sm:grid-cols-2">
-            {sourceBtn('upload', 'Upload Passage File', UploadCloudIcon)}
+            {isSteno ? sourceBtn('upload', 'Upload Passage File', UploadCloudIcon) : sourceBtn('random', 'Random Passage', ShuffleIcon)}
             {sourceBtn('paste', 'Paste Your Own Text', FileTextIcon)}
           </div>
 
-          {source === 'upload' ?
+          {source === 'random' ?
+            <div className="mb-3 rounded-lg border border-slate-200 p-3" data-testid="random-passage">
+              {randomNote ?
+                <p role="status" className="rounded-md bg-amber-50 p-3 text-[12.5px] text-amber-800">{randomNote}</p> :
+                <>
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary-50 text-primary">
+                      <FileTextIcon className="h-[18px] w-[18px]" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-[12.5px] font-semibold text-navy-800">Typing_Passage_{String(randomNo).padStart(2, '0')}.txt</span>
+                        <span className="rounded bg-primary-50 px-1.5 py-[1px] text-[9px] font-bold text-primary-700">TXT</span>
+                      </span>
+                      <span className="block text-[10.5px] text-slate-500">{wordCount} words · ({Math.max(1, Math.round(new Blob([randomText]).size / 1024))} KB)</span>
+                    </span>
+                  </div>
+                  <div className="scroll-thin mt-2.5 h-[150px] overflow-y-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-[13px] leading-relaxed text-slate-600" style={fontFamilyForFontGroup(activeFont) ? { fontFamily: fontFamilyForFontGroup(activeFont) } : undefined}>{randomText}</div>
+                </>
+              }
+              <div className="mt-2.5 flex gap-2">
+                <button type="button" onClick={nextRandom} className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-300 py-1.5 text-[11px] font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50">
+                  <RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Replace
+                </button>
+                <button type="button" disabled={!randomText} onClick={() => setViewOpen(true)} className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-300 py-1.5 text-[11px] font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50 disabled:opacity-50">
+                  <EyeIcon className="h-3.5 w-3.5" aria-hidden="true" /> View
+                </button>
+              </div>
+            </div> :
+          source === 'upload' ?
             text && fileName ?
               <div className="mb-3 rounded-lg border border-slate-200 p-3">
                 <div className="flex items-center gap-2.5">
@@ -417,8 +526,13 @@ function SetupPage({ mode, cfg }) {
                 autoCorrect="off"
                 autoCapitalize="off"
                 className="h-[180px] w-full resize-y rounded-lg border border-slate-300 bg-white p-3 text-[13.5px] leading-relaxed text-navy-800 outline-none transition-colors duration-150 placeholder:text-slate-400 focus:border-primary" />
-              <p className="mb-3 mt-1 text-[11.5px] text-slate-500">
-                {wordCount > 0 ? <><strong className="text-navy-800">{wordCount}</strong> words · <strong className="text-navy-800">{text.length}</strong> characters</> : 'No text yet'}
+              <p className="mb-3 mt-1 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-slate-500">
+                <span>{wordCount > 0 ? <><strong className="text-navy-800">{wordCount}</strong> words · <strong className="text-navy-800">{text.length}</strong> characters</> : 'No text yet'}</span>
+                {!isSteno &&
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 font-medium text-primary hover:underline">
+                    <UploadCloudIcon className="h-3.5 w-3.5" aria-hidden="true" /> {fileLoading ? 'Reading file…' : 'Upload a .txt or .docx file'}
+                  </button>
+                }
               </p>
             </>
           }
@@ -487,15 +601,6 @@ function SetupPage({ mode, cfg }) {
             </div>
           </div>
 
-          {selectedPattern &&
-            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-lg bg-slate-50 p-3 text-[11.5px] sm:grid-cols-4">
-              <div><dt className="text-slate-500">Qualify on</dt><dd className="font-semibold text-navy-800">{selectedPattern.qualify_on} ≥ {selectedPattern.required_speed}</dd></div>
-              <div><dt className="text-slate-500">Accuracy required</dt><dd className="font-semibold text-navy-800">{selectedPattern.required_accuracy}%</dd></div>
-              <div><dt className="text-slate-500">Penalty</dt><dd className="font-semibold text-navy-800">{selectedPattern.penalty_value} {selectedPattern.penalty_type}/mistake</dd></div>
-              <div><dt className="text-slate-500">Half mistakes</dt><dd className="font-semibold text-navy-800">{selectedPattern.half_mistake_enabled ? 'Enabled' : 'Disabled'}</dd></div>
-            </dl>
-          }
-
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -514,16 +619,6 @@ function SetupPage({ mode, cfg }) {
 
         <aside className="space-y-4">
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-            <h3 className="font-display text-[13.5px] font-semibold text-navy-800">Summary</h3>
-            <dl className="mt-2.5 space-y-1.5 text-[12.5px]">
-              <div className="flex justify-between gap-2"><dt className="text-slate-500">Words</dt><dd className="font-semibold text-navy-800">{wordCount}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-slate-500">{isSteno ? 'Typing time' : 'Duration'}</dt><dd className="font-semibold text-navy-800">{duration} min</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-slate-500">Font</dt><dd className="text-right font-semibold text-navy-800">{(fonts.find((f) => f.value === activeFont)?.label || cfg.title).replace(' (GAIL)', '')}</dd></div>
-              {isSteno && <div className="flex justify-between gap-2"><dt className="text-slate-500">Audio</dt><dd className="font-semibold text-navy-800">{audioFile ? 'Ready' : 'Not added'}</dd></div>}
-            </dl>
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
             <h3 className="flex items-center gap-2 font-display text-[13.5px] font-semibold text-navy-800">
               <ClockIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Your Last 5 Practices
             </h3>
@@ -534,7 +629,7 @@ function SetupPage({ mode, cfg }) {
                   <li key={p.id} className="flex items-center justify-between gap-2 py-2 text-[11.5px]">
                     <span className="text-slate-500">{new Date(p.date_taken).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                     <span className="font-semibold text-primary">{Math.round(p.nwpm)} WPM</span>
-                    <span className="font-medium text-success">{parseFloat(p.accuracy).toFixed(1)}%</span>
+                    <span className="font-medium text-success">{computeResultMetrics(p).accuracy.toFixed(1)}%</span>
                   </li>
                 ))}
               </ul>
@@ -555,7 +650,7 @@ function SetupPage({ mode, cfg }) {
           onSelect={setSelectedPattern}
           onClose={() => setPatternModalOpen(false)} />
       }
-      {viewOpen && <TextModal text={text} onClose={() => setViewOpen(false)} />}
+      {viewOpen && <TextModal text={passage} fontFamily={fontFamilyForFontGroup(activeFont)} onClose={() => setViewOpen(false)} />}
     </div>
   );
 }

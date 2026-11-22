@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowUpDownIcon,
+  CircleAlertIcon,
+  CrownIcon,
   DownloadIcon,
   FilterIcon,
   ClockIcon,
@@ -13,8 +15,7 @@ import {
   SearchIcon,
   CheckCircle2Icon,
   BarChart2Icon,
-  TimerIcon,
-  LandmarkIcon,
+  PercentIcon,
   AlertTriangleIcon,
 } from 'lucide-react';
 import { Breadcrumbs } from '../../ui/PageHeading';
@@ -27,14 +28,14 @@ import {
   matchesDifficulty,
   startTestState,
   resultViewState,
+  getExamLanguages,
 } from '../../features/exams/examData';
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
 import { ExamLogo, ModeChips, OfflineBanner, SaveOfflineButton, EmptyState, LoadingState } from '../../features/exams/ExamUI';
 import { DifficultyTabs, DifficultyBadge, RulesPdfCard } from '../../features/exams/ExamFilters';
 import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 import { releaseLabel, resultReleaseAt, timingOf } from '../../features/results/resultTiming';
-import { downloadPassagePdf } from '../../features/exams/passagePdf';
-import { settingService } from '../../services/api';
+import { downloadPassagePdf, useInstituteBrand } from '../../features/exams/passagePdf';
 
 // Default number of unlocked tests when the admin hasn't set a per-student limit.
 const DEFAULT_PRELOAD_LIMIT = 10;
@@ -49,13 +50,14 @@ const SORTS = [
 ];
 const FILTERS = [
   { value: 'all', label: 'All Tests' },
-  { value: 'unlocked', label: 'Unlocked Tests' },
-  { value: 'locked', label: 'Locked Tests' },
+  { value: 'unlocked', label: 'Free Tests' },
+  { value: 'locked', label: 'Premium Tests' },
   { value: 'attempted', label: 'Attempted' },
   { value: 'not_attempted', label: 'Not Attempted' },
 ];
 const byTitle = (a, b) => testTitle(a.chapter).localeCompare(testTitle(b.chapter), undefined, { numeric: true, sensitivity: 'base' });
 const newestOf = (c) => new Date(c.test_date || c.created_at || 0).getTime() || 0;
+const BACKSPACE_LABEL = { 'Full Backspace': 'Allowed', 'No Backspace': 'Not Allowed' };
 const selectCls = 'w-[150px] rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] outline-none focus:border-primary';
 
 export default function ExamTests() {
@@ -67,13 +69,8 @@ export default function ExamTests() {
   const [difficulty, setDifficulty] = useState('all');
   const [sortBy, setSortBy] = useState('no');
   const [access, setAccess] = useState('all');
-  // Institute name/logo stamped on downloaded passages; best-effort (offline → none).
-  const [brand, setBrand] = useState({});
-  useEffect(() => {
-    settingService.getAll()
-      .then((all) => setBrand({ name: all?.institute_name || '', logoUrl: all?.institute_logo_url || '' }))
-      .catch(() => {});
-  }, []);
+  // Institute name, logo and watermark on downloaded passages.
+  const brand = useInstituteBrand();
   const { exams, loading: examsLoading } = useExamList();
   const exam = exams.find((e) => e.id === examId);
 
@@ -127,15 +124,22 @@ export default function ExamTests() {
     );
   }
 
+  const rp = exam?.result_pattern;
   const details = exam ? [
     { icon: ClockIcon, label: `Time Duration : ${exam.test_time_minutes} Minutes` },
-    { icon: KeyboardIcon, label: `Backspace : ${exam.backspace_control || '—'}` },
-    exam.result_pattern?.name && { icon: CheckCircle2Icon, label: `Result Pattern : ${exam.result_pattern.name}` },
-    { icon: MonitorIcon, label: `Exam Mode : ${exam.test_paper_screen || 'Screen'} · ${exam.screen_type || 'TCS'} interface` },
-    exam.auto_submit && { icon: TimerIcon, label: 'Auto Submit : On' },
-    exam.conducted_by && { icon: LandmarkIcon, label: `Conducted By : ${exam.conducted_by}` },
-    exam.mistake_policy && { icon: AlertTriangleIcon, label: `Mistake Policy : ${exam.mistake_policy}` },
+    rp && { icon: CircleAlertIcon, label: `Qualifying Speed : ${rp.required_speed} WPM` },
+    rp && { icon: PercentIcon, label: `Error Margin : ${rp.ignorable_mistakes_enabled ? `${rp.ignorable_mistakes_percent}% Free` : `${Math.max(0, 100 - rp.required_accuracy)}%`}` },
+    rp && { icon: CheckCircle2Icon, label: `Result Mode : ${rp.qualify_on === 'GWPM' ? 'Gross' : 'Net'} Speed + Accuracy` },
+    { icon: KeyboardIcon, label: `Backspace : ${BACKSPACE_LABEL[exam.backspace_control] || exam.backspace_control || '—'}` },
+    (exam.mistake_policy || rp) && { icon: AlertTriangleIcon, label: `Mistake Policy : ${exam.mistake_policy || `${rp.penalty_value} ${rp.penalty_type}${rp.penalty_value === 1 ? '' : 's'} applied per mistake`}` },
+    { icon: MonitorIcon, label: `Exam Mode : ${exam.test_paper_screen === 'Paper' ? 'Paper' : 'On Screen'}` },
   ].filter(Boolean) : [];
+  const examMeta = exam ? [
+    { label: 'Conducted By', value: exam.conducted_by || '—' },
+    { label: 'Exam Level', value: exam.exam_level || '—' },
+    { label: 'Language', value: getExamLanguages(exam) },
+  ] : [];
+  const hasPremium = chapters.length > preloadUnlockedCount;
 
   return (
     <div className="nd p-3 pb-20 sm:p-5 sm:pb-20">
@@ -151,6 +155,7 @@ export default function ExamTests() {
       {/* Exam banner */}
       <section className="mb-4 rounded-xl bg-navy-900 p-5">
         <div className={`grid gap-5 ${exam?.rules_pdf_url ? 'lg:grid-cols-[1fr_340px_220px]' : 'lg:grid-cols-[1fr_340px]'}`}>
+          <div className="min-w-0">
           <div className="flex items-start gap-4">
             <ExamLogo exam={exam} size="h-[72px] w-[72px]" className="bg-white/10 text-white" />
             <div className="min-w-0">
@@ -163,8 +168,22 @@ export default function ExamTests() {
                 <span className="rounded-full border border-[#38BDF8]/60 px-3 py-1 text-[12px] font-semibold text-[#38BDF8]">
                   {mode}
                 </span>
+                {hasPremium &&
+                  <span className="flex items-center gap-1.5 rounded-full border border-warn px-3 py-1 text-[12px] font-semibold text-warn">
+                    <CrownIcon className="h-3.5 w-3.5" aria-hidden="true" /> Premium
+                  </span>
+                }
               </div>
             </div>
+          </div>
+          <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-white/10 pt-4 sm:grid-cols-3">
+            {examMeta.map((m) => (
+              <div key={m.label}>
+                <dt className="text-[11px] font-semibold text-[#38BDF8]">{m.label}</dt>
+                <dd className="text-[11.5px] leading-snug text-white/85">{m.value}</dd>
+              </div>
+            ))}
+          </dl>
           </div>
 
           <div className="rounded-lg bg-white/5 p-4">
@@ -273,9 +292,9 @@ export default function ExamTests() {
                         {hasDifficulty && <td className="px-5 py-3 text-center"><DifficultyBadge value={chapter.difficulty} /></td>}
                         <td className="px-5 py-3 text-center">
                           {isUnlocked ?
-                            <span className="font-display text-[13px] font-bold text-success">Unlocked</span> :
-                            <span className="inline-flex items-center gap-1 font-display text-[13px] font-bold text-slate-400">
-                              <LockIcon className="h-3.5 w-3.5" aria-hidden="true" /> Locked
+                            <span className="font-display text-[13px] font-bold text-success">Free</span> :
+                            <span className="inline-flex items-center gap-1 font-display text-[13px] font-bold text-[#B45309]">
+                              <LockIcon className="h-3.5 w-3.5" aria-hidden="true" /> Premium
                             </span>
                           }
                         </td>
@@ -319,11 +338,12 @@ export default function ExamTests() {
                                 className="inline-flex items-center gap-1 rounded bg-navy-800 px-3 py-1 text-[11.5px] font-semibold text-white transition-colors duration-150 hover:bg-navy-900">
                                 <PlayIcon className="h-3 w-3 fill-current" aria-hidden="true" /> {best ? 'Retake' : 'Start Test'}
                               </button> :
-                              <span
-                                title="Locked — contact your administrator to unlock more tests"
-                                className="inline-flex cursor-not-allowed items-center gap-1 rounded bg-slate-200 px-3 py-1 text-[11.5px] font-medium text-slate-500">
-                                <LockIcon className="h-3 w-3" aria-hidden="true" /> Locked
-                              </span>
+                              <Link
+                                to="/plan-pricing"
+                                title="Upgrade your plan to unlock this test"
+                                className="inline-flex items-center gap-1 rounded bg-[#F59E0B] px-3 py-1 text-[11.5px] font-semibold text-white transition-colors duration-150 hover:bg-[#d98806]">
+                                <CrownIcon className="h-3 w-3" aria-hidden="true" /> Unlock
+                              </Link>
                             }
                           </div>
                         </td>

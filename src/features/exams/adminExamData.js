@@ -18,7 +18,7 @@ export const defaultExamData = () => ({
   name: '', test_time_minutes: 10, screen_type: 'Screen 1', result_pattern_id: '', backspace_control: 'Full Backspace',
   highlight_word: true, highlight_color: 'yellow', auto_scroll: true, highlight_error: true, font_size_user_screen: 20, font_size_test_screen: 20,
   font_group: 'English Typing', font_groups: ['English Typing'], test_paper_screen: 'Screen', auto_submit: false, test_re_type: false,
-  max_words_strokes: 0, no_of_words_strokes: 0, region: '', display_title: '', conducted_by: '', mistake_policy: '', is_active: true,
+  max_words_strokes: 0, no_of_words_strokes: 0, region: '', display_title: '', conducted_by: '', exam_level: '', mistake_policy: '', card_tags: '', is_pro_level: false, is_active: true,
 });
 
 export const getExamFontGroups = (exam) => {
@@ -108,7 +108,7 @@ export const defaultPatternData = () => ({
   qualify_on: 'NWPM', required_speed: 35, required_accuracy: 95, ignorable_mistakes_enabled: false, ignorable_mistakes_percent: 0,
   ignorable_penalty_words_per_mistake: 10, show_half_mistakes: true, show_full_mistakes: true, show_total_strokes: true, show_total_words: true,
   show_total_errors: true, show_correct_words: true, show_gross_speed: true, show_net_speed: true, show_accuracy: true, show_penalty_words: true,
-  show_ignorable_mistakes: true, count_omissions_as_errors: true,
+  show_ignorable_mistakes: true, count_omissions_as_errors: true, transposition_mistake: 'none',
   // Information + result/rank timing (no effect on scoring)
   description: '', applicable_typing: true, applicable_steno: true, is_default: false,
   live_result_mode: 'immediate', live_result_time: '21:00', preload_result_mode: 'immediate', preload_result_time: '21:00', live_rank_mode: 'immediate',

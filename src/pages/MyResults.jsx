@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  BarChart3Icon, FilterIcon, XIcon, EyeIcon, AlertTriangleIcon, TrophyIcon, ChevronLeftIcon, ChevronRightIcon,
-  CalendarIcon, DownloadIcon, GaugeIcon, HashIcon, KeyboardIcon, MicIcon, TypeIcon, ZapIcon, Loader2Icon, ClockIcon,
+  BarChart3Icon, FilterIcon, XIcon, EyeIcon, AlertTriangleIcon, ChevronLeftIcon, ChevronRightIcon,
+  DownloadIcon, GaugeIcon, ZapIcon, ClockIcon,
 } from 'lucide-react';
 import { resultService, getCurrentUserUuid } from '../services/api';
 import { LoadingState, EmptyState } from '../features/exams/ExamUI';
 import { releaseLabel, resultReleaseAt, timingOf } from '../features/results/resultTiming';
 import { computeResultMetrics } from '../utils/resultMetrics';
 import { isResultQualified } from '../features/results/qualify';
+import { RankModal, StenoAttemptCard, StenoDeleteNotice } from '../features/results/StenoAttemptCard';
+import { attemptAiState } from '../features/results/stenoAlign';
 
 // Tabs = the sidebar's Test Analysis links. On /test-analysis/:kind the tab is the
 // route; on /my-tests (Test Analysis (Results)) it is local state.
@@ -67,40 +69,6 @@ function SpeedBadge({ value }) {
   );
 }
 
-function RankModal({ row, onClose }) {
-  const [info, setInfo] = useState(null);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    resultService.getChapterRank(row.chapter_id, row.student_id)
-      .then((d) => setInfo(d || { rank: null, total: 0 }))
-      .catch(() => setError('Could not load the rank. Check your connection.'));
-  }, [row]);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/50 p-4" role="dialog" aria-modal="true" aria-label="Your rank">
-      <div className="w-full max-w-xs rounded-xl bg-white p-6 text-center shadow-2xl">
-        <div className="mb-1 flex items-center justify-between">
-          <p className="flex items-center gap-1.5 text-[14px] font-bold text-navy-800">
-            <TrophyIcon className="h-4 w-4 text-amber-500" aria-hidden="true" /> Your Rank
-          </p>
-          <button type="button" onClick={onClose} aria-label="Close" className="grid h-7 w-7 place-items-center rounded-full text-slate-400 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-600">
-            <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </div>
-        {error ? <p className="mt-4 text-[12.5px] text-danger">{error}</p> :
-          !info ? <p className="mt-6 flex justify-center"><Loader2Icon className="h-5 w-5 animate-spin text-primary" aria-label="Loading" /></p> :
-            info.rank ? <>
-              <p className="mt-4 font-display text-[36px] font-extrabold text-violet-600">#{info.rank}</p>
-              <p className="mt-1 text-[12.5px] text-slate-500">out of {Number(info.total).toLocaleString()} participants</p>
-            </> :
-              <p className="mt-4 text-[12.5px] text-slate-500">
-                {info.pending_until ? 'Rank will be shown after the live test session ends.' : 'No rank available for this test yet.'}
-              </p>
-        }
-      </div>
-    </div>
-  );
-}
-
 const MyResults = () => {
   const navigate = useNavigate();
   const { kind: routeKind } = useParams();
@@ -118,6 +86,7 @@ const MyResults = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [rankFor, setRankFor] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     // Surface the most recent save error from TestEngine, if any.
@@ -196,6 +165,19 @@ const MyResults = () => {
         ...(isSteno ? { typedText: result.user_input, referenceText: fullPassage } : {}),
       }
     });
+  };
+
+  const deleteAttempt = async (r) => {
+    if (!window.confirm('Delete this attempt permanently? This cannot be undone.')) return;
+    setDeletingId(r.id);
+    try {
+      await resultService.deleteResult(r.id);
+      setResults((rows) => rows.filter((x) => x.id !== r.id));
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Could not delete this attempt.');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const kindResults = results.filter((r) => ofKind(kind, r));
@@ -425,72 +407,24 @@ const MyResults = () => {
             </section> :
             isSteno ?
               <div className="space-y-3">
-                {pageRows.map((r) => {
-                  const releaseAt = releaseOf(r);
-                  const m = metricsOf(r);
-                  const words = Array.isArray(r.reference_words) ? r.reference_words.length : 0;
-                  return (
-                    <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
-                      <div className="flex flex-wrap items-start justify-between gap-2.5">
-                        <p className="flex min-w-0 flex-1 items-start gap-2 text-[13px] font-semibold text-navy-800">
-                          <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary-50 text-primary">
-                            <MicIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate" title={r.exam?.name || 'Self Practice'}>
-                              {r.exam?.name || 'Self Practice'}
-                              {r.chapter?.chapter_no ? ` — Dictation No. ${r.chapter.chapter_no}` : ''}
-                            </span>
-                            {r.chapter?.name && <span className="block truncate text-[11.5px] font-normal text-slate-500">{r.chapter.name}</span>}
-                          </span>
-                        </p>
-                        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                          <TestTypePill type={testTypeOf(r)} />
-                          {r.chapter_id &&
-                            <button
-                              type="button"
-                              onClick={() => setRankFor(r)}
-                              className="flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[10.5px] font-semibold text-white transition-colors duration-150 hover:bg-amber-600">
-                              <TrophyIcon className="h-3 w-3" aria-hidden="true" /> Rank
-                            </button>
-                          }
-                          <button
-                            type="button"
-                            disabled={!!releaseAt}
-                            title={releaseAt ? `Available at ${releaseLabel(releaseAt)}` : undefined}
-                            onClick={() => handleViewResult(r)}
-                            className="flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-1 text-[10.5px] font-semibold text-white transition-colors duration-150 hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">
-                            <EyeIcon className="h-3 w-3" aria-hidden="true" /> View Result
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-slate-100 pt-2.5 text-[11.5px] text-slate-500">
-                        <span className="flex items-center gap-1"><HashIcon className="h-3 w-3 text-slate-400" aria-hidden="true" /> Attempt {attemptNo[r.id]}</span>
-                        <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3 text-slate-400" aria-hidden="true" /> {fmtDate(r.date_taken)}, {fmtTime(r.date_taken)}</span>
-                        {r.chapter?.steno_speed && <span className="flex items-center gap-1"><GaugeIcon className="h-3 w-3 text-amber-500" aria-hidden="true" /> Dict Speed {r.chapter.steno_speed}</span>}
-                        {!releaseAt && <span className="flex items-center gap-1"><KeyboardIcon className="h-3 w-3 text-primary" aria-hidden="true" /> Typing {m.nwpm} WPM</span>}
-                        {words > 0 && <span className="flex items-center gap-1"><TypeIcon className="h-3 w-3 text-slate-400" aria-hidden="true" /> Words {words}</span>}
-                      </div>
-
-                      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                        {releaseAt ?
-                          <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-[3px] text-[10.5px] font-semibold text-slate-600">
-                            <ClockIcon className="h-3 w-3" aria-hidden="true" /> Result at {releaseLabel(releaseAt)}
-                          </span> : <>
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[10.5px] font-bold ${
-                              m.accuracy >= 50 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>
-                              <GaugeIcon className="h-3 w-3" aria-hidden="true" /> {Number(m.accuracy).toFixed(2)}%
-                            </span>
-                            <StatusPill qualified={m.qualified} />
-                          </>
-                        }
-                      </div>
-                    </div>
-                  );
-                })}
+                <StenoDeleteNotice />
+                {pageRows.map((r) => (
+                  <StenoAttemptCard
+                    key={r.id}
+                    row={r}
+                    metrics={metricsOf(r)}
+                    attemptNo={attemptNo[r.id]}
+                    releaseAt={releaseOf(r)}
+                    typeBadge={<TestTypePill type={testTypeOf(r)} />}
+                    canDelete
+                    deleting={deletingId === r.id}
+                    onRank={() => setRankFor(r)}
+                    onDeep={() => navigate('/ai-analysis', { state: attemptAiState(r, metricsOf(r)) })}
+                    onView={() => handleViewResult(r)}
+                    onDelete={() => deleteAttempt(r)} />
+                ))}
               </div> :
-              <>
+<>
                 <section className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card md:block">
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[980px] text-left text-[12px]">

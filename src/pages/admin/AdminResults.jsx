@@ -11,6 +11,8 @@ import Pagination from '../../components/Pagination';
 import { StatCard } from '../../ui/StatCard';
 import { Donut, LineChart } from '../../features/results/adminCharts';
 import { isResultQualified } from '../../features/results/qualify';
+import { RankModal, StenoAttemptCard, StenoDeleteNotice } from '../../features/results/StenoAttemptCard';
+import { attemptAiState } from '../../features/results/stenoAlign';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -71,6 +73,8 @@ const AdminResults = () => {
   const [columns, setColumns] = useState(loadColumns);
   const [showColumns, setShowColumns] = useState(false);
   const [grouping, setGrouping] = useState('Daily');
+  const [rankFor, setRankFor] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   // Guards against out-of-order responses when filters/page change quickly.
   const fetchIdRef = useRef(0);
   const statsIdRef = useRef(0);
@@ -215,6 +219,20 @@ const AdminResults = () => {
     });
   };
 
+  const deleteAttempt = async (r) => {
+    if (!window.confirm(`Delete this attempt by ${r.user?.name || 'the student'} permanently? This cannot be undone.`)) return;
+    setDeletingId(r.id);
+    try {
+      await resultService.deleteResult(r.id);
+      fetchResults();
+      fetchStats();
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Could not delete this attempt.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   // Exports cover ALL rows matching the current filters, not just the visible
   // page — fetched on demand so the heavy raw data is only downloaded when the
   // admin actually exports.
@@ -294,6 +312,9 @@ const AdminResults = () => {
   const trend = (grouping === 'Weekly' ? toWeeks(s.daily || []) : (s.daily || [])).slice(-31).map((d) => ({ label: fmtDay(d.date), gross: d.avg_gwpm, net: d.avg_nwpm, accuracy: d.avg_accuracy }));
   const bucketParts = (s.buckets || []).map((b, i) => ({ label: b.label, value: b.count, color: BUCKET_COLORS[i] }));
   const levelParts = (s.difficulty || []).map((d) => ({ label: d.level, value: d.count, color: LEVEL_COLORS[d.level] || '#94A3B8', avg: d.avg_nwpm }));
+  const isStenoTab = kind === 'steno';
+  // Sub-admins may view steno attempts but not delete them (the API refuses too).
+  const canDelete = localStorage.getItem('role') !== 'Sub-Admin' && localStorage.getItem('role') !== 'SubAdmin';
 
   return (
     <div className="nd">
@@ -302,7 +323,13 @@ const AdminResults = () => {
           <h2 className="font-display text-[24px] font-bold leading-tight text-navy-800">Test Analysis (Results)</h2>
           <p className="text-[12.5px] text-slate-500">View detailed performance and analysis of typing and steno tests.</p>
         </div>
-        <div className="ml-auto flex flex-wrap gap-2">
+        <div className="ml-auto flex flex-wrap items-start gap-2">
+          {isStenoTab && [['Total Tests', (s.total ?? 0).toLocaleString('en-IN')], ['Qualified', (s.qualified ?? 0).toLocaleString('en-IN')], ['Avg WPM', Math.round(s.avg_gwpm ?? 0)]].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-primary-100 bg-primary-50 px-4 py-2 text-center">
+              <p className="font-display text-[18px] font-bold text-primary">{value}</p>
+              <p className="text-[10px] font-medium text-primary-700">{label}</p>
+            </div>
+          ))}
           <button type="button" onClick={() => { fetchResults(); fetchStats(); }} className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 hover:bg-slate-50"><RefreshCwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Refresh</button>
         </div>
       </div>
@@ -332,9 +359,15 @@ const AdminResults = () => {
           <label className="block"><span className="mb-1 block text-[11.5px] font-semibold text-navy-800">Date To</span>
             <input type="date" aria-label="Date to" value={dateTo} onChange={change(setDateTo)} className={selectCls} /></label>
         </div>
-        {hasActiveFilter && <button type="button" onClick={clearFilters} className="mt-3 flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-[12px] font-medium text-danger hover:bg-rose-100"><RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Reset Filters</button>}
+        {isStenoTab ?
+          <div className="mt-3 flex flex-wrap gap-2.5">
+            <button type="button" onClick={() => { setPage(1); fetchResults(); fetchStats(); }} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[12px] font-semibold text-white transition-colors duration-150 hover:bg-primary-700"><FilterIcon className="h-3.5 w-3.5" aria-hidden="true" /> Apply Filter</button>
+            <button type="button" onClick={clearFilters} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-[12px] font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50"><RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Reset</button>
+          </div> :
+          hasActiveFilter && <button type="button" onClick={clearFilters} className="mt-3 flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-[12px] font-medium text-danger hover:bg-rose-100"><RotateCcwIcon className="h-3.5 w-3.5" aria-hidden="true" /> Reset Filters</button>}
       </section>
 
+      {!isStenoTab && <>
       <div className={`mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6 ${statsLoading ? 'opacity-60' : ''}`} aria-busy={statsLoading}>
         <StatCard icon={<UsersIcon className="h-5 w-5" />} iconBg="#0D6EFD" label="Total Appeared" value={(s.total ?? 0).toLocaleString('en-IN')} sub={`${s.typing ?? 0} typing · ${s.steno ?? 0} steno`} />
         <StatCard icon={<CheckCircle2Icon className="h-5 w-5" />} iconBg="#198754" label="Qualified" value={(s.qualified ?? 0).toLocaleString('en-IN')} sub={share(s.qualified)} subClass="text-emerald-700" />
@@ -378,22 +411,43 @@ const AdminResults = () => {
           )}
         </section>
       </div>
+      </>}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_250px]">
+      <div className={isStenoTab ? '' : 'grid gap-4 xl:grid-cols-[1fr_250px]'}>
         <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-card">
           <div className="relative flex flex-wrap items-center gap-2 border-b border-slate-100 p-3.5">
             <h3 className="text-[13px] font-bold text-navy-800">Detailed Results</h3>
             <span className="text-[12px] text-slate-500">Showing <b>{results.length}</b> of <b>{total}</b>{hasActiveFilter || kind ? ' (filtered)' : ''}</span>
             <div className="ml-auto flex gap-2">
-              <button type="button" onClick={() => setShowColumns((v) => !v)} aria-expanded={showColumns} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"><SlidersHorizontalIcon className="h-3.5 w-3.5" aria-hidden="true" /> Show / Hide Columns</button>
+              {!isStenoTab && <button type="button" onClick={() => setShowColumns((v) => !v)} aria-expanded={showColumns} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"><SlidersHorizontalIcon className="h-3.5 w-3.5" aria-hidden="true" /> Show / Hide Columns</button>}
               <button type="button" onClick={exportExcel} disabled={total === 0} className="flex items-center gap-1.5 rounded-md border border-emerald-300 px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"><FileSpreadsheetIcon className="h-3.5 w-3.5" aria-hidden="true" /> Excel</button>
               <button type="button" onClick={exportPDF} disabled={total === 0} className="flex items-center gap-1.5 rounded-md border border-rose-300 px-3 py-1.5 text-[12px] font-medium text-danger hover:bg-rose-50 disabled:opacity-50"><FileTextIcon className="h-3.5 w-3.5" aria-hidden="true" /> PDF</button>
             </div>
-            {showColumns &&
+            {showColumns && !isStenoTab &&
               <div className="absolute right-3.5 top-full z-20 mt-1 grid w-[320px] grid-cols-2 gap-1.5 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
                 {COLUMNS.map(([k, l]) => <label key={k} className="flex items-center gap-1.5 text-[12px] text-slate-700"><input type="checkbox" checked={show(k)} onChange={() => toggleColumn(k)} className="h-3.5 w-3.5 accent-primary" /> {l}</label>)}
               </div>}
           </div>
+          {isStenoTab ?
+          <div className="space-y-3 p-3.5">
+            <StenoDeleteNotice />
+            {loading ? <p className="py-8 text-center text-[12px] text-slate-500"><Loader2Icon className="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />Loading results...</p>
+              : results.length === 0 ? <p className="py-8 text-center text-[12px] text-slate-400">No results found matching the selected filters.</p>
+                : results.map((r) => (
+                  <StenoAttemptCard
+                    key={r.id}
+                    row={r}
+                    metrics={{ ...r._metrics, qualified: r._qualified }}
+                    attemptNo={r.attempt_no}
+                    showStudent
+                    canDelete={canDelete}
+                    deleting={deletingId === r.id}
+                    onRank={() => setRankFor(r)}
+                    onDeep={() => navigate('/ai-analysis', { state: attemptAiState(r, r._metrics) })}
+                    onView={() => handleViewResult(r)}
+                    onDelete={() => deleteAttempt(r)} />
+                ))}
+          </div> :
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-left">
               <thead className="bg-slate-50 text-[11.5px] font-semibold text-slate-600">
@@ -422,13 +476,13 @@ const AdminResults = () => {
                     ))}
               </tbody>
             </table>
-          </div>
+          </div>}
           <div className="border-t border-slate-100 px-3.5 pb-1 pt-3">
             <Pagination page={page} totalPages={totalPages} totalItems={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(p) => { setPageSize(p); setPage(1); }} />
           </div>
         </section>
 
-        <aside className={`${panelCls} h-fit`}>
+        {!isStenoTab && <aside className={`${panelCls} h-fit`}>
           <h3 className="mb-3 flex items-center gap-2 text-[13px] font-bold text-navy-800"><DownloadIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Download Reports</h3>
           <ul className="space-y-2 text-[12px]">
             <li><button type="button" onClick={exportSummary} disabled={!stats || !stats.total} className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-left hover:border-primary disabled:opacity-50"><BarChart3Icon className="h-4 w-4 text-primary" aria-hidden="true" /><span><b className="block text-navy-800">Summary Report</b><span className="text-[11px] text-slate-500">Cards and charts as PDF</span></span></button></li>
@@ -436,8 +490,9 @@ const AdminResults = () => {
             <li><button type="button" onClick={exportPDF} disabled={total === 0} className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-left hover:border-primary disabled:opacity-50"><FileTextIcon className="h-4 w-4 text-danger" aria-hidden="true" /><span><b className="block text-navy-800">Detailed Results (PDF)</b><span className="text-[11px] text-slate-500">Every matching result</span></span></button></li>
           </ul>
           <p className="mt-3 text-[10.5px] text-slate-400">Reports follow the filters and tab above. Scores use the same formula as the result screen.</p>
-        </aside>
+        </aside>}
       </div>
+      {rankFor && <RankModal row={rankFor} onClose={() => setRankFor(null)} />}
     </div>
   );
 };

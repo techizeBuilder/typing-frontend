@@ -2,7 +2,6 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 import { fontFamilyForFontGroup, fontGroupForHindiType } from '../utils/hindiFonts';
-import { matchContractions, matchAlternateForms } from '../utils/stenoAlternateForms';
 import {
   AlertTriangleIcon,
   ArrowLeftIcon,
@@ -37,6 +36,10 @@ import {
 import DetailedAnalysis from '../features/results/DetailedAnalysis';
 import { aiAnalysisState, collectMistakes } from '../features/results/mistakes';
 import { Panel } from '../ui/Pill';
+import { bipartiteAlign, isAllCaps as _isAllCaps, normalizeWordResult, tokenizeResult, stenoAiState, stenoMarkup } from '../features/results/stenoAlign';
+import StenoResultView from '../features/results/StenoResultView';
+import { scoreResult } from '../utils/scoring';
+import { passageTopic } from '../features/exams/examData';
 import './ResultScreen.css';
 
 // ─── PrintSheet — government exam format (visible only on print) ───────────────
@@ -306,9 +309,6 @@ const PrintSheet = ({
 
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-const normalizeWordResult = (w) => w.toLowerCase().replace(/[^a-z0-9\u0900-\u097f]/gi, '');
-const tokenizeResult      = (text) => text.trim().split(/\s+/).filter(Boolean);
-
 // ─── Inline extra/repeated-word placement ────────────────────────────────────
 // Builds a map of { refIndex -> [extra/repeated words to show *before* that ref
 // word] } plus a `trailing` list (anchored at/after the passage end). Lets the
@@ -456,29 +456,6 @@ function seqAlign(refNorm, typedNorm) {
   return matchedRef;
 }
 
-// ─── Steno error-classification helpers ──────────────────────────────────────
-// Levenshtein edit distance with early-exit for large differences.
-const _lev = (a, b) => {
-  const m = a.length, n = b.length;
-  if (Math.abs(m - n) > 3) return 99;
-  const dp = [];
-  for (let i = 0; i <= m; i++) { dp[i] = new Array(n + 1).fill(0); dp[i][0] = i; }
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
-  return dp[m][n];
-};
-// PDF 2a: wrong spelling → half mistake.
-// Threshold: edit distance ≤ 2 AND ≤ 30% of word length. Minimum word length 4.
-const _isSpellingErr = (r, t) => {
-  if (r === t || r.length < 4 || t.length < 4 || Math.abs(r.length - t.length) > 3) return false;
-  const d = _lev(r, t);
-  return d <= 2 && d / Math.max(r.length, t.length) <= 0.30;
-};
-// PDF 1h: typing a word in ALL CAPITALS → full mistake.
-const _isAllCaps = (w) => { const l = w.replace(/[^a-zA-Z]/g, ''); return l.length > 1 && l === l.toUpperCase(); };
-
 // Count exact-match correct words for steno results using bipartite pass-1 only.
 const _stenoCorrectCount = (typedText, referenceText) => {
   const tw = (typedText || '').trim().split(/\s+/).filter(Boolean);
@@ -499,50 +476,10 @@ const _stenoCorrectCount = (typedText, referenceText) => {
   return cnt;
 };
 
-// ─── Bipartite alignment (used for Steno) ────────────────────────────────────
-// Pass 1 matches exact normalized forms; Pass 1b matches accepted alternate
-// forms (contractions/titles/spelling variations — never an error, per the
-// "Accepted Alternate Forms" exam guideline); Pass 2 matches spelling
-// variants (half mistake). Order-independent — a correctly heard word is
-// credited even if written in a different position.
-function bipartiteAlign(refNorm, typedNorm) {
-  const R = refNorm.length;
-  const T = typedNorm.length;
-  const usedTyped  = new Set();
-  const matchedRef = new Array(R).fill(-1);
-  const isSpell    = new Array(R).fill(false);
-  const isAltForm  = new Array(R).fill(false);
-
-  // Pass 1: exact normalized match
-  for (let ri = 0; ri < R; ri++) {
-    for (let ti = 0; ti < T; ti++) {
-      if (!usedTyped.has(ti) && typedNorm[ti] === refNorm[ri]) {
-        matchedRef[ri] = ti; usedTyped.add(ti); break;
-      }
-    }
-  }
-  // Pass 1b: accepted alternate forms — must run before Pass 2 so a
-  // legitimate alternate spelling isn't instead flagged as a fuzzy spelling
-  // mistake.
-  matchContractions(refNorm, typedNorm, matchedRef, isAltForm, usedTyped);
-  matchAlternateForms(refNorm, typedNorm, matchedRef, isAltForm, usedTyped);
-
-  // Pass 2: spelling match for still-unmatched reference words (PDF 2a)
-  for (let ri = 0; ri < R; ri++) {
-    if (matchedRef[ri] !== -1) continue;
-    for (let ti = 0; ti < T; ti++) {
-      if (!usedTyped.has(ti) && _isSpellingErr(refNorm[ri], typedNorm[ti])) {
-        matchedRef[ri] = ti; isSpell[ri] = true; usedTyped.add(ti); break;
-      }
-    }
-  }
-  return { matchedRef, isSpell, isAltForm, usedTyped };
-}
-
 // ─── StenoDiff ────────────────────────────────────────────────────────────────
 // `part` picks which block to render: 'compare' (side-by-side passages),
 // 'summary' (mistake counts + Error%) or 'tokens' (legend + marked words).
-const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMinutes = 10, passageFontFamily = undefined, part = 'tokens' }) => {
+const StenoDiff = ({ typed = '', reference = '', pattern = null, passageFontFamily = undefined, part = 'tokens' }) => {
   const typedWords = tokenizeResult(typed);
   const refWords   = tokenizeResult(reference);
   const typedNorm  = typedWords.map(normalizeWordResult);
@@ -598,9 +535,9 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
   const halfErrCount   = rawHalf;
   const totalMistakes  = parseFloat((fullErrCount + halfErrCount * halfMultiplier).toFixed(2));
 
-  // PDF formula: Error % = (Full + Half/2) × 100 / masterPassageWords
-  // masterPassageWords = requiredSpeed × testDurationMinutes (per PDF table)
-  const masterWords   = pattern?.required_speed ? pattern.required_speed * testDurationMinutes : refWords.length;
+  // Error % = (Full + Half/2) × 100 / original passage words — the same figure as the
+  // result page's "% of Mistakes".
+  const masterWords   = refWords.length;
   const errorPercent  = masterWords > 0 ? parseFloat((totalMistakes / masterWords * 100).toFixed(2)) : 0;
 
   const styles = {
@@ -659,8 +596,7 @@ const StenoDiff = ({ typed = '', reference = '', pattern = null, testDurationMin
         <span>Case/Punct: <strong style={{color:'#92400e'}}>{counts.half || 0}</strong></span>
         <span>Accepted Alternate Forms: <strong style={{color:'#16a34a'}}>{counts.alt || 0}</strong></span>
         <span style={{marginLeft:'auto',fontStyle:'italic'}}>
-          Master passage words: {masterWords}
-          {pattern?.required_speed ? ` (${pattern.required_speed}wpm × ${testDurationMinutes}min)` : ' (ref length)'}
+          Original passage words: {masterWords}
         </span>
       </div>
     </div>
@@ -1287,14 +1223,6 @@ const ResultScreen = () => {
   const netAbbr   = 'NWPM';
   const speedUnit = 'wpm';
 
-  // Speed base in WORDS: stroke exams use keystrokes ÷ 5, word exams use the
-  // actual typed word count. (Variable kept named totalWords as it feeds every
-  // downstream net/gross calc.)
-  const totalWords = isStrokeMode
-    ? parseFloat((totalStrokes / 5).toFixed(2))
-    : actualTypedWordCount;
-  const grossSpeedCalculated = parseFloat((totalWords / timeMinutes).toFixed(2));
-
   const halfMistakeEnabled = pattern?.half_mistake_enabled ?? true;
   
   // Extract all visibility toggles
@@ -1361,73 +1289,63 @@ const ResultScreen = () => {
   const effectiveFullErrors = isStenoResult ? fullErrors : (_sp + _om + _addCount + repeatedWordCount);
   const effectiveHalfErrors = isStenoResult ? halfErrors : (_cap + _pct + extraSpaceCount);
 
-  // Total weighted mistakes. "Count Half Mistake" = Yes → half categories weigh 0.5
-  // each; No → each half category counts as 1 FULL mistake (multiplier 1). This single
-  // weighted figure drives the penalty so the on-screen result and the PDF stay
-  // consistent.
-  const halfMistakeMultiplier = halfMistakeEnabled ? 0.5 : 1;
-  const totalMistakes = parseFloat(
-    (effectiveFullErrors + effectiveHalfErrors * halfMistakeMultiplier).toFixed(2)
-  );
+  // ─── Score: the shared formula, driven entirely by the result pattern ─────────
+  const _correctWordCount = wordStatuses.filter((s) => s === 'correct').length;
+  const _correctStrokes = referenceWords.reduce((sum, w, i) => sum + (wordStatuses[i] === 'correct' ? String(w).length + 1 : 0), 0);
+  const score = scoreResult(isStenoResult ? {
+    pattern,
+    steno: true,
+    fullErrors: effectiveFullErrors,
+    halfErrors: effectiveHalfErrors,
+    totalStrokes,
+    typedWords: actualTypedWordCount,
+    correctWords: pattern?.correct_words ?? null,
+    correctStrokes: pattern?.correct_strokes ?? null,
+    timeElapsed,
+    originalWords: (referenceWords.length ? referenceWords : tokenizeResult(referenceText || '')).filter(Boolean).length,
+    transpositions: Number(pattern?.transpositions) || 0,
+    trailingOmissions: Number(pattern?.trailing_omissions) || 0,
+  } : {
+    pattern,
+    fullErrors: effectiveFullErrors,
+    halfErrors: effectiveHalfErrors,
+    totalStrokes,
+    typedWords: actualTypedWordCount,
+    correctWords: _correctWordCount,
+    correctStrokes: _correctStrokes,
+    timeElapsed,
+  });
 
-  const penaltyFactor = pattern?.penalty_value ?? 1;
-  const penaltyType   = pattern?.penalty_type ?? 'Word';
-
-  // ── Ignorable Mistakes rule ─────────────────────────────────────────────────
-  // When enabled: mistakes up to (ignorablePercent)% of the total words typed are
-  // ignored; every mistake BEYOND that allowance deducts (deductionPerMistake)
-  // words from net speed. Net words come off the TOTAL words typed, so the ignored
-  // mistakes do not affect the score at all. When disabled, the legacy penalty
-  // model (totalMistakes × penaltyFactor) applies.
-  const ignorableEnabled = pattern?.ignorable_mistakes_enabled ?? false;
-  const ignorablePercent = Math.max(0, Math.min(100, pattern?.ignorable_mistakes_percent ?? 0));
-  const deductionPerMistake = pattern?.ignorable_penalty_words_per_mistake ?? 10;
-  const ignorableAllowance = ignorableEnabled
-    ? parseFloat((totalWords * (ignorablePercent / 100)).toFixed(2))
-    : 0;
-  const excessMistakes = ignorableEnabled
-    ? parseFloat(Math.max(0, totalMistakes - ignorableAllowance).toFixed(2))
-    : 0;
-
-  // Net & Gross Speed are always reported in WORDS, so the penalty must also be
-  // expressed in WORDS before it is subtracted — both operands of the net-words
-  // calc have to share the same unit. A stroke-denominated penalty is therefore
-  // ALWAYS converted to words ÷5 (5 strokes = 1 word), regardless of whether the
-  // exam itself counts speed in strokes or words. A word-denominated penalty is
-  // already in words and is used directly.
+  const totalWords = score.totalWords;
+  const grossSpeedCalculated = score.gwpm;
+  const halfMistakeMultiplier = score.halfWeight;
+  const totalMistakes = score.totalMistakes;
+  const penaltyFactor = score.penaltyFactor;
+  const penaltyType   = score.penaltyType;
+  const ignorableEnabled = score.ignorableEnabled;
+  const ignorablePercent = score.ignorablePercent;
+  const deductionPerMistake = score.deductionPerMistake;
+  const ignorableAllowance = score.ignorableAllowance;
+  const excessMistakes = score.excessMistakes;
   const penaltyDiv5 = penaltyType === 'Stroke';
-  const penaltyConverted = penaltyDiv5
-    ? totalMistakes * penaltyFactor / 5
-    : totalMistakes * penaltyFactor;
-
-  const penaltyWords = parseFloat(
-    (ignorableEnabled
-      ? excessMistakes * deductionPerMistake
-      : penaltyConverted
-    ).toFixed(2)
-  );
-
-  const netWordsCalculated = parseFloat(Math.max(0, totalWords - penaltyWords).toFixed(2));
-  const netSpeedCalculated = parseFloat(Math.max(0, netWordsCalculated / timeMinutes).toFixed(2));
+  const penaltyWords = score.penaltyWords;
+  const netWordsCalculated = score.netWords;
+  const netSpeedCalculated = score.nwpm;
   const correctWordsCalculated = parseFloat(Math.max(0, totalWords - totalMistakes).toFixed(2));
-  // Accuracy = (NWPM / GWPM) × 100  per standard typing test formula (PDF rule)
-  const accuracyCalculated = grossSpeedCalculated > 0
-    ? parseFloat(Math.max(0, Math.min(100, (netSpeedCalculated / grossSpeedCalculated) * 100)).toFixed(2))
-    : 0;
+  const accuracyCalculated = score.accuracy;
+  const stenoScore = score.percentBased ? score : null;
 
-  const qualifyOn     = pattern?.qualify_on ?? 'NWPM';
-  const requiredSpeed = pattern?.required_speed ?? 30;
-  const requiredAcc   = pattern?.required_accuracy ?? 95;
+  const qualifyOn     = score.qualifyOn;
+  const requiredSpeed = score.requiredSpeed;
+  const requiredAcc   = score.requiredAccuracy;
   const speedToCheck  = qualifyOn === 'GWPM' ? grossSpeedCalculated : netSpeedCalculated;
 
   // Value shown in the "Ignorable Mistake (%)" row — the configured percentage of
   // mistakes that was forgiven for this attempt (0 when the feature is disabled).
   const ignorableMistakePercent = ignorableEnabled ? ignorablePercent : 0;
 
-  // Qualification uses the (already forgiveness-adjusted) speed and accuracy, since
-  // the ignored mistakes have lowered the penalty and raised the accuracy above.
-  const isQualified = speedToCheck >= requiredSpeed
-    && accuracyCalculated >= requiredAcc;
+  const displayAccuracy = score.accuracy;
+  const isQualified = score.qualified;
   const testDurationMinutes = location.state?.testDurationMinutes || Math.floor(timeElapsed / 60) || 10;
   const backspaceControl = location.state?.backspaceControl || 'Full Backspace';
 
@@ -1545,7 +1463,7 @@ const ResultScreen = () => {
     const parts = [
       showGrossSpeed && `Gross ${grossSpeedCalculated} WPM`,
       showNetSpeed && `Net ${netSpeedCalculated} WPM`,
-      showAccuracy && `Accuracy ${accuracyCalculated}%`,
+      showAccuracy && `Accuracy ${displayAccuracy}%`,
       isQualified ? 'Qualified' : 'Not Qualified',
     ].filter(Boolean);
     const text = `${username} — ${exam_name || 'Practice Test'}${chapter_no ? ` (Test #${chapter_no})` : ''}: ${parts.join(' · ')}`;
@@ -1570,8 +1488,8 @@ const ResultScreen = () => {
   const speedGap = fmtNum(speedToCheck - requiredSpeed);
 
   const penaltyRows = isStenoResult ? [
-    { label: 'Full Mistakes', count: effectiveFullErrors, weight: 1 },
-    { label: 'Half Mistakes', count: effectiveHalfErrors, weight: halfMistakeMultiplier },
+    { label: 'Full Mistakes', count: score.fullErrors, weight: 1 },
+    { label: 'Half Mistakes', count: score.halfErrors, weight: halfMistakeMultiplier },
   ] : [
     { label: 'Spelling / Wrong Word', count: _sp, weight: 1 },
     { label: 'Omission', count: _om, weight: 1 },
@@ -1615,8 +1533,8 @@ const ResultScreen = () => {
     userInput,
     referenceWords,
     wordStatuses,
-    fullErrors: effectiveFullErrors,
-    halfErrors: effectiveHalfErrors,
+    fullErrors: score.fullErrors,
+    halfErrors: score.halfErrors,
     totalStrokes,
     timeElapsed,
     testDurationMinutes,
@@ -1632,6 +1550,17 @@ const ResultScreen = () => {
     originalPassage: fullOriginalPassage,
     passageFontFamily,
   };
+
+  // Steno page: mistakes split for the tiles, same rules as the grader.
+  const stenoMarked = isStenoResult ? stenoMarkup(typedText, referenceText) : null;
+  const finishedAt = date_taken ? new Date(date_taken) : new Date();
+  const timeOf = (d) => d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
+  const openStenoAi = () => navigate('/ai-analysis', {
+    state: stenoAiState({
+      typed: typedText, reference: referenceText, metrics: stenoScore, exam: exam_name, mode, pattern, passageFontFamily,
+      minutes: parseFloat(timeMinutes.toFixed(2)),
+    }),
+  });
 
   return (
     <div className="result-layout">
@@ -1654,8 +1583,8 @@ const ResultScreen = () => {
           mode={mode}
           testDurationMinutes={testDurationMinutes}
           timeTakenStr={timeTakenStr}
-          fullErrors={effectiveFullErrors}
-          halfErrors={effectiveHalfErrors}
+          fullErrors={score.fullErrors}
+          halfErrors={score.halfErrors}
           totalMistakes={totalMistakes}
           halfMistakeEnabled={halfMistakeEnabled}
           ignorableEnabled={ignorableEnabled}
@@ -1675,7 +1604,7 @@ const ResultScreen = () => {
           totalWords={totalWords}
           grossSpeedCalculated={grossSpeedCalculated}
           netSpeedCalculated={netSpeedCalculated}
-          accuracy={accuracyCalculated}
+          accuracy={displayAccuracy}
           qualifyOn={qualifyOn}
           requiredSpeed={requiredSpeed}
           isQualified={isQualified}
@@ -1713,6 +1642,98 @@ const ResultScreen = () => {
           this block only lays them out. The pattern's show_* toggles still
           decide which figures appear. ══ */}
       <div className="sheet-container result-v2">
+      {isStenoResult ?
+        <StenoResultView
+          candidate={{
+            name: username,
+            userId: candidateUserId,
+            course: `Stenography (${language})`,
+            rollNo: !isStaffViewer && rollNo !== '—' ? rollNo : null,
+            photo: !isStaffViewer ? profileImageUrl : null,
+          }}
+          dictation={{
+            name: `${exam_name || 'Self Practice'}${chapter_no ? ` — Dictation No. ${chapter_no}` : ''}`,
+            topic: passageTopic(referenceText),
+            no: chapter_no,
+            language,
+          }}
+          test={{
+            type: testType || 'Practice Test',
+            date: finishedAt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+            start: timeOf(new Date(finishedAt.getTime() - timeElapsed * 1000)),
+            end: timeOf(finishedAt),
+            total: timeElapsed % 60 === 0 ? `${timeElapsed / 60} Min` : `${timeTakenStr} Min`,
+            pattern: patternName,
+          }}
+          verdict={{ qualified: isQualified, rank: rankInfo, requiredAccuracy: requiredAcc }}
+          tiles={{
+            originalWords: originalWordCount,
+            typedWords: actualTypedWordCount,
+            full: score.fullErrors,
+            half: Math.max(0, score.halfErrors - stenoMarked.counts.punctuation),
+            punctuation: stenoMarked.counts.punctuation,
+            transposition: pattern?.transpositions ?? stenoMarked.counts.transposition,
+            transpositionRule: pattern?.transposition_mistake || 'none',
+            mistakePercent: stenoScore.mistakePercent ?? 0,
+            accuracy: displayAccuracy,
+            strokes: totalStrokes,
+            speed: grossSpeedCalculated,
+            showWords: showTotalWords,
+            showFull: showFullMistakes,
+            showHalf: showHalfMistakes,
+            showAccuracy,
+            showStrokes: showTotalStrokes,
+            showSpeed: showGrossSpeed,
+          }}
+          markup={stenoMarked}
+          typedText={typedText}
+          plainText={plainText}
+          setPlainText={setPlainText}
+          passageFontFamily={passageFontFamily}
+          listLabel="Steno"
+          listTo={isStaffViewer ? location.state?.returnTo || '/admin/results' : `/test-analysis/${language === 'Hindi' ? 'hindi' : 'eng'}-steno`}
+          onDownload={handlePrint}
+          onPrint={handlePrint}
+          onReattempt={reattemptTo ? () => navigate(reattemptTo) : null}
+          actionArea={<>
+            <Panel className="mb-4">
+              <div className="flex flex-wrap gap-2.5">
+                <ActionButton icon={ArrowLeftIcon} tone="border-emerald-300 text-emerald-700" onClick={handleBackToList}>Back to Result List</ActionButton>
+                <ActionButton icon={SearchCheckIcon} tone="border-rose-300 text-rose-600" active={activeView === 'mistakes'} onClick={() => toggleView('mistakes')}>Click to Check Mistake</ActionButton>
+                <ActionButton icon={GitCompareIcon} tone="border-primary text-primary" active={activeView === 'compare'} onClick={() => toggleView('compare')}>Click to Compare Passage</ActionButton>
+                <ActionButton icon={SparklesIcon} tone="border-teal-300 text-teal-700" onClick={openStenoAi}>Deep Analysis</ActionButton>
+                <ActionButton icon={TrophyIcon} tone="border-violet-300 text-violet-700" onClick={() => navigate(leaderboardTo)}>View Leaderboard</ActionButton>
+                {reattemptTo &&
+                  <ActionButton icon={RotateCcwIcon} tone="border-amber-300 text-amber-700" onClick={() => navigate(reattemptTo)}>Re-Attempt Test</ActionButton>
+                }
+                <ActionButton icon={DownloadIcon} tone="border-primary text-primary" onClick={handlePrint}>Download Result (PDF)</ActionButton>
+                <ActionButton icon={PrinterIcon} tone="border-slate-300 text-slate-600" onClick={handlePrint}>Print Result</ActionButton>
+                <ActionButton icon={Share2Icon} tone="border-slate-300 text-slate-600" onClick={handleShare}>Share Result</ActionButton>
+              </div>
+              <p className="mt-3 rounded bg-slate-50 px-3 py-2 text-[11.5px] text-slate-500">
+                Note: Steno results are decided on the percentage: {`% of Mistakes = (Full + Half × ${halfMistakeMultiplier}) ÷ Original Words × 100`}, Accuracy = 100 − % of Mistakes.
+              </p>
+            </Panel>
+            {activeView &&
+              <section ref={viewPanelRef} className="scroll-mt-4 overflow-auto rounded-xl border border-slate-200 bg-white shadow-card">
+                <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
+                  <h3 className="font-display text-[14px] font-semibold text-navy-800">{activeView === 'mistakes' ? 'Mistake Analysis' : 'Compare Passage'}</h3>
+                  <span className="ml-auto flex items-center gap-2">
+                    <button type="button" onClick={handleFullScreen} className="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-[11.5px] font-medium text-slate-600 hover:bg-slate-50">
+                      <MaximizeIcon className="h-3.5 w-3.5" aria-hidden="true" /> Full Screen
+                    </button>
+                    <button type="button" onClick={() => setActiveView(null)} aria-label="Close" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                      <XIcon className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </span>
+                </div>
+                <div className="pa-panel">
+                  <StenoDiff typed={typedText} reference={referenceText} pattern={pattern} passageFontFamily={passageFontFamily} part={activeView === 'compare' ? 'compare' : 'summary'} />
+                </div>
+              </section>
+            }
+          </>} /> :
+      <>
 
         {/* ── Page heading + actions ─────────────────────── */}
         <div className="nd no-print mb-4 flex flex-wrap items-start justify-between gap-4">
@@ -1864,8 +1885,8 @@ const ResultScreen = () => {
               <ul className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2">
                 {[
                   showCorrectWords && { label: 'Correct Words', value: actualCorrectWordCount, icon: CheckCircle2Icon, color: '#198754' },
-                  showFullMistakes && { label: 'Full Mistakes', value: effectiveFullErrors, icon: XCircleIcon, color: '#DC3545' },
-                  showHalfMistakes && { label: 'Half Mistakes', value: effectiveHalfErrors, icon: MinusCircleIcon, color: '#F59E0B', sub: `counted as ${halfMistakeMultiplier} each` },
+                  showFullMistakes && { label: 'Full Mistakes', value: score.fullErrors, icon: XCircleIcon, color: '#DC3545' },
+                  showHalfMistakes && { label: 'Half Mistakes', value: score.halfErrors, icon: MinusCircleIcon, color: '#F59E0B', sub: `counted as ${halfMistakeMultiplier} each` },
                   ...(isStenoResult ? [] : [
                     { label: 'Spelling / Wrong Words', value: _sp, icon: AlertTriangleIcon, color: '#EC4899' },
                     { label: 'Omitted Words', value: _om, icon: MinusCircleIcon, color: '#F59E0B' },
@@ -1887,7 +1908,7 @@ const ResultScreen = () => {
                     <SummaryRow
                       label="Total Mistakes"
                       value={totalMistakes}
-                      formula={`[${effectiveFullErrors} + (${effectiveHalfErrors} × ${halfMistakeMultiplier}) = ${totalMistakes}]${ignorableEnabled ? `  ·  Allowance ${ignorablePercent}% of ${totalWords} = ${ignorableAllowance} ignored, ${excessMistakes} excess` : ''}`} />
+                      formula={`[${score.fullErrors} + (${score.halfErrors} × ${halfMistakeMultiplier}) = ${totalMistakes}]${ignorableEnabled ? `  ·  Allowance ${ignorablePercent}% of ${totalWords} = ${ignorableAllowance} ignored, ${excessMistakes} excess` : ''}`} />
                   }
                   {showPenaltyWords &&
                     <SummaryRow
@@ -1911,7 +1932,7 @@ const ResultScreen = () => {
                     <SummaryRow
                       label={`Total ${unitLabel} Typed`}
                       value={totalWords}
-                      formula={isStrokeMode ? `[${totalStrokes} keystrokes ÷ 5]` : `[${actualTypedWordCount} actual words typed]`} />
+                      formula={pattern?.count_right_words_only ? `[only correctly typed words${isStrokeMode ? ', their keystrokes ÷ 5' : ''}]` : isStrokeMode ? `[${totalStrokes} keystrokes ÷ 5]` : `[${actualTypedWordCount} actual words typed]`} />
                   }
                   {showGrossSpeed &&
                     <SummaryRow
@@ -2182,6 +2203,7 @@ const ResultScreen = () => {
             </Panel>
           </aside>
         </div>
+      </>}
 
         {notice &&
           <div role="status" className="nd no-print fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-navy-800 px-4 py-2 text-[12.5px] font-medium text-white shadow-panel">

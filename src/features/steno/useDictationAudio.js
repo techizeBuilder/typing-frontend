@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { API_BASE_URL } from '../../config';
+import { chapterAudioUrl } from '../exams/examData';
 
 const base64ToBlob = (base64, mime) => {
   const binary = atob(base64);
@@ -18,7 +18,7 @@ export function useDictationAudio(chapterId) {
     if (!chapterId) return undefined;
     let cancelled = false;
     let blobUrl = null;
-    const serverUrl = `${API_BASE_URL}/chapters/${chapterId}/audio`;
+    const serverUrl = chapterAudioUrl(chapterId);
     (async () => {
       let url = navigator.onLine ? serverUrl : null;
       try {

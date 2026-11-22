@@ -14,5 +14,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-  }
+  },
+  // Unit tests (npm test). test/repeatDetection.test.mjs is a plain Node script.
+  test: {
+    include: ['src/**/*.test.{js,jsx}'],
+  },
 })

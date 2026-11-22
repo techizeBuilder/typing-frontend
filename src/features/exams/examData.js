@@ -43,6 +43,17 @@ export const examMatchesMode = (exam, mode) => {
   return groups.length === 0 || groups.includes(mode);
 };
 
+// "English / Hindi" from the font groups the exam is offered in.
+export const getExamLanguages = (exam) => {
+  const groups = Array.isArray(exam?.font_groups) && exam.font_groups.length > 0
+    ? exam.font_groups
+    : (exam?.font_group ? [exam.font_group] : []);
+  const list = [];
+  if (groups.some((g) => /english/i.test(g))) list.push('English');
+  if (groups.some((g) => /hindi/i.test(g))) list.push('Hindi');
+  return list.join(' / ') || 'English';
+};
+
 // A chapter belongs to an exam via exam_id or the multi-exam exam_ids list
 // (same rule the backend applies for ?examId=).
 export const chapterInExam = (chapter, examId) =>
@@ -61,6 +72,41 @@ export const sortByChapterNo = (a, b) =>
 export const wordCountFor = (chapter) => {
   if (chapter?.word_count != null && chapter.word_count !== '') return chapter.word_count;
   return (chapter?.content_text || '').trim().split(/\s+/).filter(Boolean).length;
+};
+
+// A dictation's topic is the opening words of its uploaded text.
+export const passageTopic = (text, words = 5) => {
+  const all = String(text || '').trim().split(/\s+/).filter(Boolean);
+  return all.slice(0, words).join(' ') + (all.length > words ? '…' : '');
+};
+
+// Difficulty of a dictation out of 10, worked out from its text: longer words, more
+// long words and denser punctuation score higher. Devanagari counts matras as
+// characters, so Hindi word lengths are scaled down. Display only.
+export const dictationDifficulty = (chapter) => {
+  const words = String(chapter?.content_text || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return null;
+  const lengthScale = /hindi/i.test(chapter?.font_group || '') ? 0.65 : 1;
+  const lengths = words.map((w) => w.replace(/[^\p{L}\p{N}\p{M}]/gu, '').length * lengthScale);
+  const avg = lengths.reduce((a, b) => a + b, 0) / words.length;
+  const longShare = lengths.filter((l) => l >= 8).length / words.length;
+  const punctuationPer100 = (words.filter((w) => /[^\p{L}\p{N}\p{M}]/u.test(w)).length / words.length) * 100;
+  const score = 1.5 + (avg - 3) * 1.2 + longShare * 8 + punctuationPer100 * 0.1;
+  return Math.round(Math.max(1, Math.min(10, score)) * 10) / 10;
+};
+
+// Dictation-list filter. The admin's difficulty wins; otherwise the score decides.
+export const DICTATION_LEVELS = [
+  { id: 'easy', label: 'Easiest Dictations', admin: 'Easy', below: 4.5 },
+  { id: 'medium', label: 'Medium Dictations', admin: 'Moderate', below: 5.5 },
+  { id: 'hard', label: 'Hard Dictations', admin: 'Hard', below: 7 },
+  { id: 'pro', label: 'Pro Level Dictations', below: Infinity },
+];
+export const dictationLevel = (chapter) => {
+  const byAdmin = DICTATION_LEVELS.find((l) => l.admin && l.admin === chapter?.difficulty);
+  if (byAdmin) return byAdmin.id;
+  const score = dictationDifficulty(chapter);
+  return score === null ? null : DICTATION_LEVELS.find((l) => score < l.below).id;
 };
 
 // Optional admin-set test difficulty (chapters.difficulty).
@@ -84,6 +130,14 @@ export const examInitials = (name) =>
     .slice(0, 3)
     .map((w) => w[0].toUpperCase())
     .join('') || 'EX';
+
+// Dictation audio URL for an <audio> element, which cannot send the login header,
+// so the token travels as ?access_token= (the API accepts it on this route only).
+export const chapterAudioUrl = (chapterId) => {
+  let token = null;
+  try { token = localStorage.getItem('token'); } catch { /* storage unavailable */ }
+  return `${API_BASE_URL}/chapters/${chapterId}/audio${token ? `?access_token=${encodeURIComponent(token)}` : ''}`;
+};
 
 // ─── Offline storage ──────────────────────────────────────────────────────────
 // Offline entries are keyed by exam + API mode + test type.

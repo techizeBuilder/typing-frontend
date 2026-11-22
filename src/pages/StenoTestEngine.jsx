@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { resultService, settingService } from '../services/api';
+import { resultService } from '../services/api';
 import { API_BASE_URL } from '../config';
 import { fontFamilyForHindiType, fontGroupForHindiType } from '../utils/hindiFonts';
 import { matchContractions, matchAlternateForms } from '../utils/stenoAlternateForms';
 import PracticeExam from '../features/steno/ExamScreens';
-import { findInterface } from '../features/steno/stenoPractice';
+import { findInterface, isSeen } from '../features/steno/stenoPractice';
+import { brandCss, brandHtml, useInstituteBrand } from '../features/exams/passagePdf';
+import { scoreResult } from '../utils/scoring';
+import { chapterAudioUrl } from '../features/exams/examData';
+import { stenoMarkup } from '../features/results/stenoAlign';
 import './StenoTestEngine.css';
 import { timingOf } from '../features/results/resultTiming';
 
@@ -31,13 +35,6 @@ const _isSpellingErr = (r, t) => {
 const _isAllCaps = (w) => { const l = w.replace(/[^a-zA-Z]/g, ''); return l.length > 1 && l === l.toUpperCase(); };
 
 // Strip trailing /api so relative /uploads/... paths can be prepended with the host.
-const resolveAssetUrl = (url) => {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  const assetsBase = API_BASE_URL.replace(/\/api\/?$/, '');
-  return url.startsWith('/') ? `${assetsBase}${url}` : url;
-};
-
 // ─── Steno Test Engine ───────────────────────────────────────────────────────
 // Rules:
 //  1. On mount → show Audio Player Modal (Play / Pause / Skip / Close)
@@ -138,17 +135,8 @@ const StenoTestEngine = () => {
   // idle | downloading | saved | nofile | error
   const [audioDownloadStatus, setAudioDownloadStatus] = useState('idle');
 
-  // Institute branding (name + logo) stamped on the downloaded passage PDF. Fetched
-  // once, best-effort — if offline or unset, the passage still downloads without it.
-  const [instituteBrand, setInstituteBrand] = useState({ name: '', logoUrl: '' });
-  useEffect(() => {
-    settingService.getAll()
-      .then((all) => setInstituteBrand({
-        name: all?.institute_name || '',
-        logoUrl: all?.institute_logo_url || '',
-      }))
-      .catch(() => {/* offline or not configured — passage downloads without branding */});
-  }, []);
+  // Institute name, logo and watermark on the downloaded passage PDF.
+  const instituteBrand = useInstituteBrand();
   // Brief "processing result" screen shown for 2s after submit before the result.
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -195,7 +183,7 @@ const StenoTestEngine = () => {
 
   useEffect(() => {
     if (!chapter?.id) return;
-    const serverUrl = `${API_BASE_URL}/chapters/${chapter.id}/audio`;
+    const serverUrl = chapterAudioUrl(chapter.id);
 
     const resolveAudio = async () => {
       if (window.electronAPI?.hasAudio) {
@@ -324,32 +312,27 @@ const StenoTestEngine = () => {
     const passage = chapter?.content_text || '';
     const fontCss = stenoFontFamily ? `font-family: ${stenoFontFamily};` : '';
     const title = `${exam?.name || 'Steno Practice'} — Chapter ${chapter?.chapter_no ?? ''}`;
-    const instituteLogo = resolveAssetUrl(instituteBrand.logoUrl);
-    const brandHeader = (instituteBrand.name || instituteLogo)
-      ? `<div class="brand-header">
-           ${instituteLogo ? `<img src="${escapeHtml(instituteLogo)}" alt="" class="brand-logo" />` : ''}
-           ${instituteBrand.name ? `<span class="brand-name">${escapeHtml(instituteBrand.name)}</span>` : ''}
-         </div>`
-      : '';
+    const { header: brandHeader, watermark: brandWatermark } = brandHtml(instituteBrand);
     return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8" /><title>${escapeHtml(title)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #fff; color: #111; font-family: 'Times New Roman', Times, serif; padding: 32px 40px; }
   ${cssText}
-  .brand-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #ccc; }
-  .brand-logo { width: 44px; height: 44px; object-fit: contain; }
-  .brand-name { font-size: 18px; font-weight: 700; }
+  ${brandCss}
   h1 { font-size: 20px; margin-bottom: 4px; }
   .meta { color: #555; font-size: 13px; margin-bottom: 18px; }
   .passage { ${fontCss} white-space: pre-wrap; font-size: 18px; line-height: 1.9; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 </style></head>
 <body>
+  ${brandWatermark}
   ${brandHeader}
-  <h1>${escapeHtml(title)}</h1>
-  <div class="meta">Dictation Passage${mode ? ` · ${escapeHtml(mode)}` : ''}</div>
-  <div class="passage">${escapeHtml(passage)}</div>
+  <div class="brand-content">
+    <h1>${escapeHtml(title)}</h1>
+    <div class="meta">Dictation Passage${mode ? ` · ${escapeHtml(mode)}` : ''}</div>
+    <div class="passage">${escapeHtml(passage)}</div>
+  </div>
 </body></html>`;
   };
 
@@ -432,19 +415,10 @@ const StenoTestEngine = () => {
   // ─── Live WPM (based on strokes) ────────────────────────────────────────────
   useEffect(() => {
     if (timeElapsed > 0) {
-      const minutes         = timeElapsed / 60;
-      const totalWordsTyped = totalStrokes / 5;
-      const gwpm            = Math.round(totalWordsTyped / minutes);
-      const penaltyFactor   = pattern?.penalty_value || 1;
-      // "Count Half Mistake" = Yes → 0.5 each; No → each counts as 1 full mistake.
-      const totalMistakes   = fullErrors + halfErrors * ((pattern?.half_mistake_enabled ?? true) ? 0.5 : 1);
-      // Net speed is in WORDS, so the penalty must be in WORDS. A stroke-denominated
-      // penalty is converted ÷5 (5 strokes = 1 word); a word-denominated one is used as-is.
-      const penaltyWords    = (pattern?.penalty_type === 'Stroke' ? totalMistakes / 5 : totalMistakes) * penaltyFactor;
-      const nwpm            = Math.max(0, Math.round((totalWordsTyped - penaltyWords) / minutes));
-      const accuracy        = totalStrokes > 0
-        ? Math.round(((totalWordsTyped - totalMistakes) / totalWordsTyped) * 100)
-        : 100;
+      // Same formula as the result, on the counts known so far.
+      const live = scoreResult({ pattern, fullErrors, halfErrors, totalStrokes, typedWords: typedText.trim().split(/\s+/).filter(Boolean).length, timeElapsed });
+      const gwpm = Math.round(live.gwpm), nwpm = Math.round(live.nwpm);
+      const accuracy = totalStrokes > 0 ? Math.round(live.accuracy) : 100;
       setStats({ gwpm, nwpm, accuracy });
     }
   }, [timeElapsed, totalStrokes, fullErrors, halfErrors]);
@@ -562,41 +536,33 @@ const StenoTestEngine = () => {
 
     const finalStrokes    = typedText.length;
     const elapsed         = Math.max(timeElapsed, 1);
-    const minutes         = elapsed / 60;
-
-    // ── Pattern-driven speed calculation ──────────────────────────────────────
-    const speedCount      = pattern?.speed_count ?? 'Strokes';
-    const typedWordCount  = typedText.trim() ? typedText.trim().split(/\s+/).filter(Boolean).length : 0;
-    const totalWords      = speedCount === 'Words' ? typedWordCount : finalStrokes / 5;
-
-    // ── Pattern-driven penalty ─────────────────────────────────────────────────
-    const penaltyFactor   = pattern?.penalty_value ?? 1;
-    const penaltyType     = pattern?.penalty_type  ?? 'Word';
-    // "Count Half Mistake" = Yes → 0.5 each; No → each counts as 1 full mistake.
-    const totalMistakes   = full + half * ((pattern?.half_mistake_enabled ?? true) ? 0.5 : 1);
-    // Ignorable Mistakes rule: mistakes up to (pct)% of total words typed are free;
-    // each mistake beyond that allowance deducts (deductionPerMistake) words.
-    const ignorableEnabled = !!pattern?.ignorable_mistakes_enabled;
-    const ignorablePct     = ignorableEnabled
-      ? Math.max(0, Math.min(100, pattern?.ignorable_mistakes_percent ?? 0)) : 0;
-    const deductionPerMistake = pattern?.ignorable_penalty_words_per_mistake ?? 10;
-    const ignorableAllowance  = ignorableEnabled ? totalWords * (ignorablePct / 100) : 0;
-    const excessMistakes      = ignorableEnabled ? Math.max(0, totalMistakes - ignorableAllowance) : 0;
-    const penaltyWords    = ignorableEnabled
-      ? excessMistakes * deductionPerMistake
-      // Net speed is in WORDS, so the penalty must be in WORDS too.
-      // Stroke-denominated penalty → convert to words (1 word = 5 strokes).
-      : penaltyType === 'Stroke'
-        ? totalMistakes * penaltyFactor / 5
-        // Word-denominated penalty is already in words → use directly.
-        : totalMistakes * penaltyFactor;
-
-    const gwpm     = Math.round(totalWords / minutes);
-    const nwpm     = Math.max(0, Math.round((totalWords - penaltyWords) / minutes));
-    // Accuracy = NWPM / GWPM × 100  (standard formula)
-    const accuracy = gwpm > 0
-      ? Math.max(0, Math.min(100, Math.round((nwpm / gwpm) * 100)))
-      : 100;
+    // Facts the result pattern can act on (transposition / omission / right-words rules).
+    const marked = stenoMarkup(typedText, referenceText).counts;
+    const extras = {
+      transpositions: marked.transposition,
+      trailing_omissions: marked.trailingOmissions,
+      correct_words: marked.correct + marked.alt,
+      correct_strokes: marked.correctStrokes,
+    };
+    // The shared formula, driven by the exam's result pattern.
+    const score = scoreResult({
+      pattern,
+      steno: true,
+      fullErrors: full,
+      halfErrors: half,
+      totalStrokes: finalStrokes,
+      typedWords: typedText.trim() ? typedText.trim().split(/\s+/).filter(Boolean).length : 0,
+      correctWords: extras.correct_words,
+      correctStrokes: extras.correct_strokes,
+      timeElapsed: elapsed,
+      originalWords: referenceText.trim() ? referenceText.trim().split(/\s+/).length : 0,
+      transpositions: extras.transpositions,
+      trailingOmissions: extras.trailing_omissions,
+    });
+    const totalMistakes = score.totalMistakes;
+    const gwpm     = Math.round(score.gwpm);
+    const nwpm     = Math.round(score.nwpm);
+    const accuracy = Math.max(0, Math.min(100, score.accuracy));
 
     // ── Build pattern snapshot to pass to ResultScreen ────────────────────────
     const patternData = pattern ? {
@@ -623,8 +589,14 @@ const StenoTestEngine = () => {
       ignorable_mistakes_percent: pattern.ignorable_mistakes_percent ?? 0,
       ignorable_penalty_words_per_mistake: pattern.ignorable_penalty_words_per_mistake ?? 10,
       count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
+      count_right_words_only:   pattern.count_right_words_only ?? false,
+      transposition_mistake:    pattern.transposition_mistake || 'none',
       hindi_font_type:          hindiFontType,
-    } : { hindi_font_type: hindiFontType };
+      ...extras,
+    } : { hindi_font_type: hindiFontType, ...extras };
+    // Display only, for the result cards.
+    patternData.dictation_seen = isSeen(chapter?.id);
+    if (practice?.speed) patternData.dict_speed = practice.speed;
 
     const userId   = localStorage.getItem('userId');
     const finalData = {

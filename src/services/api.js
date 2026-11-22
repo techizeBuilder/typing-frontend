@@ -490,6 +490,8 @@ export const resultService = {
     const response = await api.get('/results/rank', { params: { chapterId, studentId } });
     return response.data;
   },
+  // Removes one steno attempt below 30% accuracy (rule enforced by the API).
+  deleteResult: async (id) => (await api.delete(`/results/${id}`)).data,
   // Deletes result rows older than `days` (default 10), keeping the most
   // recent window of data. Returns { deleted: number }.
   clearOldResults: async (days = 10) => {

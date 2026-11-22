@@ -181,6 +181,7 @@ export default function StenoPractice() {
         practice: {
           interfaceId: iface.id,
           minutes,
+          speed: activeSpeed,
           backspace,
           partial: Boolean(range),
           referenceText: range ? words.slice(range.start, range.end + 1).join(' ') : undefined,
