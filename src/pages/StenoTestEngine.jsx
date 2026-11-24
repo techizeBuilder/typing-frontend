@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { resultService } from '../services/api';
 import { API_BASE_URL } from '../config';
@@ -7,7 +7,8 @@ import { matchContractions, matchAlternateForms } from '../utils/stenoAlternateF
 import PracticeExam from '../features/steno/ExamScreens';
 import { findInterface, isSeen } from '../features/steno/stenoPractice';
 import { brandCss, brandHtml, useInstituteBrand } from '../features/exams/passagePdf';
-import { scoreResult } from '../utils/scoring';
+import { scoreResult, speedUnitOf } from '../utils/scoring';
+import { examForMode, patternSnapshot } from '../utils/examPattern';
 import { chapterAudioUrl } from '../features/exams/examData';
 import { stenoMarkup } from '../features/results/stenoAlign';
 import './StenoTestEngine.css';
@@ -47,7 +48,7 @@ const _isAllCaps = (w) => { const l = w.replace(/[^a-zA-Z]/g, ''); return l.leng
 const StenoTestEngine = () => {
   const navigate  = useNavigate();
   const location  = useLocation();
-  const { exam, chapter, mode, testType, practice, selfAudioUrl } = location.state || {};
+  const { exam: rawExam, chapter, mode, testType, practice, selfAudioUrl } = location.state || {};
 
   // Practice flow (new design): an exam-style interface picked on the practice
   // setup page. It only changes the screens; grading below is the same code.
@@ -55,6 +56,7 @@ const StenoTestEngine = () => {
   // Partial-length practice is graded against the selected words only.
   const practiceReference = practiceIface && practice.partial ? practice.referenceText : null;
 
+  const exam = useMemo(() => examForMode(rawExam, mode), [rawExam, mode]);
   const isStrictMode = !!exam;
   // Self assessment has no exam: the student picks the pattern (same as TestEngine).
   const pattern      = exam?.result_pattern || location.state?.resultPattern || null;
@@ -527,6 +529,16 @@ const StenoTestEngine = () => {
     return { fullErrors, halfErrors };
   }, []);
 
+  // Backspace presses while the test is running (shown on the result).
+  const backspaceCountRef = useRef(0);
+  useEffect(() => {
+    const count = (e) => {
+      if (isStartedRef.current && (e.key === 'Backspace' || (e.key === 'Process' && e.code === 'Backspace'))) backspaceCountRef.current += 1;
+    };
+    document.addEventListener('keydown', count, true);
+    return () => document.removeEventListener('keydown', count, true);
+  }, []);
+
   // ─── Finish / Submit ─────────────────────────────────────────────────────
   const handleFinish = useCallback(async () => {
     if (!isStartedRef.current) { navigate('/dashboard'); return; }
@@ -543,6 +555,10 @@ const StenoTestEngine = () => {
       trailing_omissions: marked.trailingOmissions,
       correct_words: marked.correct + marked.alt,
       correct_strokes: marked.correctStrokes,
+      omitted_words: marked.omission,
+      added_words: marked.addition,
+      punctuation_mistakes: marked.punctuation,
+      backspace_count: backspaceCountRef.current,
     };
     // The shared formula, driven by the exam's result pattern.
     const score = scoreResult({
@@ -558,6 +574,9 @@ const StenoTestEngine = () => {
       originalWords: referenceText.trim() ? referenceText.trim().split(/\s+/).length : 0,
       transpositions: extras.transpositions,
       trailingOmissions: extras.trailing_omissions,
+      missingWords: extras.omitted_words,
+      extraWords: extras.added_words,
+      punctuation: extras.punctuation_mistakes,
     });
     const totalMistakes = score.totalMistakes;
     const gwpm     = Math.round(score.gwpm);
@@ -565,35 +584,7 @@ const StenoTestEngine = () => {
     const accuracy = Math.max(0, Math.min(100, score.accuracy));
 
     // ── Build pattern snapshot to pass to ResultScreen ────────────────────────
-    const patternData = pattern ? {
-      name:                     pattern.name || null,
-      half_mistake_enabled:     pattern.half_mistake_enabled,
-      penalty_type:             pattern.penalty_type,
-      penalty_value:            pattern.penalty_value,
-      speed_count:              pattern.speed_count,
-      qualify_on:               pattern.qualify_on,
-      required_speed:           pattern.required_speed,
-      required_accuracy:        pattern.required_accuracy,
-      show_half_mistakes:       pattern.show_half_mistakes,
-      show_full_mistakes:       pattern.show_full_mistakes,
-      show_total_strokes:       pattern.show_total_strokes,
-      show_total_words:         pattern.show_total_words,
-      show_total_errors:        pattern.show_total_errors,
-      show_correct_words:       pattern.show_correct_words,
-      show_gross_speed:         pattern.show_gross_speed,
-      show_net_speed:           pattern.show_net_speed,
-      show_accuracy:            pattern.show_accuracy,
-      show_penalty_words:       pattern.show_penalty_words,
-      show_ignorable_mistakes:  pattern.show_ignorable_mistakes,
-      ignorable_mistakes_enabled: pattern.ignorable_mistakes_enabled ?? false,
-      ignorable_mistakes_percent: pattern.ignorable_mistakes_percent ?? 0,
-      ignorable_penalty_words_per_mistake: pattern.ignorable_penalty_words_per_mistake ?? 10,
-      count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
-      count_right_words_only:   pattern.count_right_words_only ?? false,
-      transposition_mistake:    pattern.transposition_mistake || 'none',
-      hindi_font_type:          hindiFontType,
-      ...extras,
-    } : { hindi_font_type: hindiFontType, ...extras };
+    const patternData = { ...patternSnapshot(pattern), hindi_font_type: hindiFontType, ...extras };
     // Display only, for the result cards.
     patternData.dictation_seen = isSeen(chapter?.id);
     if (practice?.speed) patternData.dict_speed = practice.speed;
@@ -990,7 +981,7 @@ const StenoTestEngine = () => {
             </div>
             <div className="steno-protocol-item">
               <span>Target Speed</span>
-              <strong>{pattern?.required_speed || 80} WPM</strong>
+              <strong>{pattern?.required_speed || 80} {speedUnitOf(pattern)}</strong>
             </div>
             <div className="steno-protocol-item">
               <span>Half Mistakes</span>

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2Icon, EyeIcon, InfoIcon, MonitorIcon, RotateCcwIcon, SaveIcon, Volume2Icon } from 'lucide-react';
-import { settingService } from '../../services/api';
+import { examService, settingService } from '../../services/api';
+import { Link } from 'react-router-dom';
 import { PageHeading } from '../../ui/PageHeading';
 import { LoadingState } from '../../features/exams/ExamUI';
 import { resolveAssetUrl } from '../../features/exams/examData';
 import InstituteScreen from '../../features/screenLayout/InstituteScreen';
+import { getExamFontGroups, screenLabel, setExamScreen } from '../../features/exams/adminExamData';
 import { DEFAULT_LAYOUT, HEIGHT_LIMITS, LAYOUT_POSITIONS, mergeLayout, playKeyClick, setScreenLayout } from '../../features/screenLayout/screenLayout';
 
 const card = 'rounded-xl border border-slate-200 bg-white p-4 shadow-card';
@@ -63,6 +65,44 @@ function PositionPicker({ value, onChange, label }) {
         })}
       </ul>
     </div>
+  );
+}
+
+// Where the layout appears: the typing exams whose Screen Layout is Screen 7.
+function LayoutExams() {
+  const [exams, setExams] = useState(null);
+  const [pick, setPick] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const load = () => examService.getExams().then((d) => setExams(Array.isArray(d) ? d : [])).catch(() => setMsg('Could not load the exams.'));
+  useEffect(() => { load(); }, []);
+  const typing = (exams || []).filter((e) => getExamFontGroups(e).some((g) => !g.includes('Steno')));
+  const using = typing.filter((e) => e.screen_type === 'Screen 7');
+  const others = typing.filter((e) => e.screen_type !== 'Screen 7');
+  const apply = async () => {
+    const exam = others.find((e) => e.id === pick);
+    if (!exam) return;
+    setBusy(true); setMsg('');
+    try { await setExamScreen(exam, 'Screen 7'); setPick(''); await load(); setMsg(`${exam.name} now uses this layout.`); }
+    catch (err) { setMsg(errorMessage(err, 'Could not update the exam.')); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className={`${card} mb-4`}>
+      <h3 className="text-[12.5px] font-bold text-navy-800">Where this layout appears</h3>
+      <p className="mb-2.5 text-[11.5px] text-slate-500">Students see it on the typing screen of every exam whose Screen Layout is “Screen 7 (Institute Layout)”. Choose it here, or on the exam’s own page.</p>
+      {exams && (using.length
+        ? <ul className="mb-3 flex flex-wrap gap-2">{using.map((e) => <li key={e.id}><Link to={`/admin/exams/${e.id}/edit`} className="rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-700 hover:underline">{e.name}</Link></li>)}</ul>
+        : <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-[12px] text-amber-800">No exam uses this layout yet, so students do not see it anywhere.</p>)}
+      <div className="flex flex-wrap items-center gap-2">
+        <select aria-label="Exam to use this layout" value={pick} onChange={(e) => setPick(e.target.value)} className={`${inputCls} max-w-[340px]`}>
+          <option value="">Use this layout in another exam…</option>
+          {others.map((e) => <option key={e.id} value={e.id}>{e.name} (now {screenLabel(e.screen_type)})</option>)}
+        </select>
+        <button type="button" onClick={apply} disabled={!pick || busy} className="rounded-md bg-primary px-4 py-2 text-[12px] font-semibold text-white hover:bg-primary-700 disabled:opacity-60">{busy ? 'Applying…' : 'Apply'}</button>
+        {msg && <span role="status" className="text-[12px] text-slate-600">{msg}</span>}
+      </div>
+    </section>
   );
 }
 
@@ -128,6 +168,8 @@ export default function AdminScreenLayout() {
         <p role={status.kind === 'error' ? 'alert' : 'status'} className={`mb-4 rounded-lg border px-3 py-2 text-[12.5px] ${status.kind === 'error' ? 'border-rose-200 bg-rose-50 text-danger' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{status.text}</p>
       }
 
+      <LayoutExams />
+
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
         {[
           ['topHeaderTitle', '1. Top Header Title', 'Shown in the top header. Empty = your institute name.', branding.name || 'Typing Examination', 100],
@@ -188,14 +230,18 @@ export default function AdminScreenLayout() {
             <Checks options={CANDIDATE_OPTIONS} values={layout.candidate} onChange={(candidate) => set({ candidate })} />
           </section>
           <section className={card}>
-            <h3 className="mb-2.5 text-[12.5px] font-bold text-navy-800">Panel Heights</h3>
+            <h3 className="mb-2.5 text-[12.5px] font-bold text-navy-800">Panel Heights <span className="font-normal text-slate-500">(10pt to 250pt)</span></h3>
             {[['header', 'Header Height'], ['passage', 'Passage Height'], ['typing', 'Typing Box Height']].map(([key, label], i) => (
               <label key={key} className="mb-3 block">
                 <span className={labelCls}>{i + 1}. {label}</span>
-                <span className="flex items-center gap-3">
+                <span className="flex items-center gap-2">
                   <input type="range" min={HEIGHT_LIMITS[key][0]} max={HEIGHT_LIMITS[key][1]} value={layout.heights[key]} aria-label={label}
                     onChange={(e) => set({ heights: { ...layout.heights, [key]: Number(e.target.value) } })} className="flex-1 accent-primary" />
-                  <span className="w-14 text-right text-[12px] font-semibold text-navy-800">{layout.heights[key]}px</span>
+                  <input type="number" min={HEIGHT_LIMITS[key][0]} max={HEIGHT_LIMITS[key][1]} key={layout.heights[key]} defaultValue={layout.heights[key]} aria-label={`${label} in points`}
+                    onBlur={(e) => { const n = Math.round(Number(e.target.value)); const v = Number.isFinite(n) && e.target.value !== '' ? Math.max(HEIGHT_LIMITS[key][0], Math.min(HEIGHT_LIMITS[key][1], n)) : layout.heights[key]; e.target.value = v; if (v !== layout.heights[key]) set({ heights: { ...layout.heights, [key]: v } }); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                    className="w-[64px] rounded-md border border-slate-300 px-2 py-1 text-right text-[12px] font-semibold text-navy-800" />
+                  <span className="text-[12px] text-slate-500">pt</span>
                 </span>
               </label>
             ))}

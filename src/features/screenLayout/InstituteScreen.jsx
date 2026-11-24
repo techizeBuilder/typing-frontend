@@ -109,12 +109,12 @@ export default function InstituteScreen({
 
   return (
     <div className={`nd flex flex-col ${preview ? '' : 'min-h-screen'}`} style={{ background: c.bodyBg }}>
-      <header className="flex items-center gap-3 px-4" style={{ minHeight: layout.heights.header, background: c.headerBg, color: c.headerText }}>
+      <header className="flex items-center gap-3 px-4" style={{ height: `${layout.heights.header}pt`, overflow: 'hidden', background: c.headerBg, color: c.headerText }}>
         {layout.header.logo && logoSrc &&
-          <img src={logoSrc} alt="" className="h-10 w-10 shrink-0 rounded-full bg-white object-contain p-[2px]" />}
+          <img src={logoSrc} alt="" className="h-10 w-10 shrink-0 rounded-full bg-white object-contain p-[2px]" style={{ maxHeight: `${layout.heights.header}pt` }} />}
         <div className="min-w-0">
-          <p className="truncate font-display text-[17px] font-bold leading-tight">{title}</p>
-          {layout.header.examName && examName && <p className="truncate text-[12px] opacity-80">{examName}</p>}
+          <p className="truncate font-display font-bold leading-tight" style={{ fontSize: `${Math.min(17, layout.heights.header * 0.8)}px` }}>{title}</p>
+          {layout.header.examName && examName && layout.heights.header >= 30 && <p className="truncate text-[12px] opacity-80">{examName}</p>}
         </div>
       </header>
       <div style={{ background: c.headerBg, color: c.headerText }}>
@@ -131,7 +131,7 @@ export default function InstituteScreen({
         <div className={`grid gap-4 ${showCandidate ? (preview ? 'grid-cols-[minmax(0,1fr)_130px]' : 'lg:grid-cols-[1fr_220px]') : ''}`}>
           <div className="min-w-0 space-y-3">
             {showText &&
-              <div className="overflow-y-auto border p-4 leading-relaxed" style={{ height: layout.heights.passage, background: c.passageBg, borderColor: c.border, fontSize: fontSize ? `${fontSize}px` : undefined }}>
+              <div className="overflow-y-auto border p-4 leading-relaxed" style={{ height: `${layout.heights.passage}pt`, background: c.passageBg, borderColor: c.border, fontSize: fontSize ? `${fontSize}px` : undefined }}>
                 {passage}
               </div>
             }
@@ -141,7 +141,7 @@ export default function InstituteScreen({
                 onKeyDown={onKeyDown}
                 aria-label="Type here"
                 className="block w-full resize-none border p-4 leading-relaxed text-navy-800 outline-none"
-                style={{ ...(textareaProps.style || {}), height: layout.heights.typing, background: c.typingBg, borderColor: c.border }} />
+                style={{ ...(textareaProps.style || {}), height: `${layout.heights.typing}pt`, background: c.typingBg, borderColor: c.border }} />
               {paused &&
                 <div className="absolute inset-0 grid place-items-center bg-navy-900/70 text-center text-white">
                   <span><PauseIcon className="mx-auto mb-1 h-7 w-7" aria-hidden="true" /> <b>Test Paused</b><br /><span className="text-[12px] opacity-80">Click Resume to continue</span></span>

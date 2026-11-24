@@ -17,7 +17,8 @@ export const DEFAULT_LAYOUT = {
   buttonPosition: 'Center Bottom',
   buttonStyle: 'Modern',
   keyboardSound: 'Off',
-  heights: { header: 70, passage: 200, typing: 160 },
+  heightUnit: 'pt',
+  heights: { header: 52, passage: 150, typing: 120 },
   colors: {
     headerBg: '#0A2E6B',
     headerText: '#FFFFFF',
@@ -33,7 +34,8 @@ export const DEFAULT_LAYOUT = {
   },
 };
 
-export const HEIGHT_LIMITS = { header: [40, 140], passage: [100, 400], typing: [100, 400] };
+// Panel heights in points.
+export const HEIGHT_LIMITS = { header: [10, 250], passage: [10, 250], typing: [10, 250] };
 const HEX = /^#[0-9a-f]{6}$/i;
 
 // Saved JSON → full layout. Anything missing or invalid falls back to the default.
@@ -43,6 +45,11 @@ export function mergeLayout(raw) {
     try { saved = raw ? JSON.parse(raw) : {}; } catch { saved = {}; }
   }
   saved = saved && typeof saved === 'object' ? saved : {};
+  // Layouts saved before heights were in points hold pixels: convert once (1px = 0.75pt).
+  if (saved.heights && saved.heightUnit !== 'pt') {
+    saved = { ...saved, heights: Object.fromEntries(Object.entries(saved.heights).map(([k, v]) =>
+      [k, Number.isInteger(v) && v <= 400 ? Math.max(10, Math.min(250, Math.round(v * 0.75))) : v])) };
+  }
   const d = DEFAULT_LAYOUT;
   const pick = (v, ok, fallback) => (ok(v) ? v : fallback);
   const group = (name) => Object.fromEntries(Object.keys(d[name]).map((k) => [k, pick(saved[name]?.[k], (v) => typeof v === 'boolean', d[name][k])]));
@@ -57,6 +64,7 @@ export function mergeLayout(raw) {
     buttonPosition: pick(saved.buttonPosition, (v) => LAYOUT_POSITIONS.includes(v), d.buttonPosition),
     buttonStyle: pick(saved.buttonStyle, (v) => ['Modern', 'Classic'].includes(v), d.buttonStyle),
     keyboardSound: pick(saved.keyboardSound, (v) => ['Off', 'Click 1', 'Click 2'].includes(v), d.keyboardSound),
+    heightUnit: 'pt',
     heights: Object.fromEntries(Object.entries(HEIGHT_LIMITS).map(([k, [min, max]]) =>
       [k, pick(saved.heights?.[k], (v) => Number.isInteger(v) && v >= min && v <= max, d.heights[k])])),
     colors: Object.fromEntries(Object.keys(d.colors).map((k) => [k, pick(saved.colors?.[k], (v) => HEX.test(String(v)), d.colors[k])])),

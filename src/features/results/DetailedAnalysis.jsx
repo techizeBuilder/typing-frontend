@@ -9,13 +9,13 @@ import { aiAnalysisState, collectMistakes, practiceWordsOf } from './mistakes';
 // (error = spelling, half-error = capitalisation if only case differs else
 // punctuation, pending = omission unless trailing and omissions not counted).
 const CATEGORIES = [
-  { key: 'spelling', label: 'Spelling / Wrong Word', color: '#EC4899', weight: 'Full' },
-  { key: 'omission', label: 'Omission', color: '#F59E0B', weight: 'Full' },
-  { key: 'addition', label: 'Addition', color: '#0D6EFD', weight: 'Full' },
-  { key: 'repetition', label: 'Repetition', color: '#7C3AED', weight: 'Full' },
-  { key: 'capitalisation', label: 'Capitalisation', color: '#0EA5E9', weight: 'Half' },
-  { key: 'punctuation', label: 'Punctuation', color: '#14B8A6', weight: 'Half' },
-  { key: 'extraSpace', label: 'Extra Space', color: '#64748B', weight: 'Half' },
+  { key: 'spelling', label: 'Spelling / Wrong Word', color: '#EC4899', weight: 'full' },
+  { key: 'omission', label: 'Omission', color: '#F59E0B', weight: 'missing' },
+  { key: 'addition', label: 'Addition', color: '#0D6EFD', weight: 'extra' },
+  { key: 'repetition', label: 'Repetition', color: '#7C3AED', weight: 'extra' },
+  { key: 'capitalisation', label: 'Capitalisation', color: '#0EA5E9', weight: 'half' },
+  { key: 'punctuation', label: 'Punctuation', color: '#14B8A6', weight: 'punctuation' },
+  { key: 'extraSpace', label: 'Extra Space', color: '#64748B', weight: 'space' },
 ];
 
 const TYPE_TONE = {
@@ -36,7 +36,7 @@ export default function DetailedAnalysis({
   lastTypedIndex,
   countOmissions,
   extraTypedWords,
-  halfMistakeEnabled,
+  weights,
   mode,
   examName,
   passageFontFamily,
@@ -89,7 +89,7 @@ export default function DetailedAnalysis({
                     <span className="text-slate-600">
                       {c.label}
                       <span className="ml-1 text-[10.5px] text-slate-400">
-                        ({c.weight === 'Half' && halfMistakeEnabled ? '½' : '1'} each)
+                        ({weights[c.weight] === 0.5 ? '½' : weights[c.weight]} each)
                       </span>
                     </span>
                     <span className="font-semibold text-navy-800">{n} <span className="font-normal text-slate-400">({pct}%)</span></span>

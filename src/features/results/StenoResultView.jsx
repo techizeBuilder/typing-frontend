@@ -47,7 +47,7 @@ export default function StenoResultView({
   listLabel, listTo, onDownload, onPrint, onReattempt, actionArea,
 }) {
   const tileList = [
-    tiles.showWords && { icon: FileTextIcon, label: 'Total Words (Original)', value: tiles.originalWords, color: '#0D6EFD' },
+    tiles.showTestWords && { icon: FileTextIcon, label: 'Total Words (Original)', value: tiles.originalWords, color: '#0D6EFD' },
     tiles.showWords && { icon: FileTextIcon, label: 'Total Words (Typed)', value: tiles.typedWords, color: '#6F42C1' },
     tiles.showFull && { icon: XSquareIcon, label: 'Full Mistakes', value: tiles.full, color: '#DC3545' },
     tiles.showHalf && { icon: MinusSquareIcon, label: 'Half Mistakes', value: tiles.half, color: '#F59E0B' },
@@ -57,6 +57,7 @@ export default function StenoResultView({
     tiles.showAccuracy && { icon: TargetIcon, label: 'Accuracy', value: `${tiles.accuracy.toFixed(2)}%`, color: '#198754' },
     tiles.showStrokes && { icon: KeyboardIcon, label: 'Keystrokes', value: Number(tiles.strokes).toLocaleString('en-IN'), color: '#0D6EFD' },
     tiles.showSpeed && { icon: GaugeIcon, label: 'Typing Speed', value: `${Math.round(tiles.speed)} WPM`, color: '#6F42C1' },
+    ...(tiles.extra || []),
   ].filter(Boolean);
 
   return (

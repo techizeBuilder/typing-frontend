@@ -39,7 +39,7 @@ export default function AiSettingsCard() {
       </p>
       {usage && !usage.configured &&
         <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
-          Not set up yet: add <code className="font-mono">ANTHROPIC_API_KEY</code> to the backend <code className="font-mono">.env</code> and restart the backend. Until then students see a rule-based analysis.
+          Not set up yet: add <code className="font-mono">OPENAI_API_KEY</code> to the backend <code className="font-mono">.env.secrets</code> and restart the backend. Until then students see a rule-based analysis.
         </p>}
       <div className="mt-3 flex flex-wrap items-end gap-4">
         <label className="flex items-center gap-2 text-[13px] text-slate-700"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="h-4 w-4 accent-primary" /> AI analysis is on</label>

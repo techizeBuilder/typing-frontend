@@ -11,6 +11,7 @@ import {
   TrophyIcon,
   CalendarDaysIcon,
 } from 'lucide-react';
+import { ExamInstructions } from '../../features/exams/ExamFilters';
 import { Breadcrumbs } from '../../ui/PageHeading';
 import { LIVE, isStenoMode, modeLabel, sortByChapterNo, startTestState, resultViewState } from '../../features/exams/examData';
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
@@ -126,6 +127,7 @@ export default function LiveTestSlots() {
             { label: exam?.name || '…' },
           ]} />
       </div>
+      <ExamInstructions exam={exam} withPdf />
 
       <section className="mb-4 flex flex-wrap items-center gap-4 rounded-xl bg-navy-900 p-5">
         <ExamLogo exam={exam} size="h-16 w-16" className="bg-white/10 text-white" />

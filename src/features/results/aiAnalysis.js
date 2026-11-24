@@ -1,5 +1,5 @@
 // AI Deep Analysis helpers. The numbers, levels and charts are always computed
-// here from the result; Claude (via the backend) writes the coaching text. When
+// here from the result; the AI (via the backend) writes the coaching text. When
 // AI isn't available the same text sections come from the rules below.
 
 export const MISTAKE_TYPES = [

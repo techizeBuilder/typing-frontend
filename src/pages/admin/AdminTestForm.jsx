@@ -8,10 +8,11 @@ import { chapterService, examService } from '../../services/api';
 import { API_BASE_URL } from '../../config';
 import { PageHeading } from '../../ui/PageHeading';
 import { fontFamilyForFontGroup, fontFamilyForHindiType } from '../../utils/hindiFonts';
+import { dictationDifficulty } from '../../features/exams/examData';
 import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 import { urlParam } from '../../features/admin/urlParams';
 import {
-  FONT_GROUPS, LIVE, PRELOAD, blankChapter, chapterToForm, countStrokes, countWords, errorText, isStenoGroup, saveChapter,
+  NO_FOLDER, nextDictationNo, stenoFolders, FONT_GROUPS, LIVE, PRELOAD, blankChapter, chapterToForm, countStrokes, countWords, errorText, isStenoGroup, saveChapter,
 } from '../../features/tests/testData';
 
 const inputCls = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] text-navy-800 outline-none transition-colors duration-150 focus:border-primary';
@@ -39,6 +40,10 @@ export default function AdminTestForm() {
   const [formData, setFormData] = useState(blankChapter);
   const [currentChapter, setCurrentChapter] = useState(null);
   const [exams, setExams] = useState([]);
+  const [chapters, setChapters] = useState([]);
+  const [newFolder, setNewFolder] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [preview, setPreview] = useState(false);
   const [audioFile, setAudioFile] = useState(null); // raw File object for steno
   const [loading, setLoading] = useState(!!sourceId);
   const [saving, setSaving] = useState(false);
@@ -47,8 +52,10 @@ export default function AdminTestForm() {
   useEffect(() => {
     let cancelled = false;
     examService.getExams().then((d) => { if (!cancelled) setExams(Array.isArray(d) ? d : []); }).catch(() => {});
+    const listing = chapterService.getChapters();
+    listing.then((list) => { if (!cancelled) setChapters(Array.isArray(list) ? list : []); }).catch(() => {});
     if (sourceId) {
-      chapterService.getChapters()
+      listing
         .then((list) => {
           if (cancelled) return;
           const ch = (list || []).find((c) => c.id === sourceId);
@@ -81,14 +88,40 @@ export default function AdminTestForm() {
     return groups.length === 0 || groups.includes(formData.font_group);
   }), [exams, formData.font_group]);
 
-  const chooseGroup = (fg) => setFormData((prev) => ({
+  const chooseGroup = (fg) => { setNewFolder(false); setFormData((prev) => ({
     ...prev,
     font_group: fg,
     exam_ids: [],
+    volume: isStenoGroup(fg) && isStenoGroup(prev.font_group) && fg === prev.font_group ? prev.volume : '',
+    no_folder: false,
     // Default the Steno Hindi font picker; language_type + final value
     // are derived on submit (and only sent for Steno chapters).
     hindi_font_type: fg === 'Steno Hindi' ? (prev.hindi_font_type || 'Mangal') : null,
-  }));
+  })); };
+  // ── Steno: folder + dictation. Tests are added to a folder one after another.
+  const folders = useMemo(() => stenoFolders(chapters, formData.font_group), [chapters, formData.font_group]);
+  const folderName = (formData.volume || '').trim() || (formData.no_folder || (editing && isSteno) ? NO_FOLDER : '');
+  const folderItems = folders.find((f) => f.name === folderName)?.items || [];
+  const otherItems = folderItems.filter((c) => c.id !== id);
+  const moved = !editing || String(currentChapter?.chapter_no) !== String(formData.chapter_no) || (currentChapter?.volume || '') !== (formData.volume || '').trim();
+  const taken = isSteno && moved && folderName && otherItems.some((c) => String(c.chapter_no).trim() === String(formData.chapter_no).trim());
+  const chooseDictation = (value) => {
+    setNewFolder(value === 'new-folder');
+    if (value === 'new-folder') { setFormData((f) => ({ ...f, volume: '', no_folder: false, chapter_no: editing ? f.chapter_no : '1' })); return; }
+    if (value === '') { setFormData((f) => ({ ...f, volume: '', no_folder: false })); return; }
+    if (value.startsWith('folder:')) {
+      const name = value.slice(7);
+      const items = (folders.find((f) => f.name === name)?.items || []).filter((c) => c.id !== id);
+      setFormData((f) => ({ ...f, volume: name === NO_FOLDER ? '' : name, no_folder: name === NO_FOLDER, chapter_no: editing && f.volume === name ? f.chapter_no : nextDictationNo(items) }));
+      return;
+    }
+    // An existing dictation: open it for editing.
+    const target = value.slice(5);
+    if (target !== id && (!formData.content_text.trim() || editing || window.confirm('Open this dictation? The test you are adding is not saved yet.'))) { setAudioFile(null); setLoading(true); navigate(`/admin/content/${target}/edit`); }
+  };
+  const dictationValue = newFolder ? 'new-folder' : editing && isSteno && currentChapter && currentChapter.font_group === formData.font_group && (currentChapter.volume || '') === (formData.volume || '') ? `edit:${id}` : folderName ? `folder:${folderName}` : '';
+  const folderOptions = folderName && !newFolder && !folders.some((f) => f.name === folderName) ? [...folders, { name: folderName, items: [] }] : folders;
+
   const toggleExam = (examId) => setFormData((prev) => {
     const s = new Set(prev.exam_ids || []);
     if (s.has(examId)) s.delete(examId); else s.add(examId);
@@ -126,11 +159,26 @@ export default function AdminTestForm() {
 
   const submit = async (e) => {
     e.preventDefault();
-    setError('');
+    const another = e.nativeEvent?.submitter?.value === 'another';
+    setError(''); setNotice('');
+    if (isSteno && !folderName) { setError('Select Chapter / Dictation: choose a folder or create a new one.'); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (taken) { setError(`Dictation ${formData.chapter_no} already exists in ${folderName}. Use another number.`); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     if (!formData.content_text.trim()) { setError('Add the test content (type, paste or upload a file).'); return; }
     setSaving(true);
     try {
-      await saveChapter(formData, currentChapter, audioFile);
+      const { no_folder: _ui, ...payload } = formData;
+      await saveChapter(payload, currentChapter, audioFile);
+      if (another) {
+        // Next dictation of the same folder: keep the setup, clear the content.
+        const list = await chapterService.getChapters().catch(() => chapters);
+        setChapters(list);
+        const items = stenoFolders(list, formData.font_group).find((f) => f.name === folderName)?.items || [];
+        setFormData((f) => ({ ...f, name: '', description: '', content_text: '', word_count: '', chapter_no: nextDictationNo(items) }));
+        setAudioFile(null); setNewFolder(false);
+        setNotice(`Dictation ${formData.chapter_no} saved in ${folderName}. Add the next one.`);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
       navigate('/admin/content', { state: { notice: editing ? `Saved test ${formData.chapter_no}.` : `Test ${formData.chapter_no} created.` } });
     } catch (err) {
       setError('Error saving chapter: ' + errorText(err, 'failed'));
@@ -159,6 +207,8 @@ export default function AdminTestForm() {
 
       {error && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-danger">{error}</p>}
 
+      {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-700">{notice}</p>}
+
       <form onSubmit={submit} className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-4">
           <div className="grid gap-4 2xl:grid-cols-2">
@@ -171,10 +221,6 @@ export default function AdminTestForm() {
                 <label className="block">
                   <span className={labelCls}>Test Title</span>
                   <input type="text" maxLength={150} value={formData.name || ''} onChange={set('name')} placeholder="Optional, e.g. Rural Development Budget" className={inputCls} />
-                </label>
-                <label className="block">
-                  <span className={labelCls}>Volume (Optional)</span>
-                  <input type="text" maxLength={60} value={formData.volume || ''} onChange={set('volume')} placeholder="e.g. Volume 1 — groups dictations for students" className={inputCls} />
                 </label>
               </div>
               <label className="mt-3.5 block">
@@ -244,6 +290,30 @@ export default function AdminTestForm() {
                   </select>
                 </label>
               </div>
+              {isSteno &&
+                <div className="mt-3.5 grid gap-3.5 sm:grid-cols-2">
+                  <label className="block">
+                    <span className={labelCls}>Select Chapter / Dictation <span className="text-danger">*</span></span>
+                    <select aria-label="Select Chapter / Dictation" value={dictationValue} onChange={(e) => chooseDictation(e.target.value)} className={inputCls}>
+                      <option value="">-- Select Chapter / Dictation --</option>
+                      {folderOptions.map((f) => (
+                        <optgroup key={f.name} label={`${f.name} (${f.items.length} dictation${f.items.length === 1 ? '' : 's'})`}>
+                          <option value={`folder:${f.name}`}>{f.name} — {editing ? 'move here' : `add Dictation ${nextDictationNo(f.items)} (new)`}</option>
+                          {f.items.map((c) => <option key={c.id} value={`edit:${c.id}`}>{f.name} — Dictation {c.chapter_no}{c.name ? ` · ${c.name}` : ''}{c.id === id ? ' (this one)' : ' (open)'}</option>)}
+                        </optgroup>
+                      ))}
+                      {!folderOptions.some((f) => f.name === NO_FOLDER) && <option value={`folder:${NO_FOLDER}`}>{NO_FOLDER}</option>}
+                      <option value="new-folder">+ New folder / volume…</option>
+                    </select>
+                    <span className="mt-1 block text-[11px] text-slate-500">{folderName ? `${otherItems.length} other dictation(s) in ${folderName}.` : 'One folder can hold many dictations.'}</span>
+                  </label>
+                  {newFolder &&
+                    <label className="block">
+                      <span className={labelCls}>New Folder / Volume Name <span className="text-danger">*</span></span>
+                      <input type="text" maxLength={60} aria-label="New Folder / Volume Name" value={formData.volume || ''} onChange={set('volume')} placeholder="e.g. Volume 1" className={inputCls} />
+                    </label>}
+                  {taken && <p className="text-[12px] font-semibold text-danger sm:col-span-2">Dictation {formData.chapter_no} already exists in {folderName}.</p>}
+                </div>}
               <div className="mt-3.5">
                 <span className={labelCls}>Category / Exam</span>
                 <div className="scroll-thin max-h-[150px] overflow-y-auto rounded-md border border-slate-300">
@@ -297,6 +367,27 @@ export default function AdminTestForm() {
               </label>
               <button type="button" onClick={() => setFormData({ ...formData, word_count: countWords(formData.content_text) })} className="mb-5 rounded-md border border-slate-300 px-3.5 py-2 text-[12px] font-medium text-slate-600 hover:bg-slate-50">Recalculate</button>
             </div>
+            <div className="mt-2 rounded-lg border border-slate-200 p-3" aria-label="Content Summary" role="group">
+              <p className="mb-2 text-[12px] font-semibold text-navy-800">Content Summary</p>
+              <dl className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+                {[
+                  ['Total Words', words ? wordCount.toLocaleString('en-IN') : '--'],
+                  ['Total Strokes', words ? strokes.toLocaleString('en-IN') : '--'],
+                  ['Estimated Duration', words ? `≈ ${Math.max(1, Math.round(estMinutes))} min${isSteno ? ` at ${formData.steno_speed ?? 100} WPM` : ' at 35 WPM'}` : '--'],
+                  ['Difficulty Level', formData.difficulty || (words ? `${dictationDifficulty(formData)} / 10 (auto)` : '--')],
+                  ['Display Preview', words ? <button type="button" onClick={() => setPreview(true)} className="font-semibold text-primary underline">Preview Content</button> : '--'],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-md bg-slate-50 px-2.5 py-2"><dt className="text-[11px] text-slate-500">{k}</dt><dd className="text-[12.5px] font-semibold text-navy-800">{v}</dd></div>
+                ))}
+              </dl>
+            </div>
+            {preview &&
+              <div role="dialog" aria-modal="true" aria-label="Display Preview" className="fixed inset-0 z-50 grid place-items-center bg-navy-900/60 p-4" onClick={() => setPreview(false)}>
+                <div className="flex max-h-[85vh] w-full max-w-[860px] flex-col rounded-xl bg-white shadow-panel" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center border-b border-slate-200 px-4 py-3"><h4 className="text-[14px] font-bold text-navy-800">Display Preview</h4><button type="button" onClick={() => setPreview(false)} className="ml-auto rounded-md border border-slate-300 px-3 py-1 text-[12px]">Close</button></div>
+                  <p className="overflow-y-auto whitespace-pre-wrap p-4 leading-relaxed text-navy-800" style={{ fontFamily: contentFontFamily, fontSize: useHindiFont ? '20px' : '16px' }}>{formData.content_text}</p>
+                </div>
+              </div>}
           </Section>
 
           {isSteno &&
@@ -333,21 +424,6 @@ export default function AdminTestForm() {
 
         <aside className="space-y-4">
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-            <h3 className="mb-3 flex items-center gap-2 text-[13.5px] font-bold text-navy-800"><BarChart3Icon className="h-4 w-4 text-primary" aria-hidden="true" /> Content Summary</h3>
-            <dl className="space-y-2 text-[12px]">
-              {[
-                ['Total Words', wordCount.toLocaleString('en-IN')],
-                ['Total Strokes', strokes.toLocaleString('en-IN')],
-                [isSteno ? 'Dictation Length' : 'Est. Duration', words ? `≈ ${Math.max(1, Math.round(estMinutes))} min${isSteno ? ` at ${formData.steno_speed ?? 100} WPM` : ' at 35 WPM'}` : '—'],
-                ['Difficulty Level', formData.difficulty || 'Not set'],
-                ['Mode', formData.test_type === LIVE ? 'Live Test' : 'Pre-load Test'],
-                ['Font Group', formData.font_group],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className="text-right font-semibold text-navy-800">{v}</dd></div>
-              ))}
-            </dl>
-          </section>
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
             <h3 className="mb-3 flex items-center gap-2 text-[13.5px] font-bold text-navy-800"><EyeIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Content Preview</h3>
             {previewText
               ? <p className="max-h-[220px] overflow-hidden text-[13px] leading-relaxed text-slate-700" style={{ fontFamily: contentFontFamily, fontSize: useHindiFont ? '17px' : undefined }}>{previewText}{words > 80 ? ' …' : ''}</p>
@@ -368,7 +444,8 @@ export default function AdminTestForm() {
           <p className="text-[11.5px] text-slate-500">Fields marked <span className="text-danger">*</span> are required.</p>
           <div className="ml-auto flex gap-2">
             <Link to="/admin/content" className="rounded-md border border-slate-300 px-4 py-2 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50">Cancel</Link>
-            {!editing && <button type="button" onClick={() => { setFormData(blankChapter()); setAudioFile(null); }} className="rounded-md border border-slate-300 px-4 py-2 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50">Reset</button>}
+            {!editing && <button type="button" onClick={() => { setFormData(blankChapter()); setAudioFile(null); setNewFolder(false); setNotice(''); }} className="rounded-md border border-slate-300 px-4 py-2 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50">Reset</button>}
+            {!editing && isSteno && <button type="submit" value="another" disabled={saving} className="rounded-md border border-primary px-4 py-2 text-[12.5px] font-semibold text-primary hover:bg-primary-50 disabled:opacity-60">Save & Add Another</button>}
             <button type="submit" disabled={saving} className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-primary-700 disabled:opacity-60">
               <SaveIcon className="h-4 w-4" aria-hidden="true" /> {saving ? 'Saving & Uploading...' : editing ? 'Save Changes' : 'Save & Create Test'}
             </button>

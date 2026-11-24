@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ClipboardListIcon, FileTextIcon, ImagePlusIcon, InfoIcon, LandmarkIcon, LayersIcon, ListChecksIcon, SaveIcon, ScaleIcon, SettingsIcon, TypeIcon,
+  ClipboardListIcon, FileTextIcon, ImagePlusIcon, InfoIcon, LandmarkIcon, LayersIcon, ListChecksIcon, SaveIcon, ScaleIcon, SettingsIcon, TypeIcon, CheckSquareIcon, EyeIcon, HourglassIcon, LanguagesIcon, SquareIcon, UploadIcon,
 } from 'lucide-react';
 import { examService, resultPatternService } from '../../services/api';
 import { PageHeading } from '../../ui/PageHeading';
 import { resolveAssetUrl } from '../../features/exams/examData';
+import { RESULT_COMPONENTS } from '../../utils/examPattern';
+import { mistakeWeights, penaltyLabel } from '../../utils/scoring';
 import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 import {
-  BACKSPACE, EXAM_REGIONS, FONT_GROUPS, FONT_SIZES, HIGHLIGHT_COLORS, SCREENS, TEST_TIMES, defaultExamData, examToForm, msgOf, saveExam, screenLabel,
+  LANGUAGES, offeredLanguages, allComponents, BACKSPACE, EXAM_REGIONS, FONT_GROUPS, FONT_SIZES, HIGHLIGHT_COLORS, SCREENS, TEST_TIMES, defaultExamData, examToForm, msgOf, saveExam, screenLabel,
 } from '../../features/exams/adminExamData';
 
 const inputCls = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] text-navy-800 outline-none transition-colors duration-150 focus:border-primary';
@@ -47,6 +49,8 @@ function YesNo({ label, value, onChange, name }) {
   );
 }
 
+const MAX_RULES_BYTES = 2 * 1024 * 1024;
+
 export default function AdminExamForm() {
   const { id } = useParams();
   const editing = !!id;
@@ -62,6 +66,14 @@ export default function AdminExamForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Languages whose passing criteria the admin typed; the others follow the chosen pattern.
+  const touched = useRef(new Set());
+  const applyPattern = (d, p) => (!p ? d : {
+    ...d,
+    language_rules: Object.fromEntries(Object.entries(d.language_rules).map(([k, r]) => [k, touched.current.has(k) ? r
+      : { ...r, qualify_on: p.qualify_on, required_speed: p.required_speed, required_accuracy: p.required_accuracy }])),
+  });
+
   useEffect(() => {
     let cancelled = false;
     resultPatternService.getPatterns().then((p) => {
@@ -69,11 +81,11 @@ export default function AdminExamForm() {
       setPatterns(p || []);
       // A new exam starts with the Default pattern selected.
       const def = !editing && (p || []).find((x) => x.is_default);
-      if (def) setExamData((d) => (d.result_pattern_id ? d : { ...d, result_pattern_id: def.id }));
+      if (def) setExamData((d) => (d.result_pattern_id ? d : applyPattern({ ...d, result_pattern_id: def.id }, def)));
     }).catch(() => {});
     if (editing) {
       examService.getExamById(id)
-        .then((e) => { if (cancelled) return; if (!e) { setError('Exam not found.'); return; } setCurrentExam(e); setExamData(examToForm(e)); })
+        .then((e) => { if (cancelled) return; if (!e) { setError('Exam not found.'); return; } setCurrentExam(e); setExamData(examToForm(e)); if (e.language_rules) Object.keys(e.language_rules).filter((k) => e.language_rules[k].enabled).forEach((k) => touched.current.add(k)); })
         .catch((err) => { if (!cancelled) setError(msgOf(err, 'Could not load the exam.')); })
         .finally(() => { if (!cancelled) setLoading(false); });
     }
@@ -105,17 +117,37 @@ export default function AdminExamForm() {
   const offeredPatterns = patterns.filter((p) => String(p.id) === String(examData.result_pattern_id) || groups.length === 0
     || (wantsTyping && p.applicable_typing !== false) || (wantsSteno && p.applicable_steno !== false));
   const unit = pattern?.speed_count === 'Strokes' ? 'Strokes' : 'Words';
-  // MAXIMUM must always be greater than MINIMUM. A maximum of 0 means "No Limit"
-  // (effectively unbounded) and a minimum of 0 means "No Minimum", so the rule
-  // only applies when both fields hold a real (> 0) value.
-  const maxWS = Number(examData.max_words_strokes) || 0;
-  const minWS = Number(examData.no_of_words_strokes) || 0;
-  const rangeInvalid = maxWS > 0 && minWS > 0 && maxWS <= minWS;
+  // Maximum must be greater than minimum; 0 means no limit / no minimum.
+  const offered = offeredLanguages(groups);
+  const badRange = (r) => r.max > 0 && r.min > 0 && r.max <= r.min;
+  const invalidLang = LANGUAGES.find(([k]) => offered[k] && badRange(examData.language_rules[k]));
+  const rangeInvalid = !!invalidLang;
+  const setRule = (lang, patch) => {
+    if (['qualify_on', 'required_speed', 'required_accuracy'].some((k) => k in patch)) touched.current.add(lang);
+    setExamData((d) => ({ ...d, language_rules: { ...d.language_rules, [lang]: { ...d.language_rules[lang], ...patch } } }));
+  };
+  const choosePattern = (e) => {
+    const next = patterns.find((p) => String(p.id) === e.target.value);
+    setExamData((d) => applyPattern({ ...d, result_pattern_id: e.target.value }, next));
+  };
+  const speedUnit = pattern?.speed_unit === 'KDPH' ? 'KDPH' : 'WPM';
+  const shownCount = RESULT_COMPONENTS.filter(([k]) => examData.result_components[k] !== false).length;
+
+  const uploadInstructions = async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    if (f.size > MAX_RULES_BYTES) { alert('The TXT file must be 2 MB or smaller.'); return; }
+    const content = (await f.text()).replace(/^\uFEFF/, '').trim();
+    if (!content) { alert('The TXT file is empty.'); return; }
+    if (content.length > 20000) { alert('The instructions must be 20,000 characters or fewer. Upload a PDF for longer ones.'); return; }
+    setVal('instructions_text')(content);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (rangeInvalid) { setError(`MAXIMUM WORD/STROKE (${maxWS}) must be greater than MINIMUM WORD/STROKE (${minWS}).`); return; }
+    if (rangeInvalid) { setError(`${invalidLang[1]}: Maximum Words / Strokes must be greater than Minimum.`); return; }
     if ((examData.font_groups || []).length === 0) { setError('Select at least one font group.'); return; }
     setSaving(true);
     try {
@@ -130,11 +162,20 @@ export default function AdminExamForm() {
   };
 
   const logoPreview = logo ? URL.createObjectURL(logo) : (currentExam?.image_url ? resolveAssetUrl(currentExam.image_url) : null);
+  const yn = (v) => (v ? 'Yes' : 'No');
+  const perLang = (f) => LANGUAGES.filter(([k]) => offered[k]).map(([k, l]) => `${l[0]}: ${f(examData.language_rules[k])}`).join(' · ') || '—';
   const summary = [
-    ['Exam Name', examData.name || '—'], ['Display Title', examData.display_title || '—'], ['Test Time', `${examData.test_time_minutes} min`],
-    ['Screen Layout', screenLabel(examData.screen_type)], ['Result Pattern', pattern?.name || '—'], ['Backspace', BACKSPACE.find(([v]) => v === examData.backspace_control)?.[1] || '—'],
-    ['Font Groups', (examData.font_groups || []).join(', ') || '—'], ['Test Mode', examData.test_paper_screen === 'Paper' ? 'On Paper' : 'On Screen'],
-    ['Auto Submit', examData.auto_submit ? 'Yes' : 'No'], ['Region', examData.region || 'All India'], ['Status', examData.is_active === false ? 'Inactive' : 'Active'],
+    ['Exam Name', examData.name || '—'], ['Exam Title', examData.display_title || '—'], ['Test Time', `${examData.test_time_minutes} min`],
+    ['Screen Layout', screenLabel(examData.screen_type)], ['Result Rule', pattern?.name || '—'], ['Backspace Option', BACKSPACE.find(([v]) => v === examData.backspace_control)?.[1] || '—'],
+    ['Highlight Word', yn(examData.highlight_word)], ['Highlighting Color', examData.highlight_color], ['Auto Scroll', yn(examData.auto_scroll)], ['Highlight Error', yn(examData.highlight_error)],
+    ['Font Size (User)', `${examData.font_size_user_screen}px`], ['Font Size (Exam)', `${examData.font_size_test_screen}px`],
+    ['Test Type', examData.test_paper_screen === 'Paper' ? 'On Paper' : 'On Screen'], ['Test Re-type', yn(examData.test_re_type)],
+    ['Min Words/Strokes', perLang((r) => r.min || 'None')], ['Max Words/Strokes', perLang((r) => r.max || 'No limit')], ['Auto Submit', yn(examData.auto_submit)],
+    ['Formatting Type', examData.test_format === 'normal' ? 'Normal Test' : 'Formatting Test'],
+    ['Instructions File', [examData.instructions_text && 'TXT', (rulesPdf || (currentExam?.rules_pdf_url && !removeRulesPdf)) && 'PDF'].filter(Boolean).join(' + ') || '—'],
+    ['Logo', logoPreview ? 'Uploaded' : '—'], ['Language', LANGUAGES.filter(([k]) => offered[k]).map(([, l]) => l).join(', ') || '—'],
+    ['Min Qualifying', perLang((r) => (r.enabled ? `${r.required_speed} ${speedUnit} / ${r.required_accuracy}%` : 'Pattern'))],
+    ['Conducted By', examData.conducted_by || '—'], ['Result Components', `${shownCount} of ${RESULT_COMPONENTS.length}`], ['Status', examData.is_active === false ? 'Inactive' : 'Active'],
   ];
 
   if (loading) return <div className="nd p-6 text-[12.5px] text-slate-500">Loading exam…</div>;
@@ -155,7 +196,7 @@ export default function AdminExamForm() {
             <Card icon={FileTextIcon} title="1. Basic Information">
               <div className="grid gap-3.5 sm:grid-cols-2">
                 <Field label="Exam Name" required><input type="text" required value={examData.name} onChange={set('name')} placeholder="Enter exam name" className={inputCls} /></Field>
-                <Field label="Display Title" hint="Shown to students under the exam name."><input type="text" maxLength={150} value={examData.display_title || ''} onChange={set('display_title')} placeholder="Optional, e.g. SSC CGL Tier-II DEST 2026" className={inputCls} /></Field>
+                <Field label="Exam Title / Display Title" hint="Shown to students under the exam name."><input type="text" maxLength={150} value={examData.display_title || ''} onChange={set('display_title')} placeholder="Optional, e.g. SSC CGL Tier-II DEST 2026" className={inputCls} /></Field>
                 <Field label="Test Time" required>
                   <select value={examData.test_time_minutes} onChange={set('test_time_minutes', (v) => parseInt(v, 10))} className={inputCls}>{TEST_TIMES.map((t) => <option key={t} value={t}>{t} mins</option>)}</select>
                 </Field>
@@ -192,10 +233,41 @@ export default function AdminExamForm() {
             </Card>
           </div>
 
+          <Card icon={LanguagesIcon} title="Language — Passing Criteria & Word Limits">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {LANGUAGES.map(([lang, label]) => {
+                const r = examData.language_rules[lang];
+                const num = (key) => (e) => setRule(lang, { [key]: e.target.value === '' ? '' : Number(e.target.value) });
+                const off = !offered[lang];
+                return (
+                  <fieldset key={lang} disabled={off} aria-label={`${label} settings`} className={`space-y-3.5 ${off ? 'opacity-50' : ''}`}>
+                    <div className="space-y-3 rounded-lg border border-slate-200 p-3.5">
+                      <label className="flex items-center gap-2 text-[12.5px] font-bold text-navy-800">
+                        <HourglassIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Passing Criteria {label}
+                        <input type="checkbox" aria-label={`Passing Criteria ${label}`} checked={!!r.enabled} onChange={(e) => setRule(lang, { enabled: e.target.checked })} className="ml-auto h-4 w-4 accent-primary" />
+                      </label>
+                      <fieldset disabled={!r.enabled} className={`space-y-3 ${r.enabled ? '' : 'opacity-50'}`}>
+                        <Field label="Result Mode" required><select value={r.qualify_on} onChange={(e) => setRule(lang, { qualify_on: e.target.value })} className={inputCls}><option value="NWPM">Net WPM + Accuracy</option><option value="GWPM">Gross WPM + Accuracy</option></select></Field>
+                        <Field label={`Minimum Qualifying Speed (${speedUnit})`} required><input type="number" min="0" step="any" required value={r.required_speed} onChange={num('required_speed')} className={inputCls} /></Field>
+                        <Field label="Minimum Accuracy (%)" required><input type="number" min="0" max="100" step="any" required value={r.required_accuracy} onChange={num('required_accuracy')} className={inputCls} /></Field>
+                      </fieldset>
+                      <p className="text-[11px] text-slate-500">{off ? `Add a ${label} font group below to use this.` : r.enabled ? 'Used instead of the Result Pattern’s criteria.' : 'Off: the Result Pattern’s criteria apply.'}</p>
+                    </div>
+                    <div className="grid gap-3.5 rounded-lg border border-slate-200 p-3.5 sm:grid-cols-2">
+                      <Field label={`Minimum Words / Strokes (${unit})`} required hint="0 = No Minimum"><input type="number" min="0" step="1" required value={r.min} onChange={num('min')} className={inputCls} /></Field>
+                      <Field label={`Maximum Words / Strokes (${unit})`} required hint="0 = No Limit"><input type="number" min="0" step="1" required value={r.max} onChange={num('max')} className={`${inputCls} ${badRange(r) ? 'border-danger' : ''}`} /></Field>
+                      {badRange(r) && !off && <p className="text-[12px] font-semibold text-danger sm:col-span-2">Maximum ({r.max}) must be greater than Minimum ({r.min}).</p>}
+                    </div>
+                  </fieldset>
+                );
+              })}
+            </div>
+          </Card>
+
           <Card icon={SettingsIcon} title="3. Exam Rules & Flow Settings">
             <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Result Rule (Pattern)" required>
-                <select required value={examData.result_pattern_id} onChange={set('result_pattern_id')} className={inputCls}>
+                <select required value={examData.result_pattern_id} onChange={choosePattern} className={inputCls}>
                   <option value="">--Select--</option>{offeredPatterns.map((p) => <option key={p.id} value={p.id}>{p.name}{p.is_default ? ' (Default)' : ''}</option>)}
                 </select>
               </Field>
@@ -229,10 +301,48 @@ export default function AdminExamForm() {
               </fieldset>
               <YesNo name="asub" label="Auto Submit" value={examData.auto_submit} onChange={setVal('auto_submit')} />
               <YesNo name="rt" label="Test Re-type" value={examData.test_re_type} onChange={setVal('test_re_type')} />
+              <fieldset>
+                <legend className={labelCls}>Formatting Test / Normal Test <span className="text-danger">*</span></legend>
+                <div className="flex flex-wrap gap-4">
+                  {[['formatting', 'Formatting Test'], ['normal', 'Normal Test']].map(([v, t]) => (
+                    <label key={v} className="flex items-center gap-1.5 text-[12.5px] text-slate-700">
+                      <input type="radio" name="testFormat" checked={examData.test_format === v} onChange={() => setVal('test_format')(v)} className="h-3.5 w-3.5 accent-primary" /> {t}
+                    </label>
+                  ))}
+                </div>
+                <span className="mt-1 block text-[11px] text-slate-500">Formatting shows the passage’s tabs and line breaks; Normal shows it as running text.</span>
+              </fieldset>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <span className={labelCls}>Instructions for Students (“Exam Rule”)</span>
+                <p className="mb-1.5 text-[11px] text-slate-500">Upload exam instructions or rules that students will read before starting the test.</p>
+                <div className="flex flex-wrap gap-2">
+                  <label className="flex cursor-pointer items-center gap-1.5 rounded-md border border-primary px-3 py-1.5 text-[12px] font-medium text-primary hover:bg-primary-50"><UploadIcon className="h-3.5 w-3.5" aria-hidden="true" /> Upload Text (TXT)<input type="file" accept=".txt,text/plain" aria-label="Upload Text (TXT)" onChange={uploadInstructions} className="sr-only" /></label>
+                  <label className="flex cursor-pointer items-center gap-1.5 rounded-md border border-rose-300 px-3 py-1.5 text-[12px] font-medium text-rose-600 hover:bg-rose-50"><UploadIcon className="h-3.5 w-3.5" aria-hidden="true" /> Upload PDF<input type="file" accept="application/pdf,.pdf" aria-label="Upload PDF" className="sr-only" onChange={(e) => {
+                    const f = e.target.files[0];
+                    e.target.value = '';
+                    if (!f) return;
+                    if (f.size > MAX_RULES_BYTES) { alert('The PDF must be 2 MB or smaller.'); return; }
+                    setRulesPdf(f);
+                  }} /></label>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400">TXT or PDF (Max. 2MB)</p>
+                {rulesPdf && <p className="mt-1.5 flex items-center gap-3 text-[12px] text-emerald-700">✔ {rulesPdf.name} — will upload on save <button type="button" onClick={() => setRulesPdf(null)} className="text-danger">Remove</button></p>}
+                {currentExam?.rules_pdf_url && !rulesPdf && !removeRulesPdf &&
+                  <p className="mt-1.5 flex items-center gap-3 text-[12px]">
+                    <a href={resolveAssetUrl(currentExam.rules_pdf_url)} target="_blank" rel="noreferrer" className="font-medium text-primary underline">View current PDF</a>
+                    <button type="button" onClick={() => setRemoveRulesPdf(true)} className="text-danger">Remove</button>
+                  </p>}
+                {removeRulesPdf && !rulesPdf && <p className="mt-1.5 text-[12px] text-danger">PDF will be removed on save. <button type="button" onClick={() => setRemoveRulesPdf(false)} className="text-primary">Undo</button></p>}
+                {examData.instructions_text &&
+                  <label className="mt-2 block">
+                    <span className="mb-1 flex items-center gap-3 text-[12px] text-slate-600">Instruction text <button type="button" onClick={() => setVal('instructions_text')('')} className="text-danger">Remove</button></span>
+                    <textarea rows={4} maxLength={20000} aria-label="Instruction text" value={examData.instructions_text} onChange={set('instructions_text')} className={inputCls} />
+                  </label>}
+              </div>
             </div>
           </Card>
 
-          <Card icon={TypeIcon} title="4. Font Groups & Word Limits">
+          <Card icon={TypeIcon} title="Font Groups">
             <span className={labelCls}>Font Groups <span className="text-danger">*</span> <span className="font-normal text-slate-500">— which languages / fonts this exam is offered in</span></span>
             <div className="mb-3.5 flex flex-wrap gap-2">
               <label className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-[12px] font-semibold ${allGroups ? 'border-primary bg-primary-50 text-primary-700' : 'border-slate-300 text-slate-600'}`}>
@@ -247,22 +357,10 @@ export default function AdminExamForm() {
                 );
               })}
             </div>
-            <div className="grid gap-3.5 sm:grid-cols-2">
-              <Field label={`Maximum Words / Strokes (${unit})`} hint={`Maximum ${unit.toLowerCase()} from the uploaded content shown to the student (0 = No Limit).`}>
-                <input type="number" min="0" step="1" value={examData.max_words_strokes ?? 0} placeholder="0 = No Limit" className={inputCls}
-                  onChange={(e) => setVal('max_words_strokes')(e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0))} />
-              </Field>
-              <Field label={`Minimum Words / Strokes (${unit})`} hint={`Minimum ${unit.toLowerCase()} the student must type. The exam cannot be submitted until this many are typed (0 = No Minimum).`}>
-                <input type="number" min="0" step="1" value={examData.no_of_words_strokes ?? 0} placeholder="0 = No Minimum" className={`${inputCls} ${rangeInvalid ? 'border-danger' : ''}`}
-                  onChange={(e) => setVal('no_of_words_strokes')(e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0))} />
-              </Field>
-            </div>
-            {rangeInvalid && <p className="mt-2 text-[12px] font-semibold text-danger">Maximum ({maxWS}) must be greater than Minimum ({minWS}).</p>}
           </Card>
 
-          <Card icon={ClipboardListIcon} title="5. Information for Students">
+          <Card icon={ClipboardListIcon} title="Information for Students">
             <div className="grid gap-3.5 sm:grid-cols-2">
-              <Field label="Conducted By"><input type="text" maxLength={150} value={examData.conducted_by || ''} onChange={set('conducted_by')} placeholder="Optional, e.g. Staff Selection Commission" className={inputCls} /></Field>
               <Field label="Exam Level"><input type="text" maxLength={150} value={examData.exam_level || ''} onChange={set('exam_level')} placeholder="Optional, e.g. District Judge (Group C & D)" className={inputCls} /></Field>
               <Field label="Mistake Policy" hint="Information only — scoring always follows the Result Pattern."><input type="text" maxLength={200} value={examData.mistake_policy || ''} onChange={set('mistake_policy')} placeholder="Optional, e.g. 10 words deducted per full mistake" className={inputCls} /></Field>
               <Field label="Steno Card Tags" hint="Comma separated chips on the student steno card, e.g. 840 Words, All Speeds, Best for SSC Gr. C."><input type="text" maxLength={300} value={examData.card_tags || ''} onChange={set('card_tags')} placeholder="Optional" className={inputCls} /></Field>
@@ -272,27 +370,34 @@ export default function AdminExamForm() {
                   <input type="checkbox" checked={!!examData.is_pro_level} onChange={(e) => setVal('is_pro_level')(e.target.checked)} className="h-3.5 w-3.5 accent-primary" /> Show the PRO LEVEL ribbon
                 </label>
               </fieldset>
-              <div className="sm:col-span-2">
-                <span className={labelCls}>Official Rules PDF <span className="font-normal text-slate-500">— students can download it from the exam page (PDF, max 10 MB)</span></span>
-                {currentExam?.rules_pdf_url && !rulesPdf && !removeRulesPdf &&
-                  <p className="mb-1.5 flex items-center gap-3 text-[12px]">
-                    <a href={resolveAssetUrl(currentExam.rules_pdf_url)} target="_blank" rel="noreferrer" className="font-medium text-primary underline">View current PDF</a>
-                    <button type="button" onClick={() => setRemoveRulesPdf(true)} className="text-danger">Remove</button>
-                  </p>}
-                {removeRulesPdf && !rulesPdf && <p className="mb-1.5 text-[12px] text-danger">PDF will be removed on save. <button type="button" onClick={() => setRemoveRulesPdf(false)} className="text-primary">Undo</button></p>}
-                <input type="file" accept="application/pdf,.pdf" className="text-[12px]" onChange={(e) => {
-                  const f = e.target.files[0];
-                  if (f && f.size > 10 * 1024 * 1024) { alert('The rules PDF must be 10 MB or smaller.'); e.target.value = ''; return; }
-                  setRulesPdf(f || null);
-                }} />
-              </div>
             </div>
           </Card>
         </div>
 
         <aside className="space-y-4">
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
-            <h3 className="mb-3 flex items-center gap-2 text-[13.5px] font-bold text-navy-800"><ListChecksIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Exam Summary (Preview)</h3>
+            <h3 className="mb-1.5 flex items-center gap-2 text-[13.5px] font-bold text-navy-800"><EyeIcon className="h-4 w-4 text-primary" aria-hidden="true" /> 4. Result Component Visibility</h3>
+            <p className="mb-2.5 text-[11px] text-slate-500">Select the result components you want to show to students after the test.</p>
+            <ul className="grid grid-cols-2 gap-x-3 gap-y-2">
+              {RESULT_COMPONENTS.map(([key, label], i) => (
+                <li key={key}>
+                  <label className="flex items-start gap-1.5 text-[11.5px] text-navy-800">
+                    <input type="checkbox" checked={examData.result_components[key] !== false} onChange={(e) => setVal('result_components')({ ...examData.result_components, [key]: e.target.checked })} className="mt-[2px] h-3.5 w-3.5 shrink-0 accent-primary" /> <span>{i + 1}. {label}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={() => setVal('result_components')(allComponents(true))} className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-emerald-300 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50"><CheckSquareIcon className="h-3.5 w-3.5" aria-hidden="true" /> Select All</button>
+              <button type="button" onClick={() => setVal('result_components')(allComponents(false))} className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-300 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-slate-50"><SquareIcon className="h-3.5 w-3.5" aria-hidden="true" /> Unselect All</button>
+            </div>
+          </section>
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+            <h3 className="mb-3 flex items-center gap-2 text-[13.5px] font-bold text-navy-800"><LandmarkIcon className="h-4 w-4 text-primary" aria-hidden="true" /> 11. Conducted By (Info for Students)</h3>
+            <Field label="Organization Name" required><input type="text" required maxLength={150} value={examData.conducted_by || ''} onChange={set('conducted_by')} placeholder="Enter organization name" className={inputCls} /></Field>
+          </section>
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+            <h3 className="mb-3 flex items-center gap-2 text-[13.5px] font-bold text-navy-800"><ListChecksIcon className="h-4 w-4 text-primary" aria-hidden="true" /> 12. Exam Summary (Preview)</h3>
             <dl className="space-y-1.5 text-[12px]">
               {summary.map(([k, v]) => <div key={k} className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className="text-right font-semibold text-navy-800">{v}</dd></div>)}
             </dl>
@@ -303,9 +408,9 @@ export default function AdminExamForm() {
               <>
                 <dl className="space-y-1.5 text-[12px]">
                   {[
-                    ['Qualifying', `${pattern.required_speed} ${pattern.qualify_on} · ${pattern.required_accuracy}%`],
-                    ['Speed Count', pattern.speed_count], ['Penalty', `${pattern.penalty_value} ${pattern.penalty_type}(s) per mistake`],
-                    ['Half Mistakes', pattern.half_mistake_enabled ? 'Count as 0.5' : 'Count as full'],
+                    ['Qualifying', `${pattern.required_speed} ${speedUnit === 'KDPH' ? 'KDPH' : pattern.qualify_on} · ${pattern.required_accuracy}%`],
+                    ['Speed Count', pattern.speed_count], ['Penalty', `${penaltyLabel(pattern)} per mistake`],
+                    ['Half Mistakes', `Count as ${mistakeWeights(pattern).half}`],
                     ['Ignorable Mistakes', pattern.ignorable_mistakes_enabled ? `${pattern.ignorable_mistakes_percent}%` : 'Off'],
                   ].map(([k, v]) => <div key={k} className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className="text-right font-semibold text-navy-800">{v}</dd></div>)}
                 </dl>

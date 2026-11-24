@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import LiveInstituteScreen from '../features/screenLayout/LiveInstituteScreen';
 import SelfTestScreen from '../features/selfAssessment/SelfTestScreen';
-import { scoreResult, speedCountOf } from '../utils/scoring';
+import { mistakeWeights, penaltyLabel, scoreResult, speedCountOf, speedUnitOf, strokesPerWordOf } from '../utils/scoring';
+import { typingMistakeCounts } from '../utils/resultMetrics';
+import { examForMode, patternSnapshot } from '../utils/examPattern';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { chapterService, resultService, getCurrentUserUuid, userService } from '../services/api';
 import { API_BASE_URL } from '../config';
@@ -14,8 +16,10 @@ import { timingOf } from '../features/results/resultTiming';
 const TestEngine = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { exam, chapter: passedChapter, mode, testType, isSelfAssessment } = location.state || {};
+  const { exam: rawExam, chapter: passedChapter, mode, testType, isSelfAssessment } = location.state || {};
 
+  // Word limits, passing criteria and visible components for this language.
+  const exam = useMemo(() => examForMode(rawExam, mode), [rawExam, mode]);
   const isStrictMode = !!exam;
   const pattern = exam?.result_pattern || location.state?.resultPattern || null;
   const screenType = exam?.screen_type?.replace(' ', '-') || 'Screen-1';
@@ -125,6 +129,15 @@ const TestEngine = () => {
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
+  // Backspace presses while the test is running (shown on the result).
+  const backspaceCountRef = useRef(0);
+  useEffect(() => {
+    if (!isStarted) return undefined;
+    const count = (e) => { if (e.key === 'Backspace' || (e.key === 'Process' && e.code === 'Backspace')) backspaceCountRef.current += 1; };
+    document.addEventListener('keydown', count, true);
+    return () => document.removeEventListener('keydown', count, true);
+  }, [isStarted]);
+
   // ─── Copy/Paste lockdown ────────────────────────────────────────────────────
   // Copying the passage or pasting text into the typing box defeats the test, so
   // all clipboard operations are blocked while the test screen is open. The only
@@ -180,7 +193,7 @@ const TestEngine = () => {
     // Industry-standard: 5 keystrokes = 1 word.
     // When the exam is configured in Strokes mode, both max and required counts
     // are in strokes; convert to words for the reference word list.
-    const toWords = (count) => speedCount === 'Strokes' ? Math.ceil(count / 5) : count;
+    const toWords = (count) => speedCount === 'Strokes' ? Math.ceil(count / strokesPerWordOf(pattern)) : count;
 
     // ── Step 1: max_words_strokes — cap the SOURCE content ─────────────────────
     // "Maximum word will show in result from the uploaded texts"
@@ -946,8 +959,18 @@ const TestEngine = () => {
     const elapsed     = timeElapsed > 0 ? timeElapsed : 1;
     // Pattern controls whether speed is counted in Words (actual word count) or Strokes (keystrokes/5).
     // 'Words' = count actual space-delimited words typed. 'Strokes' (default) = keystrokes/5.
+    const punctuationMistakes = finalStatuses.filter((st, i) => st === 'half-error'
+      && String(alignedTypedWords?.[i] || '').toLowerCase() !== String(resultReferenceWords[i] || '').toLowerCase()).length;
+    const savedPattern = { ...patternSnapshot(pattern), punctuation_mistakes: punctuationMistakes, backspace_count: backspaceCountRef.current };
+    const { kinds } = typingMistakeCounts({
+      referenceWords: resultReferenceWords, wordStatuses: finalStatuses, userInput: finalInput,
+      pattern: { ...savedPattern, repeated_ranges: repeatedRanges, extra_typed_words: extraTypedWords },
+    });
     const score = scoreResult({
       pattern,
+      ...kinds,
+      originalWords: resultReferenceWords.length,
+      testStrokes: resultReferenceWords.join(' ').length,
       fullErrors: finalFull,
       halfErrors: finalHalf,
       totalStrokes: finalStrokes,
@@ -993,32 +1016,7 @@ const TestEngine = () => {
       // can be trimmed (re-type tests), so keep the complete chapter text for display.
       originalPassage: chapter?.content_text || resultReferenceWords.join(' '),
       wordStatuses: finalStatuses,   // fresh — not stale React state
-      pattern: pattern ? {
-        name: pattern.name || null,
-        half_mistake_enabled: pattern.half_mistake_enabled,
-        penalty_type: pattern.penalty_type,
-        penalty_value: pattern.penalty_value,
-        speed_count: pattern.speed_count,
-        qualify_on: pattern.qualify_on,
-        required_speed: pattern.required_speed,
-        required_accuracy: pattern.required_accuracy,
-        ignorable_mistakes_enabled: pattern.ignorable_mistakes_enabled ?? false,
-        ignorable_mistakes_percent: pattern.ignorable_mistakes_percent,
-        ignorable_penalty_words_per_mistake: pattern.ignorable_penalty_words_per_mistake ?? 10,
-        show_half_mistakes: pattern.show_half_mistakes,
-        show_full_mistakes: pattern.show_full_mistakes,
-        show_total_strokes: pattern.show_total_strokes,
-        show_total_words: pattern.show_total_words,
-        show_total_errors: pattern.show_total_errors,
-        show_correct_words: pattern.show_correct_words,
-        show_gross_speed: pattern.show_gross_speed,
-        show_net_speed: pattern.show_net_speed,
-        show_accuracy: pattern.show_accuracy,
-        show_penalty_words: pattern.show_penalty_words,
-        show_ignorable_mistakes: pattern.show_ignorable_mistakes,
-        count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
-        count_right_words_only: pattern.count_right_words_only ?? false,
-      } : null,
+      pattern: savedPattern,
     };
 
     // Show a brief "processing result" screen for 2s, then go to the result.
@@ -1043,35 +1041,7 @@ const TestEngine = () => {
         user_input: finalInput,
         reference_words: resultReferenceWords,
         word_statuses: finalStatuses,
-        pattern_data: pattern ? {
-          name: pattern.name || null,
-          half_mistake_enabled: pattern.half_mistake_enabled,
-          penalty_type: pattern.penalty_type,
-          penalty_value: pattern.penalty_value,
-          speed_count: pattern.speed_count,
-          qualify_on: pattern.qualify_on,
-          required_speed: pattern.required_speed,
-          required_accuracy: pattern.required_accuracy,
-          ignorable_mistakes_enabled: pattern.ignorable_mistakes_enabled ?? false,
-          ignorable_mistakes_percent: pattern.ignorable_mistakes_percent,
-          ignorable_penalty_words_per_mistake: pattern.ignorable_penalty_words_per_mistake ?? 10,
-          show_half_mistakes: pattern.show_half_mistakes,
-          show_full_mistakes: pattern.show_full_mistakes,
-          show_total_strokes: pattern.show_total_strokes,
-          show_total_words: pattern.show_total_words,
-          show_total_errors: pattern.show_total_errors,
-          show_correct_words: pattern.show_correct_words,
-          show_gross_speed: pattern.show_gross_speed,
-          show_net_speed: pattern.show_net_speed,
-          show_accuracy: pattern.show_accuracy,
-          show_penalty_words: pattern.show_penalty_words,
-          show_ignorable_mistakes: pattern.show_ignorable_mistakes,
-          count_omissions_as_errors: pattern.count_omissions_as_errors ?? true,
-          count_right_words_only: pattern.count_right_words_only ?? false,
-          repeated_ranges: repeatedRanges,
-          extra_typed_words: extraTypedWords,
-          extra_typed_word_refs: extraTypedWordRefs,
-        } : { repeated_ranges: repeatedRanges, extra_typed_words: extraTypedWords, extra_typed_word_refs: extraTypedWordRefs },
+        pattern_data: { ...savedPattern, repeated_ranges: repeatedRanges, extra_typed_words: extraTypedWords, extra_typed_word_refs: extraTypedWordRefs },
         mode: mode || null,
         test_type: testType || chapter?.test_type || null,
       };
@@ -1116,8 +1086,9 @@ const TestEngine = () => {
       // Whitespace following this word in the source — surface tabs / line breaks
       // that would otherwise be invisible in the word-by-word passage view.
       const sep = wordSeps[idx] || '';
-      const hasTab = sep.includes('\t');
-      const hasEnter = sep.includes('\n');
+      const formatted = exam?.test_format !== 'normal';
+      const hasTab = formatted && sep.includes('\t');
+      const hasEnter = formatted && sep.includes('\n');
       return (
         <React.Fragment key={idx}>
           <span
@@ -2352,9 +2323,9 @@ const TestEngine = () => {
                   </div>
                 )}
                 <div className="protocol-card">
-                  <div className="protocol-item"><span>Target Speed</span><strong>{pattern?.required_speed || 35} WPM</strong></div>
-                  <div className="protocol-item"><span>Half Mistakes</span><strong>{pattern?.half_mistake_enabled ? 'Counted (0.5)' : 'Counted as Full (1)'}</strong></div>
-                  <div className="protocol-item"><span>Penalty</span><strong>{pattern?.penalty_value || 1} {pattern?.penalty_type || 'Word'}</strong></div>
+                  <div className="protocol-item"><span>Target Speed</span><strong>{pattern?.required_speed || 35} {speedUnitOf(pattern)}</strong></div>
+                  <div className="protocol-item"><span>Half Mistakes</span><strong>Counted as {mistakeWeights(pattern).half}</strong></div>
+                  <div className="protocol-item"><span>Penalty</span><strong>{penaltyLabel(pattern)}</strong></div>
                   <div className="protocol-item"><span>Mode</span><strong>{mode || exam?.test_paper_screen || 'English'}</strong></div>
                 </div>
               </>

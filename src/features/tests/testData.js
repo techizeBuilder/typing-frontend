@@ -12,6 +12,22 @@ export const isStenoGroup = (fg) => (fg || '').includes('Steno');
 export const countWords = (text) => (text || '').trim().split(/\s+/).filter(Boolean).length;
 export const countStrokes = (text) => (text || '').replace(/\s/g, '').length;
 
+// Steno dictations are kept in folders (the test's volume).
+export const NO_FOLDER = '(No folder)';
+export function stenoFolders(chapters, fontGroup) {
+  const folders = new Map();
+  (chapters || []).filter((c) => c.font_group === fontGroup).forEach((c) => {
+    const name = (c.volume || '').trim() || NO_FOLDER;
+    if (!folders.has(name)) folders.set(name, []);
+    folders.get(name).push(c);
+  });
+  return [...folders.entries()]
+    .map(([name, items]) => ({ name, items: items.sort((a, b) => String(a.chapter_no).localeCompare(String(b.chapter_no), undefined, { numeric: true })) }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+// Next dictation number in a folder: one past its highest plain number.
+export const nextDictationNo = (items) => String(Math.max(0, ...(items || []).map((c) => (/^\d+$/.test(String(c.chapter_no)) ? Number(c.chapter_no) : 0))) + 1);
+
 export const blankChapter = () => ({
   chapter_no: '',
   name: '',

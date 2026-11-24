@@ -38,7 +38,7 @@ import { aiAnalysisState, collectMistakes } from '../features/results/mistakes';
 import { Panel } from '../ui/Pill';
 import { bipartiteAlign, isAllCaps as _isAllCaps, normalizeWordResult, tokenizeResult, stenoAiState, stenoMarkup } from '../features/results/stenoAlign';
 import StenoResultView from '../features/results/StenoResultView';
-import { scoreResult } from '../utils/scoring';
+import { penaltyLabel, scoreResult } from '../utils/scoring';
 import { passageTopic } from '../features/exams/examData';
 import './ResultScreen.css';
 
@@ -63,6 +63,7 @@ const PrintSheet = ({
   lineChangeCount = 0, alignedTypedWords = null, extraTypedWords = null,
   extraTypedWordRefs = null,
   countOmissions = true, repeatedRanges = [], passageFontFamily = undefined,
+  totalMistakesFormula, penaltyFormula, requiredUnit = 'WPM', extraRows = [],
 }) => {
   const typedWordsPrt = userInput ? userInput.trim().split(/\s+/).filter(Boolean) : [];
   const totalTypedWords = typedWordsPrt.length;
@@ -136,15 +137,6 @@ const PrintSheet = ({
     });
     return out;
   };
-
-  const totalMistakesFormula = halfMistakeEnabled
-    ? `${fullErrors} + (${halfErrors} × 0.5) = ${totalMistakes}`
-    : `${fullErrors} + (${halfErrors} × 1) = ${totalMistakes}`;
-  const penaltyFormula = ignorableEnabled
-    ? `${excessMistakes} excess (over ${ignorableAllowance} allowed) × ${deductionPerMistake} = ${penaltyWords}`
-    : penaltyDiv5
-      ? `${totalMistakes} × ${penaltyFactor} ÷ 5 = ${penaltyWords}`
-      : `${totalMistakes} × ${penaltyFactor} = ${penaltyWords}`;
 
   return (
     <div className="prt-sheet">
@@ -226,7 +218,7 @@ const PrintSheet = ({
             <td className="prt-perf-val">{timeTakenStr}</td>
           </tr>
           <tr>
-            <td className="prt-perf-lbl">{showTotalErrors ? 'Total Mistakes (full + half×0.5):' : ''}</td>
+            <td className="prt-perf-lbl">{showTotalErrors ? 'Total Mistakes:' : ''}</td>
             <td className="prt-perf-val">{showTotalErrors ? totalMistakes : ''}</td>
             <td className="prt-perf-lbl prt-formula-col" colSpan={2}>{showTotalErrors ? `[${totalMistakesFormula}]` : ''}</td>
             <td className="prt-perf-lbl">Backspace Used:-</td>
@@ -251,12 +243,25 @@ const PrintSheet = ({
             <td className="prt-perf-lbl">{showAccuracy ? 'Accuracy (%):' : ''}</td>
             <td className="prt-perf-val">{showAccuracy ? `${accuracy}%` : ''}</td>
             <td className="prt-perf-lbl">Qualifying Speed ({qualifyOn}):</td>
-            <td className="prt-perf-val">{requiredSpeed} {speedUnit.toUpperCase()}</td>
+            <td className="prt-perf-val">{requiredSpeed} {requiredUnit}</td>
             <td className="prt-perf-lbl">Status:</td>
             <td className={`prt-perf-val prt-status ${isQualified ? 'prt-pass' : 'prt-fail'}`}>
               {isQualified ? '✔ QUALIFIED' : '✘ UNQUALIFIED'}
             </td>
           </tr>
+          {Array.from({ length: Math.ceil(extraRows.length / 3) }, (_, i) => (
+            <tr key={`extra-${i}`}>
+              {[0, 1, 2].map((k) => {
+                const cell = extraRows[i * 3 + k];
+                return (
+                  <React.Fragment key={k}>
+                    <td className="prt-perf-lbl">{cell ? `${cell[0]}:` : ''}</td>
+                    <td className="prt-perf-val">{cell ? cell[1] : ''}</td>
+                  </React.Fragment>
+                );
+              })}
+            </tr>
+          ))}
         </tbody>
       </table>
 
@@ -1238,6 +1243,14 @@ const ResultScreen = () => {
   const showPenaltyWords = pattern?.show_penalty_words ?? true;
   const showIgnorableMistakes = pattern?.show_ignorable_mistakes ?? true;
   const countOmissions = pattern?.count_omissions_as_errors ?? true;
+  // Components that older results don't carry: shown only when the exam chose them
+  // (words in test and rank were always shown).
+  const showTestWords = pattern?.show_test_words ?? true;
+  const showRank = pattern?.show_rank ?? true;
+  const showTestStrokes = pattern?.show_test_strokes ?? false;
+  const showCorrectStrokes = pattern?.show_correct_strokes ?? false;
+  const showBackspaceCount = pattern?.show_backspace_count ?? false;
+  const backspaceCount = pattern?.backspace_count ?? null;
 
   // ─── Recompute error counts from wordStatuses ────────────────────────────────
   // Always derive from wordStatuses so Full Mistakes = Total Errors in analysis panel.
@@ -1305,6 +1318,9 @@ const ResultScreen = () => {
     originalWords: (referenceWords.length ? referenceWords : tokenizeResult(referenceText || '')).filter(Boolean).length,
     transpositions: Number(pattern?.transpositions) || 0,
     trailingOmissions: Number(pattern?.trailing_omissions) || 0,
+    missingWords: Number(pattern?.omitted_words) || 0,
+    extraWords: Number(pattern?.added_words) || 0,
+    punctuation: Number(pattern?.punctuation_mistakes) || 0,
   } : {
     pattern,
     fullErrors: effectiveFullErrors,
@@ -1314,12 +1330,39 @@ const ResultScreen = () => {
     correctWords: _correctWordCount,
     correctStrokes: _correctStrokes,
     timeElapsed,
+    originalWords: referenceWords.length,
+    testStrokes: referenceWords.join(' ').length,
+    extraWords: _addCount + repeatedWordCount,
+    missingWords: _om,
+    extraSpaces: extraSpaceCount,
+    punctuation: Math.min(_cap + _pct, pattern?.punctuation_mistakes ?? _pct),
+    uncountedWords: countOmissions ? 0 : referenceWords.filter((_, i) => i > _lastTyped && (wordStatuses[i] || 'pending') === 'pending').length,
   });
 
   const totalWords = score.totalWords;
   const grossSpeedCalculated = score.gwpm;
   const halfMistakeMultiplier = score.halfWeight;
   const totalMistakes = score.totalMistakes;
+  const weights = score.weights;
+  const simpleWeights = weights.extra === weights.full && weights.missing === weights.full && weights.space === weights.half && weights.punctuation === weights.half;
+  const weigh = (n, w) => (w === 1 ? `${n}` : `(${n} × ${w})`);
+  // "12 + (4 × 0.5) = 14", or one term per kind of mistake when they weigh differently.
+  const totalMistakesFormula = simpleWeights || isStenoResult
+    ? (simpleWeights ? `${weigh(score.fullErrors, weights.full)} + (${score.halfErrors} × ${weights.half}) = ${totalMistakes}` : `weighted per kind of mistake = ${totalMistakes}`)
+    : `${[[_sp, weights.full], [_addCount + repeatedWordCount, weights.extra], [_om, weights.missing], [_cap, weights.half], [_pct, weights.punctuation], [extraSpaceCount, weights.space]].filter(([n]) => n > 0).map(([n, w]) => weigh(n, w)).join(' + ') || 0} = ${totalMistakes}`;
+  const penaltyFormula = `${score.penaltyFormula} = ${score.penaltyWords}`;
+  const accuracyFormula = {
+    speed: 'Net Speed ÷ Gross Speed × 100',
+    typed_words: '(Typed Words − Mistakes) ÷ Typed Words × 100',
+    total_words: '(Total Words − Mistakes) ÷ Total Words × 100',
+    typed_strokes: '(Typed KeyStrokes − Mistakes in strokes) ÷ Typed KeyStrokes × 100',
+    total_strokes: '(Total KeyStrokes − Mistakes in strokes) ÷ Total KeyStrokes × 100',
+  }[score.accuracyOn];
+  const showKdph = pattern?.show_kdph ?? (score.speedUnit === 'KDPH');
+  const showMarks = (pattern?.show_marks ?? true) && score.marks !== null;
+  const requiredUnit = score.speedUnit;
+  const testStrokeCount = isStenoResult ? String(referenceText || '').trim().length : referenceWords.join(' ').length;
+  const correctStrokeCount = isStenoResult ? (pattern?.correct_strokes ?? null) : _correctStrokes;
   const penaltyFactor = score.penaltyFactor;
   const penaltyType   = score.penaltyType;
   const ignorableEnabled = score.ignorableEnabled;
@@ -1338,7 +1381,7 @@ const ResultScreen = () => {
   const qualifyOn     = score.qualifyOn;
   const requiredSpeed = score.requiredSpeed;
   const requiredAcc   = score.requiredAccuracy;
-  const speedToCheck  = qualifyOn === 'GWPM' ? grossSpeedCalculated : netSpeedCalculated;
+  const speedToCheck  = score.speedToCheck;
 
   // Value shown in the "Ignorable Mistake (%)" row — the configured percentage of
   // mistakes that was forgiven for this attempt (0 when the feature is disabled).
@@ -1488,16 +1531,16 @@ const ResultScreen = () => {
   const speedGap = fmtNum(speedToCheck - requiredSpeed);
 
   const penaltyRows = isStenoResult ? [
-    { label: 'Full Mistakes', count: score.fullErrors, weight: 1 },
+    { label: 'Full Mistakes', count: score.fullErrors, weight: weights.full },
     { label: 'Half Mistakes', count: score.halfErrors, weight: halfMistakeMultiplier },
   ] : [
-    { label: 'Spelling / Wrong Word', count: _sp, weight: 1 },
-    { label: 'Omission', count: _om, weight: 1 },
-    { label: 'Addition', count: _addCount, weight: 1 },
-    { label: 'Repetition', count: repeatedWordCount, weight: 1 },
-    { label: 'Capitalisation', count: _cap, weight: halfMistakeMultiplier },
-    { label: 'Punctuation', count: _pct, weight: halfMistakeMultiplier },
-    { label: 'Extra Space', count: extraSpaceCount, weight: halfMistakeMultiplier },
+    { label: 'Spelling / Wrong Word', count: _sp, weight: weights.full },
+    { label: 'Omission', count: _om, weight: weights.missing },
+    { label: 'Addition', count: _addCount, weight: weights.extra },
+    { label: 'Repetition', count: repeatedWordCount, weight: weights.extra },
+    { label: 'Capitalisation', count: _cap, weight: weights.half },
+    { label: 'Punctuation', count: _pct, weight: weights.punctuation },
+    { label: 'Extra Space', count: extraSpaceCount, weight: weights.space },
   ];
 
   const aiInput = (!isStenoResult && referenceWords.length > 0) ? {
@@ -1550,6 +1593,17 @@ const ResultScreen = () => {
     originalPassage: fullOriginalPassage,
     passageFontFamily,
   };
+
+  // Components chosen on the exam that have no tile of their own below.
+  const extraComponents = [
+    showTestStrokes && { label: 'Total KeyStrokes (in Test)', value: testStrokeCount, icon: KeyboardIcon, color: '#0D6EFD' },
+    showCorrectStrokes && correctStrokeCount !== null && { label: 'Right KeyStrokes', value: correctStrokeCount, icon: CheckCircle2Icon, color: '#198754' },
+    showKdph && { label: 'Gross KDPH', value: score.grossKdph, icon: GaugeIcon, color: '#6F42C1' },
+    showKdph && { label: 'Net KDPH', value: score.netKdph, icon: TrendingUpIcon, color: '#0EA5E9' },
+    showBackspaceCount && backspaceCount !== null && { label: 'Backspace Count', value: backspaceCount, icon: ArrowLeftIcon, color: '#64748B' },
+    showIgnorableMistakes && ignorableEnabled && { label: 'Ignorable Mistakes', value: Math.min(ignorableAllowance, totalMistakes), icon: MinusCircleIcon, color: '#64748B', sub: `${ignorablePercent}% allowed` },
+    showMarks && { label: 'Marks', value: score.marks, icon: AwardIcon, color: '#F59E0B' },
+  ].filter(Boolean);
 
   // Steno page: mistakes split for the tiles, same rules as the grader.
   const stenoMarked = isStenoResult ? stenoMarkup(typedText, referenceText) : null;
@@ -1635,6 +1689,10 @@ const ResultScreen = () => {
           countOmissions={countOmissions}
           repeatedRanges={repeatedRanges}
           passageFontFamily={passageFontFamily}
+          totalMistakesFormula={totalMistakesFormula}
+          penaltyFormula={penaltyFormula}
+          requiredUnit={requiredUnit}
+          extraRows={extraComponents.map((c) => [c.label, c.value])}
         />
       </div>
 
@@ -1665,7 +1723,7 @@ const ResultScreen = () => {
             total: timeElapsed % 60 === 0 ? `${timeElapsed / 60} Min` : `${timeTakenStr} Min`,
             pattern: patternName,
           }}
-          verdict={{ qualified: isQualified, rank: rankInfo, requiredAccuracy: requiredAcc }}
+          verdict={{ qualified: isQualified, rank: showRank ? rankInfo : null, requiredAccuracy: requiredAcc }}
           tiles={{
             originalWords: originalWordCount,
             typedWords: actualTypedWordCount,
@@ -1684,6 +1742,8 @@ const ResultScreen = () => {
             showAccuracy,
             showStrokes: showTotalStrokes,
             showSpeed: showGrossSpeed,
+            showTestWords,
+            extra: extraComponents,
           }}
           markup={stenoMarked}
           typedText={typedText}
@@ -1711,7 +1771,7 @@ const ResultScreen = () => {
                 <ActionButton icon={Share2Icon} tone="border-slate-300 text-slate-600" onClick={handleShare}>Share Result</ActionButton>
               </div>
               <p className="mt-3 rounded bg-slate-50 px-3 py-2 text-[11.5px] text-slate-500">
-                Note: Steno results are decided on the percentage: {`% of Mistakes = (Full + Half × ${halfMistakeMultiplier}) ÷ Original Words × 100`}, Accuracy = 100 − % of Mistakes.
+                Note: Steno results are decided on the percentage: {`% of Mistakes = ${simpleWeights ? `(Full${weights.full === 1 ? '' : ` × ${weights.full}`} + Half × ${halfMistakeMultiplier})` : 'Counted Mistakes'} ÷ Original Words × 100`}, Accuracy = 100 − % of Mistakes.
               </p>
             </Panel>
             {activeView &&
@@ -1846,12 +1906,12 @@ const ResultScreen = () => {
                 <p className={`mx-auto mt-2 w-fit rounded px-4 py-1.5 font-display text-[13px] font-bold text-white ${isQualified ? 'bg-success' : 'bg-danger'}`}>
                   {isQualified ? 'QUALIFIED' : 'NOT QUALIFIED'}
                 </p>
-                {rankInfo?.rank ?
+                {showRank && rankInfo?.rank ?
                   <>
                     <p className="mt-3 text-[12.5px] font-semibold text-navy-800">Your Rank</p>
                     <p className="font-display text-[30px] font-extrabold leading-tight text-primary">{rankInfo.rank} / {rankInfo.total}</p>
                   </> :
-                  rankInfo?.pending_until ?
+                  showRank && rankInfo?.pending_until ?
                     <p className="mt-3 rounded bg-slate-50 px-2 py-1.5 text-[11.5px] text-slate-500">Rank will be shown after the live test session ends.</p> :
                     <p className="mt-3 text-[12px] text-slate-600">
                       {isQualified
@@ -1859,7 +1919,7 @@ const ResultScreen = () => {
                         : 'You did not meet the required speed and accuracy criteria.'}
                     </p>
                 }
-                <p className="mt-2 text-[11.5px] text-slate-500">Minimum Qualifying Speed : {requiredSpeed} WPM ({qualifyOn})</p>
+                <p className="mt-2 text-[11.5px] text-slate-500">Minimum Qualifying Speed : {requiredSpeed} {requiredUnit} ({requiredUnit === 'KDPH' ? (qualifyOn === 'GWPM' ? 'Gross' : 'Net') : qualifyOn})</p>
                 <p className="text-[11.5px] text-slate-500">Required Accuracy : {requiredAcc}%</p>
               </section>
             </div>
@@ -1868,7 +1928,7 @@ const ResultScreen = () => {
             <Panel title="Result Overview">
               <ul className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2">
                 {[
-                  { label: 'Original Words', value: originalWordCount, icon: FileTextIcon, color: '#0D6EFD' },
+                  showTestWords && { label: 'Original Words', value: originalWordCount, icon: FileTextIcon, color: '#0D6EFD' },
                   showTotalWords && { label: 'Typed Words', value: actualTypedWordCount, icon: FileTextIcon, color: '#6F42C1' },
                   showGrossSpeed && { label: `Gross Speed (${grossAbbr})`, value: `${grossSpeedCalculated} WPM`, icon: GaugeIcon, color: '#6F42C1' },
                   showNetSpeed && { label: `Net Speed (${netAbbr})`, value: `${netSpeedCalculated} WPM`, icon: TrendingUpIcon, color: '#0EA5E9' },
@@ -1876,6 +1936,7 @@ const ResultScreen = () => {
                   showTotalStrokes && { label: 'Keystrokes', value: totalStrokes, icon: KeyboardIcon, color: '#64748B' },
                   showTotalErrors && { label: 'Total Mistakes', value: totalMistakes, icon: AlertTriangleIcon, color: '#DC3545' },
                   showPenaltyWords && { label: `Penalty ${unitLabel}`, value: penaltyWords, icon: AwardIcon, color: '#7C3AED' },
+                  ...extraComponents,
                 ].filter(Boolean).map((m) => <MetricTile key={m.label} {...m} big />)}
               </ul>
             </Panel>
@@ -1908,17 +1969,13 @@ const ResultScreen = () => {
                     <SummaryRow
                       label="Total Mistakes"
                       value={totalMistakes}
-                      formula={`[${score.fullErrors} + (${score.halfErrors} × ${halfMistakeMultiplier}) = ${totalMistakes}]${ignorableEnabled ? `  ·  Allowance ${ignorablePercent}% of ${totalWords} = ${ignorableAllowance} ignored, ${excessMistakes} excess` : ''}`} />
+                      formula={`[${totalMistakesFormula}]${ignorableEnabled ? `  ·  Allowance ${ignorablePercent}% of ${totalWords} = ${ignorableAllowance} ignored, ${excessMistakes} excess` : ''}`} />
                   }
                   {showPenaltyWords &&
                     <SummaryRow
                       label={`Penalty ${unitLabel}`}
                       value={penaltyWords}
-                      formula={ignorableEnabled
-                        ? `[${excessMistakes} excess mistakes × ${deductionPerMistake} words]`
-                        : penaltyDiv5
-                          ? `[${totalMistakes} mistakes × ${penaltyFactor} strokes ÷ 5]`
-                          : `[${totalMistakes} mistakes × ${penaltyFactor} ${unitLabel.toLowerCase()}]`} />
+                      formula={`[${score.penaltyFormula}]`} />
                   }
                   {showNetSpeed &&
                     <SummaryRow
@@ -1932,7 +1989,7 @@ const ResultScreen = () => {
                     <SummaryRow
                       label={`Total ${unitLabel} Typed`}
                       value={totalWords}
-                      formula={pattern?.count_right_words_only ? `[only correctly typed words${isStrokeMode ? ', their keystrokes ÷ 5' : ''}]` : isStrokeMode ? `[${totalStrokes} keystrokes ÷ 5]` : `[${actualTypedWordCount} actual words typed]`} />
+                      formula={pattern?.count_right_words_only ? `[only correctly typed words${isStrokeMode ? `, their keystrokes ÷ ${score.strokesPerWord}` : ''}]` : isStrokeMode ? `[${totalStrokes} keystrokes ÷ ${score.strokesPerWord}]` : `[${actualTypedWordCount} actual words typed]`} />
                   }
                   {showGrossSpeed &&
                     <SummaryRow
@@ -1946,10 +2003,10 @@ const ResultScreen = () => {
                       label={`Net Speed (${netAbbr})`}
                       value={`${netSpeedCalculated} ${speedUnit}`}
                       highlight
-                      formula={`[${netWordsCalculated} / ${timeMinutes.toFixed(2)} min]`} />
+                      formula={`[${netWordsCalculated} / ${timeMinutes.toFixed(2)} min${score.speedPenalty ? ` - ${score.speedPenalty} speed penalty` : ''}]`} />
                   }
                   {showAccuracy &&
-                    <SummaryRow label="Accuracy" value={`${accuracyCalculated}%`} formula="[Net Speed ÷ Gross Speed × 100]" />
+                    <SummaryRow label="Accuracy" value={`${accuracyCalculated}%`} formula={`[${accuracyFormula}]`} />
                   }
                 </ul>
               </div>
@@ -1964,7 +2021,7 @@ const ResultScreen = () => {
                   {showHalfMistakes && <LegendChip label="Half Mistake"><span className="pa-res-half">word</span></LegendChip>}
                   <LegendChip label="Omission"><span className="pa-res-omit">word</span></LegendChip>
                   <LegendChip label="Addition / Repeated"><span className="pa-res-extra">+word</span></LegendChip>
-                  <LegendChip label="Extra Space (½)"><span className="pa-res-space">␣</span></LegendChip>
+                  <LegendChip label={`Extra Space (${weights.space === 0.5 ? '½' : weights.space})`}><span className="pa-res-space">␣</span></LegendChip>
                   {lineChangeCount > 0 && <span className="text-[10.5px] font-semibold text-violet-700">↕ Line/Para changed {lineChangeCount}×</span>}
                 </>}
                 <span className="ml-auto flex items-center gap-2 text-[11px] text-slate-500">
@@ -2100,7 +2157,7 @@ const ResultScreen = () => {
                 lastTypedIndex={_lastTyped}
                 countOmissions={countOmissions}
                 extraTypedWords={extraTypedWords}
-                halfMistakeEnabled={halfMistakeEnabled}
+                weights={weights}
                 mode={mode}
                 examName={exam_name}
                 passageFontFamily={passageFontFamily} />
@@ -2188,9 +2245,9 @@ const ResultScreen = () => {
                 </tfoot>
               </table>
               <ul className="mt-3 space-y-1 rounded-md bg-slate-50 px-2.5 py-2 text-[11.5px] text-slate-600">
-                <li className="flex justify-between gap-3"><span>Penalty Type</span><strong className="text-navy-800">{penaltyType}</strong></li>
-                <li className="flex justify-between gap-3"><span>Penalty Factor</span><strong className="text-navy-800">{penaltyFactor}</strong></li>
-                <li className="flex justify-between gap-3"><span>Half Mistakes</span><strong className="text-navy-800">{halfMistakeEnabled ? 'Count as 0.5' : 'Count as Full (1)'}</strong></li>
+                <li className="flex justify-between gap-3"><span>Penalty per Mistake</span><strong className="text-navy-800">{ignorableEnabled ? `${deductionPerMistake} Words per excess mistake` : penaltyLabel(pattern)}</strong></li>
+                <li className="flex justify-between gap-3"><span>Mistakes Multiply</span><strong className="text-navy-800">× {score.multiply}</strong></li>
+                <li className="flex justify-between gap-3"><span>Half Mistakes</span><strong className="text-navy-800">Count as {halfMistakeMultiplier}</strong></li>
                 {ignorableEnabled &&
                   <li className="pt-1">
                     Ignorable Allowance: <strong>{ignorablePercent}%</strong> ({ignorableAllowance} of {totalMistakes} mistakes) · Excess: <strong>{excessMistakes}</strong> × {deductionPerMistake} = <strong>{penaltyWords}</strong> words deducted
@@ -2198,7 +2255,7 @@ const ResultScreen = () => {
                 }
               </ul>
               <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                Punctuation, Capital/Small letter and Extra-Space mistakes count as {halfMistakeEnabled ? 'Half Mistakes (0.5 each)' : 'Full Mistakes (1 each)'}; spelling mistakes count as Full Mistakes.
+                Spelling mistakes count as {weights.full}, capital/small letter {weights.half}, punctuation {weights.punctuation}, extra space {weights.space}, extra words {weights.extra} and missing words {weights.missing} each.
               </p>
             </Panel>
           </aside>

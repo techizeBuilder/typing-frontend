@@ -174,3 +174,17 @@ export function RulesPdfCard({ url }) {
     </div>
   );
 }
+
+// Instructions ("Exam Rule") the admin uploaded, shown before a test is started.
+export function ExamInstructions({ exam, withPdf = false }) {
+  const text = exam?.instructions_text;
+  const pdf = withPdf ? exam?.rules_pdf_url : null;
+  if (!text && !pdf) return null;
+  return (
+    <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 className="font-display text-[14px] font-semibold text-amber-900">Instructions — read before starting the test</h3>
+      {text && <p className="mt-2 max-h-[220px] overflow-y-auto whitespace-pre-wrap text-[12.5px] leading-relaxed text-amber-900">{text}</p>}
+      {pdf && <a href={resolveAssetUrl(pdf)} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-primary underline"><DownloadIcon className="h-3.5 w-3.5" aria-hidden="true" /> Instructions (PDF)</a>}
+    </section>
+  );
+}

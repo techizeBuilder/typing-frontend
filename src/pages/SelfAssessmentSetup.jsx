@@ -26,6 +26,7 @@ import { PageHeading } from '../ui/PageHeading';
 import { useFontGroupSettings } from '../features/fontGroups/fontGroups';
 import { fontFamilyForFontGroup } from '../utils/hindiFonts';
 import { computeResultMetrics } from '../utils/resultMetrics';
+import { mistakeWeights } from '../utils/scoring';
 
 // One setup page per sidebar link. Typing modes hand off to TestEngine exactly as
 // before (isSelfAssessment); steno modes hand the student's own passage + audio
@@ -133,8 +134,8 @@ function PatternModal({ patterns, loading, selected, onSelect, onClose }) {
                         Qualify on: {strokes ? 'Strokes' : 'Words'}
                       </span>
                       <span className="text-right text-slate-500">
-                        <span className="block font-semibold text-navy-800">{p.qualify_on} ≥ {p.required_speed}</span>
-                        Half mistakes: {p.half_mistake_enabled ? 'Yes' : 'No'}
+                        <span className="block font-semibold text-navy-800">{p.speed_unit === 'KDPH' ? 'KDPH' : p.qualify_on} ≥ {p.required_speed}</span>
+                        Half mistakes: {mistakeWeights(p).half}
                       </span>
                     </div>
                   </button>

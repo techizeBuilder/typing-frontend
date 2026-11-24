@@ -20,7 +20,7 @@ import { Breadcrumbs } from '../../ui/PageHeading';
 import { STENO_MODES, PRELOAD, modeLabel, sortByChapterNo, startTestState } from '../../features/exams/examData';
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
 import { EmptyState, LoadingState } from '../../features/exams/ExamUI';
-import { DifficultyBadge } from '../../features/exams/ExamFilters';
+import { DifficultyBadge, ExamInstructions } from '../../features/exams/ExamFilters';
 import { fontFamilyForHindiType } from '../../utils/hindiFonts';
 import { useDictationAudio } from '../../features/steno/useDictationAudio';
 import {
@@ -243,6 +243,7 @@ export default function StenoPractice() {
           { label: 'Practice' },
         ]} />
       </div>
+      <ExamInstructions exam={exam} withPdf />
 
       {audioUrl &&
         <audio ref={audioRef} src={audioUrl} preload="metadata"

@@ -32,7 +32,9 @@ import {
 } from '../../features/exams/examData';
 import { useExamList, useChapterSession } from '../../features/exams/useExamData';
 import { ExamLogo, ModeChips, OfflineBanner, SaveOfflineButton, EmptyState, LoadingState } from '../../features/exams/ExamUI';
-import { DifficultyTabs, DifficultyBadge, RulesPdfCard } from '../../features/exams/ExamFilters';
+import { examForMode } from '../../utils/examPattern';
+import { penaltyLabel, speedUnitOf } from '../../utils/scoring';
+import { DifficultyTabs, DifficultyBadge, ExamInstructions, RulesPdfCard } from '../../features/exams/ExamFilters';
 import { useFontGroupSettings } from '../../features/fontGroups/fontGroups';
 import { releaseLabel, resultReleaseAt, timingOf } from '../../features/results/resultTiming';
 import { downloadPassagePdf, useInstituteBrand } from '../../features/exams/passagePdf';
@@ -124,14 +126,14 @@ export default function ExamTests() {
     );
   }
 
-  const rp = exam?.result_pattern;
+  const rp = examForMode(exam, mode)?.result_pattern;
   const details = exam ? [
     { icon: ClockIcon, label: `Time Duration : ${exam.test_time_minutes} Minutes` },
-    rp && { icon: CircleAlertIcon, label: `Qualifying Speed : ${rp.required_speed} WPM` },
+    rp && { icon: CircleAlertIcon, label: `Qualifying Speed : ${rp.required_speed} ${speedUnitOf(rp)}` },
     rp && { icon: PercentIcon, label: `Error Margin : ${rp.ignorable_mistakes_enabled ? `${rp.ignorable_mistakes_percent}% Free` : `${Math.max(0, 100 - rp.required_accuracy)}%`}` },
     rp && { icon: CheckCircle2Icon, label: `Result Mode : ${rp.qualify_on === 'GWPM' ? 'Gross' : 'Net'} Speed + Accuracy` },
     { icon: KeyboardIcon, label: `Backspace : ${BACKSPACE_LABEL[exam.backspace_control] || exam.backspace_control || '—'}` },
-    (exam.mistake_policy || rp) && { icon: AlertTriangleIcon, label: `Mistake Policy : ${exam.mistake_policy || `${rp.penalty_value} ${rp.penalty_type}${rp.penalty_value === 1 ? '' : 's'} applied per mistake`}` },
+    (exam.mistake_policy || rp) && { icon: AlertTriangleIcon, label: `Mistake Policy : ${exam.mistake_policy || `${rp.ignorable_mistakes_enabled ? `${rp.ignorable_penalty_words_per_mistake} Words` : penaltyLabel(rp)} applied per mistake`}` },
     { icon: MonitorIcon, label: `Exam Mode : ${exam.test_paper_screen === 'Paper' ? 'Paper' : 'On Screen'}` },
   ].filter(Boolean) : [];
   const examMeta = exam ? [
@@ -151,6 +153,8 @@ export default function ExamTests() {
             { label: exam?.name || '…' },
           ]} />
       </div>
+
+      <ExamInstructions exam={exam} />
 
       {/* Exam banner */}
       <section className="mb-4 rounded-xl bg-navy-900 p-5">

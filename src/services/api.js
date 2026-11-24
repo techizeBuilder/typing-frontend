@@ -639,7 +639,7 @@ export const backupService = {
 
 // Student reviews. Approved ones are public (landing page testimonials).
 
-// AI Deep Analysis (Claude via the backend; rule-based when unavailable).
+// AI Deep Analysis (OpenAI via the backend; rule-based when unavailable).
 export const aiAnalysisService = {
   status: async () => (await api.get('/ai-analysis/status')).data,
   analyse: async (input) => (await api.post('/ai-analysis', input, { timeout: 120000 })).data,

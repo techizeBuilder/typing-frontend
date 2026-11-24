@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { BadgeCheckIcon, Loader2Icon, PencilIcon, PlusIcon, ScaleIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { examService, resultPatternService } from '../../services/api';
 import Pagination from '../../components/Pagination';
+import { mistakeWeights, penaltyLabel } from '../../utils/scoring';
 import { PageHeading } from '../../ui/PageHeading';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
@@ -94,10 +95,10 @@ export default function AdminResultPatterns() {
                           {p.is_default && <span className="ml-1.5 rounded bg-emerald-50 px-1.5 py-[1px] text-[10px] font-bold text-emerald-700">DEFAULT</span>}
                           <span className="block text-[10.5px] text-slate-500">{[p.applicable_typing !== false && 'Typing', p.applicable_steno !== false && 'Steno'].filter(Boolean).join(' + ')}</span>
                         </td>
-                        <td className="px-3 py-2.5 text-slate-600">{p.speed_count}</td>
-                        <td className="px-3 py-2.5 text-slate-600">{p.penalty_value} {p.penalty_type}s</td>
-                        <td className="px-3 py-2.5 text-slate-600">{p.required_speed} {p.qualify_on} / {p.required_accuracy}%</td>
-                        <td className="px-3 py-2.5 text-slate-600">{p.half_mistake_enabled ? 'Count 0.5' : 'Full'}</td>
+                        <td className="px-3 py-2.5 text-slate-600">{p.count_right_words_only ? 'Right Words' : p.speed_count}</td>
+                        <td className="px-3 py-2.5 text-slate-600">{penaltyLabel(p)}</td>
+                        <td className="px-3 py-2.5 text-slate-600">{p.required_speed} {p.speed_unit === 'KDPH' ? 'KDPH' : p.qualify_on} / {p.required_accuracy}%</td>
+                        <td className="px-3 py-2.5 text-slate-600">Count {mistakeWeights(p).half}</td>
                         <td className="px-3 py-2.5">{using.length ? <span title={using.join(', ')} className="rounded bg-primary-50 px-2 py-[2px] text-[10.5px] font-medium text-primary-700">{using.length} exam(s)</span> : <span className="text-slate-400">Not used</span>}</td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{fmtDate(p.created_at)}</td>
                         <td className="px-3 py-2.5">
